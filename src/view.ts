@@ -1,4 +1,4 @@
-import { ItemView, MarkdownView, Notice, TFile, WorkspaceLeaf, setIcon } from "obsidian";
+import { ItemView, MarkdownView, Notice, Platform, TFile, WorkspaceLeaf, setIcon } from "obsidian";
 import type LedgerStatisticsPlugin from "./main";
 import {
   AccountingScope,
@@ -87,6 +87,7 @@ export class LedgerStatisticsView extends ItemView {
   private customCurrent: DateRange;
   private customPrevious: DateRange;
   private showDiagnostics = false;
+  private filtersExpanded = !Platform.isMobile;
 
   constructor(leaf: WorkspaceLeaf, private plugin: LedgerStatisticsPlugin) {
     super(leaf);
@@ -158,19 +159,34 @@ export class LedgerStatisticsView extends ItemView {
   }
 
   private renderToolbar(root: HTMLElement): void {
-    const toolbar = root.createDiv({ cls: "ledger-toolbar" });
+    const panel = root.createEl("details", { cls: "ledger-filter-panel" });
+    panel.open = this.filtersExpanded;
+    const summary = panel.createEl("summary", { cls: "ledger-filter-summary" });
+    const summaryIcon = summary.createSpan({ cls: "ledger-filter-summary-icon" });
+    setIcon(summaryIcon, "sliders-horizontal");
+    const summaryCopy = summary.createSpan({ cls: "ledger-filter-summary-copy" });
+    summaryCopy.createEl("strong", { text: "筛选条件" });
+    const categoryLabel = this.filter.categories[0] ?? "全部分类";
+    const scopeLabel = this.filter.scope === "consumption" ? "消费支出" : "全部支出";
+    summaryCopy.createSpan({ text: `${this.filter.range.start.slice(5).replace("-", ".")}–${this.filter.range.end.slice(5).replace("-", ".")} · ${scopeLabel} · ${categoryLabel}` });
+    const summaryChevron = summary.createSpan({ cls: "ledger-filter-summary-chevron" });
+    setIcon(summaryChevron, "chevron-down");
+    panel.addEventListener("toggle", () => { this.filtersExpanded = panel.open; });
+
+    const toolbar = panel.createDiv({ cls: "ledger-toolbar" });
     addSelect(toolbar, "时间", this.preset, [["month", "本月"], ["previous", "上月"], ["year", "今年"], ["custom", "自定义"]], (value) => {
       this.applyPreset(value as DatePreset);
       this.render();
     });
-    addDateInput(toolbar, "开始", this.filter.range.start, (value) => {
+    const dates = toolbar.createDiv({ cls: "ledger-date-range", attr: { "aria-label": "日期范围" } });
+    addDateInput(dates, "开始", this.filter.range.start, (value) => {
       if (isValidIsoDate(value) && value <= this.filter.range.end) {
         this.preset = "custom";
         this.filter.range.start = value;
         this.render();
       }
     });
-    addDateInput(toolbar, "结束", this.filter.range.end, (value) => {
+    addDateInput(dates, "结束", this.filter.range.end, (value) => {
       if (isValidIsoDate(value) && value >= this.filter.range.start) {
         this.preset = "custom";
         this.filter.range.end = value;
@@ -186,7 +202,8 @@ export class LedgerStatisticsView extends ItemView {
       this.filter.categories = value ? [value] : [];
       this.render();
     });
-    const refresh = createButton(toolbar, "刷新");
+    const refresh = createButton(toolbar, "刷新数据");
+    refresh.addClass("ledger-refresh-button");
     setIcon(refresh.createSpan(), "refresh-cw");
     refresh.addEventListener("click", async () => {
       refresh.disabled = true;

@@ -490,6 +490,27 @@ function strongestCategory(data) {
 function pctText(cents, total) {
   return total === 0 ? "\u5360\u6BD4 0.0%" : `\u5360\u6BD4 ${(cents / total * 100).toFixed(1)}%`;
 }
+function renderMobileTickRows(parent, data, max, onClick) {
+  const list = parent.createDiv({ cls: "ledger-mobile-tick-rows" });
+  data.forEach((item, index) => {
+    const row = list.createEl("button", { cls: "ledger-mobile-tick-row" });
+    row.type = "button";
+    row.setAttribute("aria-label", `${item.category} ${formatCents(item.cents)}\uFF0C${item.count} \u7B14`);
+    const head = row.createDiv({ cls: "ledger-mobile-chart-head" });
+    head.createEl("strong", { text: item.category });
+    const values = head.createSpan();
+    values.createEl("strong", { text: formatCents(item.cents) });
+    values.createSpan({ text: ` \xB7 ${item.count}\u7B14` });
+    const track = row.createDiv({ cls: "ledger-mobile-tick-track", attr: { "aria-hidden": "true" } });
+    const tickCount = Math.max(item.cents > 0 ? 1 : 0, Math.round(item.cents / max * 28));
+    for (let tick = 0; tick < tickCount; tick += 1) {
+      const mark = track.createSpan({ cls: `ledger-mobile-tick${index === 0 ? " is-leading" : ""}` });
+      mark.style.height = `${10 + deterministic(tick + 1, index + 2) * 13}px`;
+      mark.style.animationDelay = `${index * 0.05 + tick * 0.012}s`;
+    }
+    row.addEventListener("click", () => onClick(item.category));
+  });
+}
 function renderHorizontalBars(parent, data, onClick) {
   const total = data.reduce((sum, item) => sum + item.cents, 0);
   const leader = data[0];
@@ -510,7 +531,7 @@ function renderHorizontalBars(parent, data, onClick) {
   const maxUnits = max / unit;
   const px = plotWidth / Math.max(maxUnits, 1);
   const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "\u5206\u7C7B\u652F\u51FA\u523B\u7EBF\u961F\u5217\u56FE" });
-  svg.classList.add("ledger-svg", "ledger-tick-rows");
+  svg.classList.add("ledger-svg", "ledger-tick-rows", "ledger-desktop-chart");
   data.forEach((item, index) => {
     const y = 28 + index * rowHeight;
     const group = svgEl("g");
@@ -560,6 +581,7 @@ function renderHorizontalBars(parent, data, onClick) {
   unitText.textContent = `ONE TICK = ${formatCents(unit)} \xB7 DASHED FINAL TICK = REMAINDER`;
   svg.append(unitText);
   chart.append(svg);
+  renderMobileTickRows(chart, data, max, onClick);
   sourceLine(shell, "TICK ROWS \xB7 MONO-BASIC \xB7 LOCAL LEDGER");
 }
 function polar(cx, cy, radius, angle) {
@@ -636,6 +658,60 @@ function trendConclusion(points) {
   const peak = points.reduce((best, point) => point.cents > best.cents ? point : best, points[0]);
   return `${peak.label}\u662F\u8FD9\u6BB5\u65F6\u95F4\u7684\u652F\u51FA\u5CF0\u503C`;
 }
+function renderMobileTrend(parent, points, isLine, onClick) {
+  const viewport = parent.createDiv({ cls: "ledger-mobile-trend-scroll" });
+  const width = points.length > 10 ? points.length * 34 + 74 : 360;
+  const height = 252;
+  const left = 44;
+  const right = width - 14;
+  const top = 38;
+  const base = 194;
+  const plotWidth = right - left;
+  const plotHeight = base - top;
+  const max = Math.max(...points.map((point) => point.cents), 1);
+  const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": isLine ? "\u79FB\u52A8\u7AEF\u652F\u51FA\u6298\u7EBF\u56FE" : "\u79FB\u52A8\u7AEF\u652F\u51FA\u67F1\u72B6\u56FE" });
+  svg.classList.add("ledger-svg", "ledger-mobile-trend");
+  svg.style.width = `${width}px`;
+  for (let tick = 0; tick <= 3; tick += 1) {
+    const y = base - tick / 3 * plotHeight;
+    svg.append(svgEl("line", { x1: left, y1: y, x2: right, y2: y, stroke: GRID, "stroke-width": 0.8 }));
+    const label = svgEl("text", { x: left - 7, y: y + 4, "text-anchor": "end", class: "ledger-mobile-axis-value" });
+    label.textContent = formatCents(Math.round(max * tick / 3)).replace(".00", "");
+    svg.append(label);
+  }
+  const slot = plotWidth / Math.max(points.length, 1);
+  const coords = [];
+  const peakIndex = points.reduce((best, point, index) => point.cents > points[best].cents ? index : best, 0);
+  const labelEvery = Math.max(1, Math.ceil(points.length / 6));
+  points.forEach((point, index) => {
+    const x = left + slot * index + slot / 2;
+    const y = base - point.cents / max * plotHeight;
+    coords.push({ x, y });
+    if (!isLine) svg.append(svgEl("line", { x1: x, y1: base, x2: x, y2: y, stroke: index === peakIndex ? INK : MUTED, "stroke-width": index === peakIndex ? 2.4 : 1.4, class: "ledger-fade" }));
+    const hitWidth = Math.max(slot, 24);
+    const hit = svgEl("rect", { x: x - hitWidth / 2, y: top, width: hitWidth, height: plotHeight + 30, fill: "transparent" });
+    accessibleTarget(hit, `${point.label} ${formatCents(point.cents)}\uFF0C${point.count} \u7B14`, () => onClick(point));
+    svg.append(hit);
+    if (isLine) svg.append(svgEl("circle", { cx: x, cy: y, r: index === peakIndex ? 4.5 : 3, fill: INK, class: "ledger-pop" }));
+    if (index === peakIndex) {
+      const value = svgEl("text", { x, y: Math.max(19, y - 11), "text-anchor": "middle", class: "ledger-mobile-value-label ledger-peak-label" });
+      value.textContent = formatCents(point.cents);
+      svg.append(value);
+    }
+    if (index % labelEvery === 0 && index <= points.length - 1 - labelEvery || index === points.length - 1) {
+      const label = svgEl("text", { x, y: base + 23, "text-anchor": "middle", class: "ledger-mobile-axis-label" });
+      label.textContent = point.label.length > 5 ? point.label.slice(-5) : point.label;
+      svg.append(label);
+    }
+  });
+  const outline = svgEl("path", { d: `M${coords.map((point) => `${point.x} ${point.y}`).join(" L ")}`, fill: "none", stroke: INK, "stroke-width": isLine ? 1.8 : 1.2, pathLength: 1, class: "ledger-draw" });
+  if (isLine) svg.insertBefore(outline, svg.firstChild);
+  else svg.append(outline);
+  const foot = svgEl("text", { x: width / 2, y: height - 10, "text-anchor": "middle", class: "ledger-mobile-foot-label" });
+  foot.textContent = points.length > 10 ? "\u5DE6\u53F3\u6ED1\u52A8\u67E5\u770B\u5B8C\u6574\u65F6\u95F4\u8303\u56F4" : "\u70B9\u51FB\u6570\u636E\u70B9\u67E5\u770B\u5BF9\u5E94\u660E\u7EC6";
+  svg.append(foot);
+  viewport.append(svg);
+}
 function renderTrendChart(parent, points, type, onClick) {
   const isLine = type === "line";
   const { shell, chart } = monoCard(
@@ -654,7 +730,7 @@ function renderTrendChart(parent, points, type, onClick) {
   const plotHeight = base - top;
   const max = Math.max(...points.map((point) => point.cents), 1);
   const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": isLine ? "\u652F\u51FA\u53D1\u4E1D\u6298\u7EBF\u56FE" : "\u652F\u51FA\u53D1\u4E1D\u67F1\u72B6\u56FE" });
-  svg.classList.add("ledger-svg", "ledger-hairline-chart");
+  svg.classList.add("ledger-svg", "ledger-hairline-chart", "ledger-desktop-chart");
   for (let tick = 0; tick <= 4; tick += 1) {
     const y = base - tick / 4 * plotHeight;
     svg.append(svgEl("line", { x1: left, y1: y, x2: left + plotWidth, y2: y, stroke: GRID, "stroke-width": 0.6 }));
@@ -706,6 +782,7 @@ function renderTrendChart(parent, points, type, onClick) {
   foot.textContent = isLine ? "ONE DOT = ONE PERIOD \xB7 HAIRLINE PATH \xB7 PEAKS LABELED" : "ONE HAIRLINE = ONE PERIOD, FLOOR TO PEAK";
   svg.append(foot);
   chart.append(svg);
+  renderMobileTrend(chart, points, isLine, onClick);
   sourceLine(shell, `${isLine ? "HAIRLINE LINE" : "HAIRLINE AREA"} \xB7 MONO-BASIC \xB7 LOCAL LEDGER`);
 }
 function renderDumbbell(parent, data, currentLabel, previousLabel, onClick) {
@@ -727,7 +804,7 @@ function renderDumbbell(parent, data, currentLabel, previousLabel, onClick) {
   const unit = niceCurrencyUnit(max, 24);
   const scale = (value) => left + value / max * (right - left);
   const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "\u5206\u7C7B\u652F\u51FA\u4E24\u671F\u54D1\u94C3\u5BF9\u6BD4\u56FE" });
-  svg.classList.add("ledger-svg", "ledger-dumbbell-chart");
+  svg.classList.add("ledger-svg", "ledger-dumbbell-chart", "ledger-desktop-chart");
   data.forEach((item, index) => {
     const y = 34 + index * rowHeight;
     const previousX = scale(item.previousCents);
@@ -757,6 +834,27 @@ function renderDumbbell(parent, data, currentLabel, previousLabel, onClick) {
   foot.textContent = `ONE BEAD \u2248 ${formatCents(unit)} CHANGE \xB7 HOLLOW = BASE \xB7 INK = CURRENT`;
   svg.append(foot);
   chart.append(svg);
+  const mobile = chart.createDiv({ cls: "ledger-mobile-dumbbells" });
+  data.forEach((item) => {
+    const row = mobile.createEl("button", { cls: "ledger-mobile-dumbbell" });
+    row.type = "button";
+    row.setAttribute("aria-label", `${item.category}\uFF0C\u672C\u671F ${formatCents(item.currentCents)}\uFF0C\u57FA\u671F ${formatCents(item.previousCents)}`);
+    const head = row.createDiv({ cls: "ledger-mobile-chart-head" });
+    head.createEl("strong", { text: item.category });
+    const delta = item.currentCents - item.previousCents;
+    head.createSpan({ cls: "ledger-mobile-delta", text: `${delta > 0 ? "+" : ""}${formatCents(delta)}` });
+    const scales = row.createDiv({ cls: "ledger-mobile-dumbbell-scales", attr: { "aria-hidden": "true" } });
+    for (const [label, value, kind] of [[previousLabel, item.previousCents, "is-base"], [currentLabel, item.currentCents, "is-current"]]) {
+      const scaleRow = scales.createDiv({ cls: "ledger-mobile-scale-row" });
+      scaleRow.createSpan({ text: label });
+      const track = scaleRow.createDiv({ cls: "ledger-mobile-scale-track" });
+      const line = track.createSpan({ cls: `ledger-mobile-scale-fill ${kind}` });
+      line.style.width = `${Math.max(value > 0 ? 2 : 0, value / max * 100)}%`;
+      const valueEl = scaleRow.createEl("strong", { text: formatCents(value) });
+      valueEl.setAttribute("aria-hidden", "true");
+    }
+    row.addEventListener("click", () => onClick(item.category));
+  });
   sourceLine(shell, "DUMBBELL QUEUE \xB7 MONO-BASIC \xB7 LOCAL LEDGER COMPARISON");
 }
 function renderEmpty(parent, message) {
@@ -828,6 +926,7 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     this.detailSort = "newest";
     this.compareMode = "auto";
     this.showDiagnostics = false;
+    this.filtersExpanded = !import_obsidian3.Platform.isMobile;
     this.activeView = plugin.settings.defaultView;
     const range = initialRange();
     this.filter = {
@@ -895,20 +994,36 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     scope.setText(this.filter.scope === "consumption" ? "\u5F53\u524D\u53E3\u5F84\uFF1A\u6D88\u8D39\u652F\u51FA" : "\u5F53\u524D\u53E3\u5F84\uFF1A\u5168\u90E8\u652F\u51FA");
   }
   renderToolbar(root) {
-    var _a;
-    const toolbar = root.createDiv({ cls: "ledger-toolbar" });
+    var _a, _b;
+    const panel = root.createEl("details", { cls: "ledger-filter-panel" });
+    panel.open = this.filtersExpanded;
+    const summary = panel.createEl("summary", { cls: "ledger-filter-summary" });
+    const summaryIcon = summary.createSpan({ cls: "ledger-filter-summary-icon" });
+    (0, import_obsidian3.setIcon)(summaryIcon, "sliders-horizontal");
+    const summaryCopy = summary.createSpan({ cls: "ledger-filter-summary-copy" });
+    summaryCopy.createEl("strong", { text: "\u7B5B\u9009\u6761\u4EF6" });
+    const categoryLabel = (_a = this.filter.categories[0]) != null ? _a : "\u5168\u90E8\u5206\u7C7B";
+    const scopeLabel = this.filter.scope === "consumption" ? "\u6D88\u8D39\u652F\u51FA" : "\u5168\u90E8\u652F\u51FA";
+    summaryCopy.createSpan({ text: `${this.filter.range.start.slice(5).replace("-", ".")}\u2013${this.filter.range.end.slice(5).replace("-", ".")} \xB7 ${scopeLabel} \xB7 ${categoryLabel}` });
+    const summaryChevron = summary.createSpan({ cls: "ledger-filter-summary-chevron" });
+    (0, import_obsidian3.setIcon)(summaryChevron, "chevron-down");
+    panel.addEventListener("toggle", () => {
+      this.filtersExpanded = panel.open;
+    });
+    const toolbar = panel.createDiv({ cls: "ledger-toolbar" });
     addSelect(toolbar, "\u65F6\u95F4", this.preset, [["month", "\u672C\u6708"], ["previous", "\u4E0A\u6708"], ["year", "\u4ECA\u5E74"], ["custom", "\u81EA\u5B9A\u4E49"]], (value) => {
       this.applyPreset(value);
       this.render();
     });
-    addDateInput(toolbar, "\u5F00\u59CB", this.filter.range.start, (value) => {
+    const dates = toolbar.createDiv({ cls: "ledger-date-range", attr: { "aria-label": "\u65E5\u671F\u8303\u56F4" } });
+    addDateInput(dates, "\u5F00\u59CB", this.filter.range.start, (value) => {
       if (isValidIsoDate(value) && value <= this.filter.range.end) {
         this.preset = "custom";
         this.filter.range.start = value;
         this.render();
       }
     });
-    addDateInput(toolbar, "\u7ED3\u675F", this.filter.range.end, (value) => {
+    addDateInput(dates, "\u7ED3\u675F", this.filter.range.end, (value) => {
       if (isValidIsoDate(value) && value >= this.filter.range.start) {
         this.preset = "custom";
         this.filter.range.end = value;
@@ -920,11 +1035,12 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
       this.render();
     });
     const categories = this.allCategories();
-    addSelect(toolbar, "\u5206\u7C7B", (_a = this.filter.categories[0]) != null ? _a : "", [["", "\u5168\u90E8\u5206\u7C7B"], ...categories.map((category) => [category, category])], (value) => {
+    addSelect(toolbar, "\u5206\u7C7B", (_b = this.filter.categories[0]) != null ? _b : "", [["", "\u5168\u90E8\u5206\u7C7B"], ...categories.map((category) => [category, category])], (value) => {
       this.filter.categories = value ? [value] : [];
       this.render();
     });
-    const refresh = createButton(toolbar, "\u5237\u65B0");
+    const refresh = createButton(toolbar, "\u5237\u65B0\u6570\u636E");
+    refresh.addClass("ledger-refresh-button");
     (0, import_obsidian3.setIcon)(refresh.createSpan(), "refresh-cw");
     refresh.addEventListener("click", async () => {
       refresh.disabled = true;
