@@ -116,6 +116,7 @@ export class LedgerStatisticsView extends ItemView {
   private touchStartY = 0;
   private touchStartX = 0;
   private pullHint: HTMLElement | null = null;
+  private settleTimer: number | null = null;
 
   constructor(leaf: WorkspaceLeaf, private plugin: LedgerStatisticsPlugin) {
     super(leaf);
@@ -149,6 +150,10 @@ export class LedgerStatisticsView extends ItemView {
   requestRender(): void {
     this.filter.excludedCategories = [...this.plugin.settings.excludedCategories];
     this.render();
+  }
+
+  async onClose(): Promise<void> {
+    this.resetAutoAdvanceArm();
   }
 
   refreshSettings(): void {
@@ -593,6 +598,7 @@ export class LedgerStatisticsView extends ItemView {
   }
 
   private handleAutoAdvanceTouchStart(event: TouchEvent): void {
+    if (this.settleTimer !== null) return;
     this.resetAutoAdvanceArm();
     if (!Platform.isMobile || event.touches.length !== 1 || !this.pullHint) return;
     const target = event.target;
@@ -624,17 +630,27 @@ export class LedgerStatisticsView extends ItemView {
   }
 
   private finishPull(cancelled: boolean): void {
+    if (this.settleTimer !== null) return;
     const next = VIEW_NAMES[VIEW_NAMES.findIndex(([id]) => id === this.activeView) + 1];
     const advance = !cancelled && this.pullEligible && this.pullDistance >= AUTO_ADVANCE_SWIPE_DISTANCE;
     this.resetAutoAdvanceArm();
     if (advance && next) {
-      this.activeView = next[0];
-      this.render();
-      this.contentEl.scrollTop = 0;
+      this.pullHint?.setText(`回弹后进入${next[1]}`);
+      // Keep the current content mounted for its 320ms return transition.
+      this.settleTimer = window.setTimeout(() => {
+        this.settleTimer = null;
+        this.activeView = next[0];
+        this.render();
+        this.contentEl.scrollTop = 0;
+      }, 360);
     }
   }
 
   private resetAutoAdvanceArm(): void {
+    if (this.settleTimer !== null) {
+      window.clearTimeout(this.settleTimer);
+      this.settleTimer = null;
+    }
     this.pullEligible = false;
     this.pullDistance = 0;
     this.contentEl.removeClass("ledger-is-pulling");

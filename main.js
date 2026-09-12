@@ -954,6 +954,7 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     this.touchStartY = 0;
     this.touchStartX = 0;
     this.pullHint = null;
+    this.settleTimer = null;
     this.activeView = plugin.settings.defaultView;
     const range = initialRange();
     this.filter = {
@@ -987,6 +988,9 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
   requestRender() {
     this.filter.excludedCategories = [...this.plugin.settings.excludedCategories];
     this.render();
+  }
+  async onClose() {
+    this.resetAutoAdvanceArm();
   }
   refreshSettings() {
     this.filter.excludedCategories = [...this.plugin.settings.excludedCategories];
@@ -1440,6 +1444,7 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     this.drillContext = null;
   }
   handleAutoAdvanceTouchStart(event) {
+    if (this.settleTimer !== null) return;
     this.resetAutoAdvanceArm();
     if (!import_obsidian3.Platform.isMobile || event.touches.length !== 1 || !this.pullHint) return;
     const target = event.target;
@@ -1470,16 +1475,26 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     this.pullHint.setText(this.pullDistance >= AUTO_ADVANCE_SWIPE_DISTANCE ? `\u677E\u624B\u5207\u6362\u5230${next[1]}` : `\u7EE7\u7EED\u4E0A\u62C9\uFF0C\u67E5\u770B${next[1]}`);
   }
   finishPull(cancelled) {
+    var _a;
+    if (this.settleTimer !== null) return;
     const next = VIEW_NAMES2[VIEW_NAMES2.findIndex(([id]) => id === this.activeView) + 1];
     const advance = !cancelled && this.pullEligible && this.pullDistance >= AUTO_ADVANCE_SWIPE_DISTANCE;
     this.resetAutoAdvanceArm();
     if (advance && next) {
-      this.activeView = next[0];
-      this.render();
-      this.contentEl.scrollTop = 0;
+      (_a = this.pullHint) == null ? void 0 : _a.setText(`\u56DE\u5F39\u540E\u8FDB\u5165${next[1]}`);
+      this.settleTimer = window.setTimeout(() => {
+        this.settleTimer = null;
+        this.activeView = next[0];
+        this.render();
+        this.contentEl.scrollTop = 0;
+      }, 360);
     }
   }
   resetAutoAdvanceArm() {
+    if (this.settleTimer !== null) {
+      window.clearTimeout(this.settleTimer);
+      this.settleTimer = null;
+    }
     this.pullEligible = false;
     this.pullDistance = 0;
     this.contentEl.removeClass("ledger-is-pulling");
