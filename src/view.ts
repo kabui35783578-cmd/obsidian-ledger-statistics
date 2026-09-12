@@ -115,6 +115,7 @@ export class LedgerStatisticsView extends ItemView {
   private pullDistance = 0;
   private touchStartY = 0;
   private touchStartX = 0;
+  private pullPeakDistance = 0;
   private pullHint: HTMLElement | null = null;
   private settleTimer: number | null = null;
 
@@ -598,7 +599,7 @@ export class LedgerStatisticsView extends ItemView {
   }
 
   private handleAutoAdvanceTouchStart(event: TouchEvent): void {
-    if (this.settleTimer !== null) return;
+    // A new touch cancels even a previously confirmed, delayed page switch.
     this.resetAutoAdvanceArm();
     if (!Platform.isMobile || event.touches.length !== 1 || !this.pullHint) return;
     const target = event.target;
@@ -614,7 +615,8 @@ export class LedgerStatisticsView extends ItemView {
     if (event.touches.length !== 1) { this.resetAutoAdvanceArm(); return; }
     const dy = this.touchStartY - event.touches[0].clientY;
     const dx = Math.abs(this.touchStartX - event.touches[0].clientX);
-    if (dy < -8 || dx > Math.max(18, Math.abs(dy))) {
+    this.pullPeakDistance = Math.max(this.pullPeakDistance, dy);
+    if (dy < -8 || this.pullPeakDistance - dy > 8 || dx > Math.max(18, Math.abs(dy))) {
       this.resetAutoAdvanceArm();
       return;
     }
@@ -653,6 +655,7 @@ export class LedgerStatisticsView extends ItemView {
     }
     this.pullEligible = false;
     this.pullDistance = 0;
+    this.pullPeakDistance = 0;
     this.contentEl.removeClass("ledger-is-pulling");
     this.contentEl.style.setProperty("--ledger-pull", "0px");
     if (this.pullHint) {

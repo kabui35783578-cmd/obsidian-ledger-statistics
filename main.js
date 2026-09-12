@@ -953,6 +953,7 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     this.pullDistance = 0;
     this.touchStartY = 0;
     this.touchStartX = 0;
+    this.pullPeakDistance = 0;
     this.pullHint = null;
     this.settleTimer = null;
     this.activeView = plugin.settings.defaultView;
@@ -1444,7 +1445,6 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     this.drillContext = null;
   }
   handleAutoAdvanceTouchStart(event) {
-    if (this.settleTimer !== null) return;
     this.resetAutoAdvanceArm();
     if (!import_obsidian3.Platform.isMobile || event.touches.length !== 1 || !this.pullHint) return;
     const target = event.target;
@@ -1461,7 +1461,8 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     }
     const dy = this.touchStartY - event.touches[0].clientY;
     const dx = Math.abs(this.touchStartX - event.touches[0].clientX);
-    if (dy < -8 || dx > Math.max(18, Math.abs(dy))) {
+    this.pullPeakDistance = Math.max(this.pullPeakDistance, dy);
+    if (dy < -8 || this.pullPeakDistance - dy > 8 || dx > Math.max(18, Math.abs(dy))) {
       this.resetAutoAdvanceArm();
       return;
     }
@@ -1497,6 +1498,7 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     }
     this.pullEligible = false;
     this.pullDistance = 0;
+    this.pullPeakDistance = 0;
     this.contentEl.removeClass("ledger-is-pulling");
     this.contentEl.style.setProperty("--ledger-pull", "0px");
     if (this.pullHint) {
