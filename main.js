@@ -897,6 +897,18 @@ function daysInclusive(range) {
   const end = /* @__PURE__ */ new Date(`${range.end}T12:00:00`);
   return Math.max(1, Math.round((end.getTime() - start.getTime()) / 864e5) + 1);
 }
+function cloneFilter(filter) {
+  return {
+    range: { ...filter.range },
+    scope: filter.scope,
+    excludedCategories: [...filter.excludedCategories],
+    categories: [...filter.categories],
+    keyword: filter.keyword
+  };
+}
+function rangeLabel(range) {
+  return range.start === range.end ? range.start : `${range.start}\u2013${range.end}`;
+}
 function pct(value) {
   return `${(value * 100).toFixed(1)}%`;
 }
@@ -935,6 +947,7 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     this.compareMode = "auto";
     this.showDiagnostics = false;
     this.filtersExpanded = !import_obsidian3.Platform.isMobile;
+    this.drillContext = null;
     this.activeView = plugin.settings.defaultView;
     const range = initialRange();
     this.filter = {
@@ -979,6 +992,7 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     this.renderHeader(root);
     this.renderToolbar(root);
     this.renderTabs(root);
+    this.renderDrillBack(root);
     const content = root.createDiv({ cls: "ledger-content" });
     const files = [...this.plugin.repository.files.values()];
     if (files.length === 0) {
@@ -1026,6 +1040,7 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     const dates = toolbar.createDiv({ cls: "ledger-date-range", attr: { "aria-label": "\u65E5\u671F\u8303\u56F4" } });
     addDateInput(dates, "\u5F00\u59CB", this.filter.range.start, (value) => {
       if (isValidIsoDate(value) && value <= this.filter.range.end) {
+        this.clearDrillContext();
         this.preset = "custom";
         this.filter.range.start = value;
         this.render();
@@ -1033,17 +1048,20 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     });
     addDateInput(dates, "\u7ED3\u675F", this.filter.range.end, (value) => {
       if (isValidIsoDate(value) && value >= this.filter.range.start) {
+        this.clearDrillContext();
         this.preset = "custom";
         this.filter.range.end = value;
         this.render();
       }
     });
     addSelect(toolbar, "\u53E3\u5F84", this.filter.scope, [["consumption", "\u6D88\u8D39\u652F\u51FA"], ["all", "\u5168\u90E8\u652F\u51FA"]], (value) => {
+      this.clearDrillContext();
       this.filter.scope = value;
       this.render();
     });
     const categories = this.allCategories();
     addSelect(toolbar, "\u5206\u7C7B", (_b = this.filter.categories[0]) != null ? _b : "", [["", "\u5168\u90E8\u5206\u7C7B"], ...categories.map((category) => [category, category])], (value) => {
+      this.clearDrillContext();
       this.filter.categories = value ? [value] : [];
       this.render();
     });
@@ -1068,6 +1086,17 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
         this.render();
       });
     }
+  }
+  renderDrillBack(root) {
+    if (!this.drillContext) return;
+    const banner = root.createDiv({ cls: "ledger-drill-back" });
+    const copy = banner.createDiv({ cls: "ledger-drill-back-copy" });
+    copy.createDiv({ cls: "ledger-drill-back-label", text: "\u6B63\u5728\u67E5\u770B\u4E0B\u94BB\u660E\u7EC6" });
+    copy.createDiv({ cls: "ledger-drill-back-range", text: `\u539F\u7B5B\u9009\uFF1A${rangeLabel(this.drillContext.filter.range)}` });
+    const back = createButton(banner, "\u8FD4\u56DE\u4E0A\u4E00\u7EA7");
+    back.addClass("ledger-drill-back-button");
+    (0, import_obsidian3.setIcon)(back.createSpan({ cls: "ledger-drill-back-icon" }), "arrow-left");
+    back.addEventListener("click", () => this.restoreDrillContext());
   }
   renderOverview(parent) {
     const files = [...this.plugin.repository.files.values()];
@@ -1217,7 +1246,8 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
       top.createEl("strong", { text: formatCents(record.cents) });
       card.createDiv({ cls: "ledger-detail-category", text: record.category });
       if (record.note) card.createDiv({ text: record.note });
-      const source = card.createEl("button", { cls: "ledger-link-button", text: `\u6253\u5F00\u6765\u6E90 \xB7 \u7B2C ${record.line} \u884C` });
+      const footer = card.createDiv({ cls: "ledger-detail-card-footer" });
+      const source = footer.createEl("button", { cls: "ledger-link-button ledger-source-button", text: `\u6253\u5F00\u6765\u6E90 \xB7 \u7B2C ${record.line} \u884C` });
       source.addEventListener("click", () => void this.openRecord(record));
     }
   }
@@ -1335,6 +1365,7 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     if (onClick) card.addEventListener("click", onClick);
   }
   applyPreset(preset) {
+    this.clearDrillContext();
     this.preset = preset;
     const now = /* @__PURE__ */ new Date();
     if (preset === "month") this.filter.range = initialRange();
@@ -1349,11 +1380,13 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     this.render();
   }
   drillCategory(category) {
+    this.captureDrillContext();
     this.filter.categories = [category];
     this.activeView = "details";
     this.render();
   }
   drillRange(range) {
+    this.captureDrillContext();
     this.filter.range = range;
     this.preset = "custom";
     this.activeView = "details";
@@ -1364,9 +1397,30 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     return days <= 45 ? "day" : days <= 240 ? "week" : "month";
   }
   setCalendarMonth(year, month) {
+    this.clearDrillContext();
     this.filter.range = monthRange(year, month);
     this.preset = "custom";
     this.render();
+  }
+  captureDrillContext() {
+    if (this.drillContext) return;
+    this.drillContext = {
+      filter: cloneFilter(this.filter),
+      preset: this.preset,
+      view: this.activeView
+    };
+  }
+  restoreDrillContext() {
+    if (!this.drillContext) return;
+    const context = this.drillContext;
+    this.filter = cloneFilter(context.filter);
+    this.preset = context.preset;
+    this.activeView = context.view;
+    this.drillContext = null;
+    this.render();
+  }
+  clearDrillContext() {
+    this.drillContext = null;
   }
   sortDetails(records) {
     const copy = [...records];

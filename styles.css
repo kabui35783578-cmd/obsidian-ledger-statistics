@@ -267,6 +267,64 @@
   flex: 0 0 auto;
 }
 
+.ledger-drill-back {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: -8px 0 18px;
+  padding: 10px 12px 10px 15px;
+  border: 1px solid var(--mono-grid);
+  border-radius: 18px;
+  background: var(--mono-7);
+}
+
+.ledger-drill-back-copy {
+  min-width: 0;
+}
+
+.ledger-drill-back-label {
+  color: var(--mono-ink);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.ledger-drill-back-range {
+  overflow: hidden;
+  margin-top: 2px;
+  color: var(--mono-muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ledger-drill-back-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  min-height: 36px;
+  padding: 6px 11px;
+  background: var(--mono-paper);
+  color: var(--mono-ink);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.ledger-drill-back-button:hover {
+  background: var(--mono-ink);
+  color: var(--mono-paper);
+}
+
+.ledger-drill-back-icon {
+  display: inline-flex;
+}
+
+.ledger-drill-back-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
 .ledger-content {
   min-height: 280px;
 }
@@ -628,6 +686,30 @@ button.ledger-metric:hover {
   color: var(--mono-ink);
 }
 
+.ledger-detail-card-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--mono-ink) 12%, transparent);
+}
+
+.ledger-source-button {
+  min-height: 34px;
+  padding: 5px 10px;
+  border: 1px solid color-mix(in srgb, var(--mono-ink) 20%, transparent);
+  border-radius: 999px;
+  background: var(--mono-paper);
+  color: var(--mono-2);
+  font-size: 10px;
+  text-decoration: none;
+}
+
+.ledger-source-button:hover {
+  background: var(--mono-ink);
+  color: var(--mono-paper);
+}
+
 .ledger-link-button {
   min-height: 34px;
   padding: 3px 8px;
@@ -875,6 +957,28 @@ button.ledger-metric:hover {
     font-size: 12px;
   }
 
+  .ledger-drill-back {
+    align-items: stretch;
+    gap: 10px;
+    margin: -4px 0 14px;
+    padding: 10px;
+    border-radius: 16px;
+  }
+
+  .ledger-drill-back-copy {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .ledger-drill-back-button {
+    min-height: 40px;
+    padding: 7px 10px;
+    font-size: 10px;
+  }
+
   .ledger-details-table {
     display: none;
   }
@@ -888,6 +992,17 @@ button.ledger-metric:hover {
     padding: 16px;
     border: 0;
     border-radius: 20px;
+  }
+
+  .ledger-detail-card-footer {
+    margin-top: 14px;
+    padding-top: 11px;
+  }
+
+  .ledger-source-button {
+    min-height: 38px;
+    padding: 7px 12px;
+    font-size: 11px;
   }
 
   .ledger-detail-card-top {

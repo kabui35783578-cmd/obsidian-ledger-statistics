@@ -29,6 +29,12 @@ const VIEW_NAMES: Array<[LedgerViewId, string]> = [
 
 type DatePreset = "month" | "previous" | "year" | "custom";
 
+type DrillContext = {
+  filter: FilterState;
+  preset: DatePreset;
+  view: LedgerViewId;
+};
+
 function todayIso(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -43,6 +49,20 @@ function daysInclusive(range: DateRange): number {
   const start = new Date(`${range.start}T12:00:00`);
   const end = new Date(`${range.end}T12:00:00`);
   return Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1);
+}
+
+function cloneFilter(filter: FilterState): FilterState {
+  return {
+    range: { ...filter.range },
+    scope: filter.scope,
+    excludedCategories: [...filter.excludedCategories],
+    categories: [...filter.categories],
+    keyword: filter.keyword
+  };
+}
+
+function rangeLabel(range: DateRange): string {
+  return range.start === range.end ? range.start : `${range.start}–${range.end}`;
 }
 
 function pct(value: number): string {
@@ -88,6 +108,7 @@ export class LedgerStatisticsView extends ItemView {
   private customPrevious: DateRange;
   private showDiagnostics = false;
   private filtersExpanded = !Platform.isMobile;
+  private drillContext: DrillContext | null = null;
 
   constructor(leaf: WorkspaceLeaf, private plugin: LedgerStatisticsPlugin) {
     super(leaf);
@@ -134,6 +155,7 @@ export class LedgerStatisticsView extends ItemView {
     this.renderHeader(root);
     this.renderToolbar(root);
     this.renderTabs(root);
+    this.renderDrillBack(root);
     const content = root.createDiv({ cls: "ledger-content" });
     const files = [...this.plugin.repository.files.values()];
     if (files.length === 0) {
@@ -181,6 +203,7 @@ export class LedgerStatisticsView extends ItemView {
     const dates = toolbar.createDiv({ cls: "ledger-date-range", attr: { "aria-label": "日期范围" } });
     addDateInput(dates, "开始", this.filter.range.start, (value) => {
       if (isValidIsoDate(value) && value <= this.filter.range.end) {
+        this.clearDrillContext();
         this.preset = "custom";
         this.filter.range.start = value;
         this.render();
@@ -188,17 +211,20 @@ export class LedgerStatisticsView extends ItemView {
     });
     addDateInput(dates, "结束", this.filter.range.end, (value) => {
       if (isValidIsoDate(value) && value >= this.filter.range.start) {
+        this.clearDrillContext();
         this.preset = "custom";
         this.filter.range.end = value;
         this.render();
       }
     });
     addSelect(toolbar, "口径", this.filter.scope, [["consumption", "消费支出"], ["all", "全部支出"]], (value) => {
+      this.clearDrillContext();
       this.filter.scope = value as AccountingScope;
       this.render();
     });
     const categories = this.allCategories();
     addSelect(toolbar, "分类", this.filter.categories[0] ?? "", [["", "全部分类"], ...categories.map((category) => [category, category] as [string, string])], (value) => {
+      this.clearDrillContext();
       this.filter.categories = value ? [value] : [];
       this.render();
     });
@@ -224,6 +250,18 @@ export class LedgerStatisticsView extends ItemView {
         this.render();
       });
     }
+  }
+
+  private renderDrillBack(root: HTMLElement): void {
+    if (!this.drillContext) return;
+    const banner = root.createDiv({ cls: "ledger-drill-back" });
+    const copy = banner.createDiv({ cls: "ledger-drill-back-copy" });
+    copy.createDiv({ cls: "ledger-drill-back-label", text: "正在查看下钻明细" });
+    copy.createDiv({ cls: "ledger-drill-back-range", text: `原筛选：${rangeLabel(this.drillContext.filter.range)}` });
+    const back = createButton(banner, "返回上一级");
+    back.addClass("ledger-drill-back-button");
+    setIcon(back.createSpan({ cls: "ledger-drill-back-icon" }), "arrow-left");
+    back.addEventListener("click", () => this.restoreDrillContext());
   }
 
   private renderOverview(parent: HTMLElement): void {
@@ -376,7 +414,8 @@ export class LedgerStatisticsView extends ItemView {
       top.createEl("strong", { text: formatCents(record.cents) });
       card.createDiv({ cls: "ledger-detail-category", text: record.category });
       if (record.note) card.createDiv({ text: record.note });
-      const source = card.createEl("button", { cls: "ledger-link-button", text: `打开来源 · 第 ${record.line} 行` });
+      const footer = card.createDiv({ cls: "ledger-detail-card-footer" });
+      const source = footer.createEl("button", { cls: "ledger-link-button ledger-source-button", text: `打开来源 · 第 ${record.line} 行` });
       source.addEventListener("click", () => void this.openRecord(record));
     }
   }
@@ -468,6 +507,7 @@ export class LedgerStatisticsView extends ItemView {
   }
 
   private applyPreset(preset: DatePreset): void {
+    this.clearDrillContext();
     this.preset = preset;
     const now = new Date();
     if (preset === "month") this.filter.range = initialRange();
@@ -485,12 +525,14 @@ export class LedgerStatisticsView extends ItemView {
   }
 
   private drillCategory(category: string): void {
+    this.captureDrillContext();
     this.filter.categories = [category];
     this.activeView = "details";
     this.render();
   }
 
   private drillRange(range: DateRange): void {
+    this.captureDrillContext();
     this.filter.range = range;
     this.preset = "custom";
     this.activeView = "details";
@@ -503,9 +545,33 @@ export class LedgerStatisticsView extends ItemView {
   }
 
   private setCalendarMonth(year: number, month: number): void {
+    this.clearDrillContext();
     this.filter.range = monthRange(year, month);
     this.preset = "custom";
     this.render();
+  }
+
+  private captureDrillContext(): void {
+    if (this.drillContext) return;
+    this.drillContext = {
+      filter: cloneFilter(this.filter),
+      preset: this.preset,
+      view: this.activeView
+    };
+  }
+
+  private restoreDrillContext(): void {
+    if (!this.drillContext) return;
+    const context = this.drillContext;
+    this.filter = cloneFilter(context.filter);
+    this.preset = context.preset;
+    this.activeView = context.view;
+    this.drillContext = null;
+    this.render();
+  }
+
+  private clearDrillContext(): void {
+    this.drillContext = null;
   }
 
   private sortDetails(records: LedgerRecord[]): LedgerRecord[] {
