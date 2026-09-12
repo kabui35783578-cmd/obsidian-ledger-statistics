@@ -329,6 +329,10 @@
   min-height: 280px;
 }
 
+.ledger-scroll-bounce .ledger-content {
+  animation: ledger-bottom-bounce 280ms cubic-bezier(0.2, 0.75, 0.25, 1.1) both;
+}
+
 .ledger-metrics,
 .ledger-compare-summary {
   display: grid;
@@ -795,11 +799,18 @@ button.ledger-metric:hover {
   to { stroke-dashoffset: 0; }
 }
 
+@keyframes ledger-bottom-bounce {
+  0% { transform: translateY(0); }
+  42% { transform: translateY(-8px); }
+  100% { transform: translateY(0); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ledger-reveal,
   .ledger-fade,
   .ledger-pop,
-  .ledger-draw {
+  .ledger-draw,
+  .ledger-scroll-bounce .ledger-content {
     animation: none;
     stroke-dasharray: none;
     stroke-dashoffset: 0;

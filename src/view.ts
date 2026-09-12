@@ -110,6 +110,13 @@ export class LedgerStatisticsView extends ItemView {
   private filtersExpanded = !Platform.isMobile;
   private drillContext: DrillContext | null = null;
   private autoAdvanceReady = true;
+  private autoAdvanceArmed = false;
+  private autoAdvanceArmSession = -1;
+  private autoAdvanceArmedByTouch = false;
+  private autoAdvanceArmedAt = 0;
+  private autoAdvanceBounceInProgress = false;
+  private touchSession = 0;
+  private lastTouchY = 0;
 
   constructor(leaf: WorkspaceLeaf, private plugin: LedgerStatisticsPlugin) {
     super(leaf);
@@ -134,6 +141,8 @@ export class LedgerStatisticsView extends ItemView {
   async onOpen(): Promise<void> {
     this.containerEl.addClass("ledger-statistics-view");
     this.registerDomEvent(this.contentEl, "scroll", () => this.handleAutoAdvanceScroll(), { passive: true });
+    this.registerDomEvent(this.contentEl, "touchstart", (event) => this.handleAutoAdvanceTouchStart(event), { passive: true });
+    this.registerDomEvent(this.contentEl, "touchmove", (event) => this.handleAutoAdvanceTouchMove(event), { passive: true });
     this.render();
   }
 
@@ -250,6 +259,7 @@ export class LedgerStatisticsView extends ItemView {
       button.addEventListener("click", () => {
         this.activeView = id;
         this.autoAdvanceReady = true;
+        this.resetAutoAdvanceArm();
         this.render();
       });
     }
@@ -578,20 +588,76 @@ export class LedgerStatisticsView extends ItemView {
   }
 
   private handleAutoAdvanceScroll(): void {
-    if (!Platform.isMobile || !this.autoAdvanceReady) {
+    if (!Platform.isMobile) return;
+    if (!this.autoAdvanceReady) {
       if (Platform.isMobile && !this.autoAdvanceReady && this.contentEl.scrollTop < this.contentEl.scrollHeight - this.contentEl.clientHeight - 40) {
         this.autoAdvanceReady = true;
       }
       return;
     }
     const remaining = this.contentEl.scrollHeight - this.contentEl.clientHeight - this.contentEl.scrollTop;
-    if (remaining > 28) return;
     const index = VIEW_NAMES.findIndex(([id]) => id === this.activeView);
     if (index < 0 || index >= VIEW_NAMES.length - 1) return;
+    if (remaining > 28) {
+      if (this.autoAdvanceArmed && remaining > 40) this.resetAutoAdvanceArm();
+      return;
+    }
+    if (!this.autoAdvanceArmed) {
+      this.armAutoAdvance();
+      return;
+    }
+    if (this.autoAdvanceBounceInProgress) return;
+    if (this.autoAdvanceArmedByTouch && this.autoAdvanceArmSession === this.touchSession) return;
+    if (!this.autoAdvanceArmedByTouch && Date.now() - this.autoAdvanceArmedAt < 300) return;
+    this.advanceToNextView();
+  }
+
+  private handleAutoAdvanceTouchStart(event: TouchEvent): void {
+    if (!Platform.isMobile) return;
+    this.touchSession += 1;
+    this.lastTouchY = event.touches[0]?.clientY ?? 0;
+  }
+
+  private handleAutoAdvanceTouchMove(event: TouchEvent): void {
+    if (!Platform.isMobile || !this.autoAdvanceArmed || this.autoAdvanceBounceInProgress) return;
+    const y = event.touches[0]?.clientY ?? this.lastTouchY;
+    const movingUp = this.lastTouchY - y > 8;
+    this.lastTouchY = y;
+    if (!movingUp || this.autoAdvanceArmSession === this.touchSession) return;
+    const remaining = this.contentEl.scrollHeight - this.contentEl.clientHeight - this.contentEl.scrollTop;
+    if (remaining <= 28) this.advanceToNextView();
+  }
+
+  private armAutoAdvance(): void {
+    this.autoAdvanceArmed = true;
+    this.autoAdvanceArmSession = this.touchSession;
+    this.autoAdvanceArmedByTouch = this.touchSession > 0;
+    this.autoAdvanceArmedAt = Date.now();
+    this.autoAdvanceBounceInProgress = true;
+    this.contentEl.removeClass("ledger-scroll-bounce");
+    void this.contentEl.offsetWidth;
+    this.contentEl.addClass("ledger-scroll-bounce");
+    window.setTimeout(() => {
+      this.contentEl.removeClass("ledger-scroll-bounce");
+      this.autoAdvanceBounceInProgress = false;
+    }, 280);
+  }
+
+  private advanceToNextView(): void {
+    const index = VIEW_NAMES.findIndex(([id]) => id === this.activeView);
+    if (index < 0 || index >= VIEW_NAMES.length - 1) return;
+    this.resetAutoAdvanceArm();
     this.autoAdvanceReady = false;
     this.activeView = VIEW_NAMES[index + 1][0];
     this.render();
     this.contentEl.scrollTop = 0;
+  }
+
+  private resetAutoAdvanceArm(): void {
+    this.autoAdvanceArmed = false;
+    this.autoAdvanceArmSession = -1;
+    this.autoAdvanceArmedByTouch = false;
+    this.autoAdvanceArmedAt = 0;
   }
 
   private sortDetails(records: LedgerRecord[]): LedgerRecord[] {
