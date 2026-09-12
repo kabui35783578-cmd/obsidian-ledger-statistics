@@ -109,6 +109,7 @@ export class LedgerStatisticsView extends ItemView {
   private showDiagnostics = false;
   private filtersExpanded = !Platform.isMobile;
   private drillContext: DrillContext | null = null;
+  private autoAdvanceReady = true;
 
   constructor(leaf: WorkspaceLeaf, private plugin: LedgerStatisticsPlugin) {
     super(leaf);
@@ -132,6 +133,7 @@ export class LedgerStatisticsView extends ItemView {
 
   async onOpen(): Promise<void> {
     this.containerEl.addClass("ledger-statistics-view");
+    this.registerDomEvent(this.contentEl, "scroll", () => this.handleAutoAdvanceScroll(), { passive: true });
     this.render();
   }
 
@@ -247,6 +249,7 @@ export class LedgerStatisticsView extends ItemView {
       button.setAttribute("aria-selected", String(id === this.activeView));
       button.addEventListener("click", () => {
         this.activeView = id;
+        this.autoAdvanceReady = true;
         this.render();
       });
     }
@@ -572,6 +575,23 @@ export class LedgerStatisticsView extends ItemView {
 
   private clearDrillContext(): void {
     this.drillContext = null;
+  }
+
+  private handleAutoAdvanceScroll(): void {
+    if (!Platform.isMobile || !this.autoAdvanceReady) {
+      if (Platform.isMobile && !this.autoAdvanceReady && this.contentEl.scrollTop < this.contentEl.scrollHeight - this.contentEl.clientHeight - 40) {
+        this.autoAdvanceReady = true;
+      }
+      return;
+    }
+    const remaining = this.contentEl.scrollHeight - this.contentEl.clientHeight - this.contentEl.scrollTop;
+    if (remaining > 28) return;
+    const index = VIEW_NAMES.findIndex(([id]) => id === this.activeView);
+    if (index < 0 || index >= VIEW_NAMES.length - 1) return;
+    this.autoAdvanceReady = false;
+    this.activeView = VIEW_NAMES[index + 1][0];
+    this.render();
+    this.contentEl.scrollTop = 0;
   }
 
   private sortDetails(records: LedgerRecord[]): LedgerRecord[] {

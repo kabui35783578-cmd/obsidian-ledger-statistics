@@ -948,6 +948,7 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     this.showDiagnostics = false;
     this.filtersExpanded = !import_obsidian3.Platform.isMobile;
     this.drillContext = null;
+    this.autoAdvanceReady = true;
     this.activeView = plugin.settings.defaultView;
     const range = initialRange();
     this.filter = {
@@ -972,6 +973,7 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
   }
   async onOpen() {
     this.containerEl.addClass("ledger-statistics-view");
+    this.registerDomEvent(this.contentEl, "scroll", () => this.handleAutoAdvanceScroll(), { passive: true });
     this.render();
   }
   requestRender() {
@@ -1083,6 +1085,7 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
       button.setAttribute("aria-selected", String(id === this.activeView));
       button.addEventListener("click", () => {
         this.activeView = id;
+        this.autoAdvanceReady = true;
         this.render();
       });
     }
@@ -1421,6 +1424,22 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
   }
   clearDrillContext() {
     this.drillContext = null;
+  }
+  handleAutoAdvanceScroll() {
+    if (!import_obsidian3.Platform.isMobile || !this.autoAdvanceReady) {
+      if (import_obsidian3.Platform.isMobile && !this.autoAdvanceReady && this.contentEl.scrollTop < this.contentEl.scrollHeight - this.contentEl.clientHeight - 40) {
+        this.autoAdvanceReady = true;
+      }
+      return;
+    }
+    const remaining = this.contentEl.scrollHeight - this.contentEl.clientHeight - this.contentEl.scrollTop;
+    if (remaining > 28) return;
+    const index = VIEW_NAMES2.findIndex(([id]) => id === this.activeView);
+    if (index < 0 || index >= VIEW_NAMES2.length - 1) return;
+    this.autoAdvanceReady = false;
+    this.activeView = VIEW_NAMES2[index + 1][0];
+    this.render();
+    this.contentEl.scrollTop = 0;
   }
   sortDetails(records) {
     const copy = [...records];
