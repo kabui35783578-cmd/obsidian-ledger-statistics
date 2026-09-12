@@ -1,0 +1,9 @@
+{
+  "id": "ledger-statistics",
+  "name": "记账统计",
+  "version": "1.0.0",
+  "minAppVersion": "1.5.12",
+  "description": "从每日记账 Markdown 中进行本地、只读、多视图统计。",
+  "author": "Local",
+  "isDesktopOnly": false
+}
