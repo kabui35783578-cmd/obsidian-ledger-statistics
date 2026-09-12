@@ -884,6 +884,7 @@ var VIEW_NAMES2 = [
   ["details", "\u660E\u7EC6"],
   ["compare", "\u5BF9\u6BD4"]
 ];
+var AUTO_ADVANCE_SWIPE_DISTANCE = 64;
 function todayIso() {
   const now = /* @__PURE__ */ new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -956,6 +957,7 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     this.autoAdvanceBounceInProgress = false;
     this.touchSession = 0;
     this.lastTouchY = 0;
+    this.touchStartY = 0;
     this.activeView = plugin.settings.defaultView;
     const range = initialRange();
     this.filter = {
@@ -1446,6 +1448,10 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     const remaining = this.contentEl.scrollHeight - this.contentEl.clientHeight - this.contentEl.scrollTop;
     const index = VIEW_NAMES2.findIndex(([id]) => id === this.activeView);
     if (index < 0 || index >= VIEW_NAMES2.length - 1) return;
+    if (this.autoAdvanceArmedByTouch) {
+      if (this.autoAdvanceArmed && remaining > 40) this.resetAutoAdvanceArm();
+      return;
+    }
     if (remaining > 28) {
       if (this.autoAdvanceArmed && remaining > 40) this.resetAutoAdvanceArm();
       return;
@@ -1464,6 +1470,7 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     if (!import_obsidian3.Platform.isMobile) return;
     this.touchSession += 1;
     this.lastTouchY = (_b = (_a = event.touches[0]) == null ? void 0 : _a.clientY) != null ? _b : 0;
+    this.touchStartY = this.lastTouchY;
   }
   handleAutoAdvanceTouchMove(event) {
     var _a, _b;
@@ -1471,7 +1478,8 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     const y = (_b = (_a = event.touches[0]) == null ? void 0 : _a.clientY) != null ? _b : this.lastTouchY;
     const movingUp = this.lastTouchY - y > 8;
     this.lastTouchY = y;
-    if (!movingUp || this.autoAdvanceArmSession === this.touchSession) return;
+    const swipeDistance = this.touchStartY - y;
+    if (!movingUp || swipeDistance < AUTO_ADVANCE_SWIPE_DISTANCE || this.autoAdvanceArmSession === this.touchSession) return;
     const remaining = this.contentEl.scrollHeight - this.contentEl.clientHeight - this.contentEl.scrollTop;
     if (remaining <= 28) this.advanceToNextView();
   }

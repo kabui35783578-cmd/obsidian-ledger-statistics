@@ -27,6 +27,8 @@ const VIEW_NAMES: Array<[LedgerViewId, string]> = [
   ["calendar", "日历"], ["details", "明细"], ["compare", "对比"]
 ];
 
+const AUTO_ADVANCE_SWIPE_DISTANCE = 64;
+
 type DatePreset = "month" | "previous" | "year" | "custom";
 
 type DrillContext = {
@@ -117,6 +119,7 @@ export class LedgerStatisticsView extends ItemView {
   private autoAdvanceBounceInProgress = false;
   private touchSession = 0;
   private lastTouchY = 0;
+  private touchStartY = 0;
 
   constructor(leaf: WorkspaceLeaf, private plugin: LedgerStatisticsPlugin) {
     super(leaf);
@@ -598,6 +601,10 @@ export class LedgerStatisticsView extends ItemView {
     const remaining = this.contentEl.scrollHeight - this.contentEl.clientHeight - this.contentEl.scrollTop;
     const index = VIEW_NAMES.findIndex(([id]) => id === this.activeView);
     if (index < 0 || index >= VIEW_NAMES.length - 1) return;
+    if (this.autoAdvanceArmedByTouch) {
+      if (this.autoAdvanceArmed && remaining > 40) this.resetAutoAdvanceArm();
+      return;
+    }
     if (remaining > 28) {
       if (this.autoAdvanceArmed && remaining > 40) this.resetAutoAdvanceArm();
       return;
@@ -616,6 +623,7 @@ export class LedgerStatisticsView extends ItemView {
     if (!Platform.isMobile) return;
     this.touchSession += 1;
     this.lastTouchY = event.touches[0]?.clientY ?? 0;
+    this.touchStartY = this.lastTouchY;
   }
 
   private handleAutoAdvanceTouchMove(event: TouchEvent): void {
@@ -623,7 +631,8 @@ export class LedgerStatisticsView extends ItemView {
     const y = event.touches[0]?.clientY ?? this.lastTouchY;
     const movingUp = this.lastTouchY - y > 8;
     this.lastTouchY = y;
-    if (!movingUp || this.autoAdvanceArmSession === this.touchSession) return;
+    const swipeDistance = this.touchStartY - y;
+    if (!movingUp || swipeDistance < AUTO_ADVANCE_SWIPE_DISTANCE || this.autoAdvanceArmSession === this.touchSession) return;
     const remaining = this.contentEl.scrollHeight - this.contentEl.clientHeight - this.contentEl.scrollTop;
     if (remaining <= 28) this.advanceToNextView();
   }
