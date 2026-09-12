@@ -109,6 +109,16 @@ export function isValidIsoDate(value: string): boolean {
   return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
 }
 
+function frontmatterCalendarDate(value: string): string | null {
+  const trimmed = value.trim();
+  const unquoted = ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'")))
+    ? trimmed.slice(1, -1).trim()
+    : trimmed;
+  const match = /^(\d{4}-\d{2}-\d{2})(?:[Tt ](?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,9})?)?(?:Z|[+-](?:[01]\d|2[0-3]):?[0-5]\d)?)?$/.exec(unquoted);
+  if (!match || !isValidIsoDate(match[1])) return null;
+  return match[1];
+}
+
 function filenameDate(path: string): string | null {
   const name = path.split("/").pop() ?? path;
   const match = /^(\d{4})(\d{2})(\d{2})日记账\.md$/.exec(name);
@@ -141,10 +151,11 @@ export function parseLedgerFile(path: string, raw: string): ParsedLedgerFile {
   const records: LedgerRecord[] = [];
   const frontmatter = parseFrontmatter(raw);
   const fallbackDate = filenameDate(path);
+  const normalizedFrontmatterDate = frontmatter.date ? frontmatterCalendarDate(frontmatter.date) : null;
   let date: string | null = null;
 
-  if (frontmatter.date && isValidIsoDate(frontmatter.date)) {
-    date = frontmatter.date;
+  if (normalizedFrontmatterDate) {
+    date = normalizedFrontmatterDate;
     if (fallbackDate && fallbackDate !== date) {
       diagnostics.push({ kind: "date", path, reason: `frontmatter 日期 ${date} 与文件名日期 ${fallbackDate} 不一致` });
     }

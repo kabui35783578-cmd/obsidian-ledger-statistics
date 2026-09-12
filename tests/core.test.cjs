@@ -50,6 +50,33 @@ test("falls back to filename date, reports missing date, and still verifies tota
   assert.equal(parsed.diagnostics.filter((item) => item.kind === "total").length, 0);
 });
 
+test("accepts Obsidian ISO datetime frontmatter as its written calendar date", () => {
+  const may = note("2026-05-28", "- 12:32｜餐饮｜￥80.31", "80.31")
+    .replace("date: 2026-05-28", "date: 2026-05-28T13:56:00");
+  const june = note("2026-06-01", "- 12:09｜餐饮｜￥41.10", "41.10")
+    .replace("date: 2026-06-01", "date: '2026-06-01T00:00:00'");
+  const withOffset = note("2026-05-28", "- 12:32｜餐饮｜￥1.00", "1.00")
+    .replace("date: 2026-05-28", "date: 2026-05-28T23:30:00-05:00");
+
+  for (const [path, raw, expected] of [
+    ["记账/20260528日记账.md", may, "2026-05-28"],
+    ["记账/20260601日记账.md", june, "2026-06-01"],
+    ["记账/20260528日记账.md", withOffset, "2026-05-28"]
+  ]) {
+    const parsed = parseLedgerFile(path, raw);
+    assert.equal(parsed.date, expected);
+    assert.equal(parsed.diagnostics.filter((item) => item.kind === "date").length, 0);
+  }
+});
+
+test("rejects an invalid frontmatter time instead of accepting only its date prefix", () => {
+  const raw = note("2026-05-28", "- 12:32｜餐饮｜￥1.00", "1.00")
+    .replace("date: 2026-05-28", "date: 2026-05-28T25:61:00");
+  const parsed = parseLedgerFile("记账/20260528日记账.md", raw);
+  assert.equal(parsed.date, "2026-05-28");
+  assert.ok(parsed.diagnostics.some((item) => item.kind === "date" && item.reason.includes("无效")));
+});
+
 test("reports frontmatter total mismatch without changing records", () => {
   const parsed = parseLedgerFile("记账/20260912日记账.md", note("2026-09-12", "- 12:00｜餐饮｜￥10.00", "12.00"));
   assert.equal(parsed.records[0].cents, 1000);

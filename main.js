@@ -75,6 +75,13 @@ function isValidIsoDate(value) {
   const date = new Date(year, month - 1, day, 12);
   return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
 }
+function frontmatterCalendarDate(value) {
+  const trimmed = value.trim();
+  const unquoted = trimmed.startsWith('"') && trimmed.endsWith('"') || trimmed.startsWith("'") && trimmed.endsWith("'") ? trimmed.slice(1, -1).trim() : trimmed;
+  const match = /^(\d{4}-\d{2}-\d{2})(?:[Tt ](?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,9})?)?(?:Z|[+-](?:[01]\d|2[0-3]):?[0-5]\d)?)?$/.exec(unquoted);
+  if (!match || !isValidIsoDate(match[1])) return null;
+  return match[1];
+}
 function filenameDate(path) {
   var _a;
   const name = (_a = path.split("/").pop()) != null ? _a : path;
@@ -108,9 +115,10 @@ function parseLedgerFile(path, raw) {
   const records = [];
   const frontmatter = parseFrontmatter(raw);
   const fallbackDate = filenameDate(path);
+  const normalizedFrontmatterDate = frontmatter.date ? frontmatterCalendarDate(frontmatter.date) : null;
   let date = null;
-  if (frontmatter.date && isValidIsoDate(frontmatter.date)) {
-    date = frontmatter.date;
+  if (normalizedFrontmatterDate) {
+    date = normalizedFrontmatterDate;
     if (fallbackDate && fallbackDate !== date) {
       diagnostics.push({ kind: "date", path, reason: `frontmatter \u65E5\u671F ${date} \u4E0E\u6587\u4EF6\u540D\u65E5\u671F ${fallbackDate} \u4E0D\u4E00\u81F4` });
     }
