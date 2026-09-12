@@ -327,6 +327,31 @@
 
 .ledger-content {
   min-height: 280px;
+  transform: translateY(var(--ledger-pull, 0px));
+  transition: transform 320ms cubic-bezier(.22, 1, .36, 1);
+}
+
+.ledger-is-pulling .ledger-content { transition: none; }
+.ledger-pull-hint {
+  position: relative;
+  margin: 20px 0 0;
+  padding: 20px 12px;
+  text-align: center;
+  color: var(--mono-3);
+  font-size: 13px;
+}
+.ledger-pull-hint::before {
+  content: "";
+  display: block;
+  width: 80px;
+  height: 3px;
+  margin: 0 auto 12px;
+  background: var(--mono-ink);
+  transform: scaleX(var(--pull-progress, 0));
+  border-radius: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ledger-content { transition: none; transform: none; }
 }
 
 .ledger-scroll-bounce .ledger-content {

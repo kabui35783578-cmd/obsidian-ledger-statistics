@@ -27,7 +27,7 @@ const VIEW_NAMES: Array<[LedgerViewId, string]> = [
   ["calendar", "日历"], ["details", "明细"], ["compare", "对比"]
 ];
 
-const AUTO_ADVANCE_SWIPE_DISTANCE = 64;
+const AUTO_ADVANCE_SWIPE_DISTANCE = 100;
 
 type DatePreset = "month" | "previous" | "year" | "custom";
 
@@ -111,15 +111,11 @@ export class LedgerStatisticsView extends ItemView {
   private showDiagnostics = false;
   private filtersExpanded = !Platform.isMobile;
   private drillContext: DrillContext | null = null;
-  private autoAdvanceReady = true;
-  private autoAdvanceArmed = false;
-  private autoAdvanceArmSession = -1;
-  private autoAdvanceArmedByTouch = false;
-  private autoAdvanceArmedAt = 0;
-  private autoAdvanceBounceInProgress = false;
-  private touchSession = 0;
-  private lastTouchY = 0;
+  private pullEligible = false;
+  private pullDistance = 0;
   private touchStartY = 0;
+  private touchStartX = 0;
+  private pullHint: HTMLElement | null = null;
 
   constructor(leaf: WorkspaceLeaf, private plugin: LedgerStatisticsPlugin) {
     super(leaf);
@@ -143,9 +139,10 @@ export class LedgerStatisticsView extends ItemView {
 
   async onOpen(): Promise<void> {
     this.containerEl.addClass("ledger-statistics-view");
-    this.registerDomEvent(this.contentEl, "scroll", () => this.handleAutoAdvanceScroll(), { passive: true });
     this.registerDomEvent(this.contentEl, "touchstart", (event) => this.handleAutoAdvanceTouchStart(event), { passive: true });
-    this.registerDomEvent(this.contentEl, "touchmove", (event) => this.handleAutoAdvanceTouchMove(event), { passive: true });
+    this.registerDomEvent(this.contentEl, "touchmove", (event) => this.handleAutoAdvanceTouchMove(event), { passive: false });
+    this.registerDomEvent(this.contentEl, "touchend", () => this.finishPull(false));
+    this.registerDomEvent(this.contentEl, "touchcancel", () => this.finishPull(true));
     this.render();
   }
 
@@ -161,6 +158,7 @@ export class LedgerStatisticsView extends ItemView {
 
   render(): void {
     const root = this.contentEl;
+    this.resetAutoAdvanceArm();
     root.empty();
     if (!this.plugin.repository.loaded) {
       root.createDiv({ cls: "ledger-loading", text: "正在读取记账文件…" });
@@ -183,6 +181,11 @@ export class LedgerStatisticsView extends ItemView {
       if (this.activeView === "compare") this.renderCompare(content);
     }
     this.renderDiagnostics(root);
+    const next = VIEW_NAMES[VIEW_NAMES.findIndex(([id]) => id === this.activeView) + 1];
+    if (Platform.isMobile && next) {
+      this.pullHint = root.createDiv({ cls: "ledger-pull-hint" });
+      this.pullHint.setText(`继续上拉，查看${next[1]}`);
+    }
   }
 
   private renderHeader(root: HTMLElement): void {
@@ -261,7 +264,6 @@ export class LedgerStatisticsView extends ItemView {
       button.setAttribute("aria-selected", String(id === this.activeView));
       button.addEventListener("click", () => {
         this.activeView = id;
-        this.autoAdvanceReady = true;
         this.resetAutoAdvanceArm();
         this.render();
       });
@@ -590,83 +592,58 @@ export class LedgerStatisticsView extends ItemView {
     this.drillContext = null;
   }
 
-  private handleAutoAdvanceScroll(): void {
-    if (!Platform.isMobile) return;
-    if (!this.autoAdvanceReady) {
-      if (Platform.isMobile && !this.autoAdvanceReady && this.contentEl.scrollTop < this.contentEl.scrollHeight - this.contentEl.clientHeight - 40) {
-        this.autoAdvanceReady = true;
-      }
-      return;
-    }
-    const remaining = this.contentEl.scrollHeight - this.contentEl.clientHeight - this.contentEl.scrollTop;
-    const index = VIEW_NAMES.findIndex(([id]) => id === this.activeView);
-    if (index < 0 || index >= VIEW_NAMES.length - 1) return;
-    if (this.autoAdvanceArmedByTouch) {
-      if (this.autoAdvanceArmed && remaining > 40) this.resetAutoAdvanceArm();
-      return;
-    }
-    if (remaining > 28) {
-      if (this.autoAdvanceArmed && remaining > 40) this.resetAutoAdvanceArm();
-      return;
-    }
-    if (!this.autoAdvanceArmed) {
-      this.armAutoAdvance();
-      return;
-    }
-    if (this.autoAdvanceBounceInProgress) return;
-    if (this.autoAdvanceArmedByTouch && this.autoAdvanceArmSession === this.touchSession) return;
-    if (!this.autoAdvanceArmedByTouch && Date.now() - this.autoAdvanceArmedAt < 300) return;
-    this.advanceToNextView();
-  }
-
   private handleAutoAdvanceTouchStart(event: TouchEvent): void {
-    if (!Platform.isMobile) return;
-    this.touchSession += 1;
-    this.lastTouchY = event.touches[0]?.clientY ?? 0;
-    this.touchStartY = this.lastTouchY;
+    this.resetAutoAdvanceArm();
+    if (!Platform.isMobile || event.touches.length !== 1 || !this.pullHint) return;
+    const target = event.target;
+    if (target instanceof Element && target.closest("button, input, select, textarea, a, svg, .ledger-mobile-trend-scroll")) return;
+    this.touchStartY = event.touches[0].clientY;
+    this.touchStartX = event.touches[0].clientX;
+    // Only a new gesture that STARTS at the bottom may switch views.
+    this.pullEligible = this.contentEl.scrollHeight - this.contentEl.clientHeight - this.contentEl.scrollTop <= 6;
   }
 
   private handleAutoAdvanceTouchMove(event: TouchEvent): void {
-    if (!Platform.isMobile || !this.autoAdvanceArmed || this.autoAdvanceBounceInProgress) return;
-    const y = event.touches[0]?.clientY ?? this.lastTouchY;
-    const movingUp = this.lastTouchY - y > 8;
-    this.lastTouchY = y;
-    const swipeDistance = this.touchStartY - y;
-    if (!movingUp || swipeDistance < AUTO_ADVANCE_SWIPE_DISTANCE || this.autoAdvanceArmSession === this.touchSession) return;
-    const remaining = this.contentEl.scrollHeight - this.contentEl.clientHeight - this.contentEl.scrollTop;
-    if (remaining <= 28) this.advanceToNextView();
+    if (!this.pullEligible) return;
+    if (event.touches.length !== 1) { this.resetAutoAdvanceArm(); return; }
+    const dy = this.touchStartY - event.touches[0].clientY;
+    const dx = Math.abs(this.touchStartX - event.touches[0].clientX);
+    if (dy < -8 || dx > Math.max(18, Math.abs(dy))) {
+      this.resetAutoAdvanceArm();
+      return;
+    }
+    this.pullDistance = Math.max(0, dy);
+    if (dy > 0 && event.cancelable) event.preventDefault();
+    const next = VIEW_NAMES[VIEW_NAMES.findIndex(([id]) => id === this.activeView) + 1];
+    if (!next || !this.pullHint) return;
+    this.contentEl.addClass("ledger-is-pulling");
+    this.contentEl.style.setProperty("--ledger-pull", `${-Math.min(48, this.pullDistance * 0.32)}px`);
+    this.pullHint.style.setProperty("--pull-progress", String(Math.min(1, this.pullDistance / AUTO_ADVANCE_SWIPE_DISTANCE)));
+    this.pullHint.setText(this.pullDistance >= AUTO_ADVANCE_SWIPE_DISTANCE
+      ? `松手切换到${next[1]}` : `继续上拉，查看${next[1]}`);
   }
 
-  private armAutoAdvance(): void {
-    this.autoAdvanceArmed = true;
-    this.autoAdvanceArmSession = this.touchSession;
-    this.autoAdvanceArmedByTouch = this.touchSession > 0;
-    this.autoAdvanceArmedAt = Date.now();
-    this.autoAdvanceBounceInProgress = true;
-    this.contentEl.removeClass("ledger-scroll-bounce");
-    void this.contentEl.offsetWidth;
-    this.contentEl.addClass("ledger-scroll-bounce");
-    window.setTimeout(() => {
-      this.contentEl.removeClass("ledger-scroll-bounce");
-      this.autoAdvanceBounceInProgress = false;
-    }, 280);
-  }
-
-  private advanceToNextView(): void {
-    const index = VIEW_NAMES.findIndex(([id]) => id === this.activeView);
-    if (index < 0 || index >= VIEW_NAMES.length - 1) return;
+  private finishPull(cancelled: boolean): void {
+    const next = VIEW_NAMES[VIEW_NAMES.findIndex(([id]) => id === this.activeView) + 1];
+    const advance = !cancelled && this.pullEligible && this.pullDistance >= AUTO_ADVANCE_SWIPE_DISTANCE;
     this.resetAutoAdvanceArm();
-    this.autoAdvanceReady = false;
-    this.activeView = VIEW_NAMES[index + 1][0];
-    this.render();
-    this.contentEl.scrollTop = 0;
+    if (advance && next) {
+      this.activeView = next[0];
+      this.render();
+      this.contentEl.scrollTop = 0;
+    }
   }
 
   private resetAutoAdvanceArm(): void {
-    this.autoAdvanceArmed = false;
-    this.autoAdvanceArmSession = -1;
-    this.autoAdvanceArmedByTouch = false;
-    this.autoAdvanceArmedAt = 0;
+    this.pullEligible = false;
+    this.pullDistance = 0;
+    this.contentEl.removeClass("ledger-is-pulling");
+    this.contentEl.style.setProperty("--ledger-pull", "0px");
+    if (this.pullHint) {
+      const next = VIEW_NAMES[VIEW_NAMES.findIndex(([id]) => id === this.activeView) + 1];
+      this.pullHint.style.setProperty("--pull-progress", "0");
+      if (next) this.pullHint.setText(`继续上拉，查看${next[1]}`);
+    }
   }
 
   private sortDetails(records: LedgerRecord[]): LedgerRecord[] {
