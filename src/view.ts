@@ -29,7 +29,7 @@ const VIEW_NAMES: Array<[LedgerViewId, string]> = [
 
 const AUTO_ADVANCE_SWIPE_DISTANCE = 100;
 
-type DatePreset = "month" | "previous" | "year" | "custom";
+type DatePreset = "today" | "month" | "previous" | "year" | "custom";
 
 type DrillContext = {
   filter: FilterState;
@@ -214,13 +214,14 @@ export class LedgerStatisticsView extends ItemView {
     summaryCopy.createEl("strong", { text: "筛选条件" });
     const categoryLabel = this.filter.categories[0] ?? "全部分类";
     const scopeLabel = this.filter.scope === "consumption" ? "消费支出" : "全部支出";
-    summaryCopy.createSpan({ text: `${this.filter.range.start.slice(5).replace("-", ".")}–${this.filter.range.end.slice(5).replace("-", ".")} · ${scopeLabel} · ${categoryLabel}` });
+    const dateLabel = this.filter.range.start === this.filter.range.end ? this.filter.range.start.slice(5).replace("-", ".") : `${this.filter.range.start.slice(5).replace("-", ".")}–${this.filter.range.end.slice(5).replace("-", ".")}`;
+    summaryCopy.createSpan({ text: `${dateLabel} · ${scopeLabel} · ${categoryLabel}` });
     const summaryChevron = summary.createSpan({ cls: "ledger-filter-summary-chevron" });
     setIcon(summaryChevron, "chevron-down");
     panel.addEventListener("toggle", () => { this.filtersExpanded = panel.open; });
 
     const toolbar = panel.createDiv({ cls: "ledger-toolbar" });
-    addSelect(toolbar, "时间", this.preset, [["month", "本月"], ["previous", "上月"], ["year", "今年"], ["custom", "自定义"]], (value) => {
+    addSelect(toolbar, "时间", this.preset, [["today", "今天"], ["month", "本月"], ["previous", "上月"], ["year", "今年"], ["custom", "自定义"]], (value) => {
       this.applyPreset(value as DatePreset);
       this.render();
     });
@@ -537,6 +538,10 @@ export class LedgerStatisticsView extends ItemView {
     this.clearDrillContext();
     this.preset = preset;
     const now = new Date();
+    if (preset === "today") {
+      const today = todayIso();
+      this.filter.range = { start: today, end: today };
+    }
     if (preset === "month") this.filter.range = initialRange();
     if (preset === "previous") this.filter.range = monthRange(now.getFullYear(), now.getMonth() - 1);
     if (preset === "year") this.filter.range = { start: `${now.getFullYear()}-01-01`, end: todayIso() };

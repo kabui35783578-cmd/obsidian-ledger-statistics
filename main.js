@@ -1048,14 +1048,15 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     summaryCopy.createEl("strong", { text: "\u7B5B\u9009\u6761\u4EF6" });
     const categoryLabel = (_a = this.filter.categories[0]) != null ? _a : "\u5168\u90E8\u5206\u7C7B";
     const scopeLabel = this.filter.scope === "consumption" ? "\u6D88\u8D39\u652F\u51FA" : "\u5168\u90E8\u652F\u51FA";
-    summaryCopy.createSpan({ text: `${this.filter.range.start.slice(5).replace("-", ".")}\u2013${this.filter.range.end.slice(5).replace("-", ".")} \xB7 ${scopeLabel} \xB7 ${categoryLabel}` });
+    const dateLabel = this.filter.range.start === this.filter.range.end ? this.filter.range.start.slice(5).replace("-", ".") : `${this.filter.range.start.slice(5).replace("-", ".")}\u2013${this.filter.range.end.slice(5).replace("-", ".")}`;
+    summaryCopy.createSpan({ text: `${dateLabel} \xB7 ${scopeLabel} \xB7 ${categoryLabel}` });
     const summaryChevron = summary.createSpan({ cls: "ledger-filter-summary-chevron" });
     (0, import_obsidian3.setIcon)(summaryChevron, "chevron-down");
     panel.addEventListener("toggle", () => {
       this.filtersExpanded = panel.open;
     });
     const toolbar = panel.createDiv({ cls: "ledger-toolbar" });
-    addSelect(toolbar, "\u65F6\u95F4", this.preset, [["month", "\u672C\u6708"], ["previous", "\u4E0A\u6708"], ["year", "\u4ECA\u5E74"], ["custom", "\u81EA\u5B9A\u4E49"]], (value) => {
+    addSelect(toolbar, "\u65F6\u95F4", this.preset, [["today", "\u4ECA\u5929"], ["month", "\u672C\u6708"], ["previous", "\u4E0A\u6708"], ["year", "\u4ECA\u5E74"], ["custom", "\u81EA\u5B9A\u4E49"]], (value) => {
       this.applyPreset(value);
       this.render();
     });
@@ -1393,6 +1394,10 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     this.clearDrillContext();
     this.preset = preset;
     const now = /* @__PURE__ */ new Date();
+    if (preset === "today") {
+      const today = todayIso();
+      this.filter.range = { start: today, end: today };
+    }
     if (preset === "month") this.filter.range = initialRange();
     if (preset === "previous") this.filter.range = monthRange(now.getFullYear(), now.getMonth() - 1);
     if (preset === "year") this.filter.range = { start: `${now.getFullYear()}-01-01`, end: todayIso() };
