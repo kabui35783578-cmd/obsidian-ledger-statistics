@@ -165,6 +165,7 @@ export class LedgerStatisticsView extends ItemView {
   render(): void {
     const root = this.contentEl;
     this.resetAutoAdvanceArm();
+    this.pullHint = null;
     root.empty();
     if (!this.plugin.repository.loaded) {
       root.createDiv({ cls: "ledger-loading", text: "正在读取记账文件…" });
@@ -269,9 +270,11 @@ export class LedgerStatisticsView extends ItemView {
       button.setAttribute("role", "tab");
       button.setAttribute("aria-selected", String(id === this.activeView));
       button.addEventListener("click", () => {
+        if (this.activeView === id) return;
         this.activeView = id;
         this.resetAutoAdvanceArm();
         this.render();
+        this.contentEl.scrollTop = 0;
       });
     }
   }
@@ -603,11 +606,21 @@ export class LedgerStatisticsView extends ItemView {
     this.resetAutoAdvanceArm();
     if (!Platform.isMobile || event.touches.length !== 1 || !this.pullHint) return;
     const target = event.target;
-    if (target instanceof Element && target.closest("button, input, select, textarea, a, svg, .ledger-mobile-trend-scroll")) return;
+    if (target instanceof Element && target.closest("button, input, select, textarea, a, svg, .ledger-mobile-trend-scroll, .ledger-tabs, .ledger-header, .ledger-toolbar, .ledger-filter-panel")) {
+      this.pullEligible = false;
+      return;
+    }
     this.touchStartY = event.touches[0].clientY;
     this.touchStartX = event.touches[0].clientX;
     // Only a new gesture that STARTS at the bottom may switch views.
-    this.pullEligible = this.contentEl.scrollHeight - this.contentEl.clientHeight - this.contentEl.scrollTop <= 6;
+    const maxScroll = this.contentEl.scrollHeight - this.contentEl.clientHeight;
+    if (maxScroll > 6) {
+      this.pullEligible = maxScroll - this.contentEl.scrollTop <= 6;
+    } else {
+      const rect = this.contentEl.getBoundingClientRect();
+      const relativeY = event.touches[0].clientY - rect.top;
+      this.pullEligible = relativeY > rect.height * 0.6;
+    }
   }
 
   private handleAutoAdvanceTouchMove(event: TouchEvent): void {
@@ -621,7 +634,7 @@ export class LedgerStatisticsView extends ItemView {
       return;
     }
     this.pullDistance = Math.max(0, dy);
-    if (dy > 0 && event.cancelable) event.preventDefault();
+    if (this.pullDistance > 8 && event.cancelable) event.preventDefault();
     const next = VIEW_NAMES[VIEW_NAMES.findIndex(([id]) => id === this.activeView) + 1];
     if (!next || !this.pullHint) return;
     this.contentEl.addClass("ledger-is-pulling");

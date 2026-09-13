@@ -1000,6 +1000,7 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
   render() {
     const root = this.contentEl;
     this.resetAutoAdvanceArm();
+    this.pullHint = null;
     root.empty();
     if (!this.plugin.repository.loaded) {
       root.createDiv({ cls: "ledger-loading", text: "\u6B63\u5728\u8BFB\u53D6\u8BB0\u8D26\u6587\u4EF6\u2026" });
@@ -1103,9 +1104,11 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
       button.setAttribute("role", "tab");
       button.setAttribute("aria-selected", String(id === this.activeView));
       button.addEventListener("click", () => {
+        if (this.activeView === id) return;
         this.activeView = id;
         this.resetAutoAdvanceArm();
         this.render();
+        this.contentEl.scrollTop = 0;
       });
     }
   }
@@ -1448,10 +1451,20 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     this.resetAutoAdvanceArm();
     if (!import_obsidian3.Platform.isMobile || event.touches.length !== 1 || !this.pullHint) return;
     const target = event.target;
-    if (target instanceof Element && target.closest("button, input, select, textarea, a, svg, .ledger-mobile-trend-scroll")) return;
+    if (target instanceof Element && target.closest("button, input, select, textarea, a, svg, .ledger-mobile-trend-scroll, .ledger-tabs, .ledger-header, .ledger-toolbar, .ledger-filter-panel")) {
+      this.pullEligible = false;
+      return;
+    }
     this.touchStartY = event.touches[0].clientY;
     this.touchStartX = event.touches[0].clientX;
-    this.pullEligible = this.contentEl.scrollHeight - this.contentEl.clientHeight - this.contentEl.scrollTop <= 6;
+    const maxScroll = this.contentEl.scrollHeight - this.contentEl.clientHeight;
+    if (maxScroll > 6) {
+      this.pullEligible = maxScroll - this.contentEl.scrollTop <= 6;
+    } else {
+      const rect = this.contentEl.getBoundingClientRect();
+      const relativeY = event.touches[0].clientY - rect.top;
+      this.pullEligible = relativeY > rect.height * 0.6;
+    }
   }
   handleAutoAdvanceTouchMove(event) {
     if (!this.pullEligible) return;
@@ -1467,7 +1480,7 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
       return;
     }
     this.pullDistance = Math.max(0, dy);
-    if (dy > 0 && event.cancelable) event.preventDefault();
+    if (this.pullDistance > 8 && event.cancelable) event.preventDefault();
     const next = VIEW_NAMES2[VIEW_NAMES2.findIndex(([id]) => id === this.activeView) + 1];
     if (!next || !this.pullHint) return;
     this.contentEl.addClass("ledger-is-pulling");

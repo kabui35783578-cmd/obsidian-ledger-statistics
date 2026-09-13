@@ -251,10 +251,21 @@
   appearance: none;
 }
 
-.ledger-button:hover,
 .ledger-button.is-active {
   background: var(--mono-ink);
   color: var(--mono-paper);
+}
+
+.ledger-button:active {
+  background: var(--mono-2);
+  color: var(--mono-paper);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ledger-button:hover {
+    background: var(--mono-ink);
+    color: var(--mono-paper);
+  }
 }
 
 .ledger-tabs {
@@ -311,9 +322,16 @@
   font-weight: 750;
 }
 
-.ledger-drill-back-button:hover {
-  background: var(--mono-ink);
+.ledger-drill-back-button:active {
+  background: var(--mono-2);
   color: var(--mono-paper);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ledger-drill-back-button:hover {
+    background: var(--mono-ink);
+    color: var(--mono-paper);
+  }
 }
 
 .ledger-drill-back-icon {
@@ -388,8 +406,14 @@ button.ledger-metric {
   cursor: pointer;
 }
 
-button.ledger-metric:hover {
+button.ledger-metric:active {
   background: var(--mono-2);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  button.ledger-metric:hover {
+    background: var(--mono-2);
+  }
 }
 
 .ledger-metric-label,
@@ -538,9 +562,14 @@ button.ledger-metric:hover {
   outline: none;
 }
 
-.ledger-chart-target:focus,
-.ledger-chart-target:hover {
+.ledger-chart-target:focus {
   filter: contrast(1.25);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ledger-chart-target:hover {
+    filter: contrast(1.25);
+  }
 }
 
 .ledger-donut-wrap {
@@ -571,8 +600,14 @@ button.ledger-metric:hover {
   box-shadow: none !important;
 }
 
-.ledger-legend-item:hover {
+.ledger-legend-item:active {
   background: var(--mono-grid);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ledger-legend-item:hover {
+    background: var(--mono-grid);
+  }
 }
 
 .ledger-swatch {
@@ -610,8 +645,10 @@ button.ledger-metric:hover {
   text-transform: uppercase;
 }
 
-.ledger-table tbody tr:hover {
-  background: var(--mono-grid);
+@media (hover: hover) and (pointer: fine) {
+  .ledger-table tbody tr:hover {
+    background: var(--mono-grid);
+  }
 }
 
 .ledger-table tbody tr:last-child td {
@@ -682,8 +719,14 @@ button.ledger-metric:hover {
   outline: 0.7px dashed var(--mono-faint);
 }
 
-.ledger-calendar-day:hover {
+.ledger-calendar-day:active {
   outline: 2px solid var(--mono-ink);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ledger-calendar-day:hover {
+    outline: 2px solid var(--mono-ink);
+  }
 }
 
 .ledger-calendar-number {
@@ -734,9 +777,16 @@ button.ledger-metric:hover {
   text-decoration: none;
 }
 
-.ledger-source-button:hover {
+.ledger-source-button:active {
   background: var(--mono-ink);
   color: var(--mono-paper);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ledger-source-button:hover {
+    background: var(--mono-ink);
+    color: var(--mono-paper);
+  }
 }
 
 .ledger-link-button {
@@ -991,6 +1041,8 @@ button.ledger-metric:hover {
     min-height: 42px;
     padding: 5px 2px;
     font-size: 12px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
 
   .ledger-drill-back {
