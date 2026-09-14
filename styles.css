@@ -239,7 +239,48 @@
 }
 
 .ledger-refresh-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   align-self: flex-end;
+  min-height: 38px;
+  padding: 7px 15px;
+  line-height: 1;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.ledger-refresh-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ledger-refresh-icon svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+.ledger-refresh-text {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.ledger-refresh-button.is-refreshing .ledger-refresh-icon svg {
+  animation: ledger-spin 0.8s linear infinite;
+}
+
+@keyframes ledger-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .ledger-button {

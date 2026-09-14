@@ -1088,14 +1088,20 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
       this.filter.categories = value ? [value] : [];
       this.render();
     });
-    const refresh = createButton(toolbar, "\u5237\u65B0\u6570\u636E");
-    refresh.addClass("ledger-refresh-button");
-    (0, import_obsidian3.setIcon)(refresh.createSpan(), "refresh-cw");
+    const refresh = toolbar.createEl("button", { cls: "ledger-button ledger-refresh-button" });
+    const refreshIcon = refresh.createSpan({ cls: "ledger-refresh-icon" });
+    (0, import_obsidian3.setIcon)(refreshIcon, "refresh-cw");
+    refresh.createSpan({ cls: "ledger-refresh-text", text: "\u5237\u65B0\u6570\u636E" });
     refresh.addEventListener("click", async () => {
       refresh.disabled = true;
-      await this.plugin.repository.rescan();
-      new import_obsidian3.Notice("\u8BB0\u8D26\u7EDF\u8BA1\u5DF2\u5237\u65B0");
-      refresh.disabled = false;
+      refresh.addClass("is-refreshing");
+      try {
+        await this.plugin.repository.rescan();
+        new import_obsidian3.Notice("\u8BB0\u8D26\u7EDF\u8BA1\u5DF2\u5237\u65B0");
+      } finally {
+        refresh.disabled = false;
+        refresh.removeClass("is-refreshing");
+      }
     });
   }
   renderTabs(root) {

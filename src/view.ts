@@ -253,14 +253,20 @@ export class LedgerStatisticsView extends ItemView {
       this.filter.categories = value ? [value] : [];
       this.render();
     });
-    const refresh = createButton(toolbar, "刷新数据");
-    refresh.addClass("ledger-refresh-button");
-    setIcon(refresh.createSpan(), "refresh-cw");
+    const refresh = toolbar.createEl("button", { cls: "ledger-button ledger-refresh-button" });
+    const refreshIcon = refresh.createSpan({ cls: "ledger-refresh-icon" });
+    setIcon(refreshIcon, "refresh-cw");
+    refresh.createSpan({ cls: "ledger-refresh-text", text: "刷新数据" });
     refresh.addEventListener("click", async () => {
       refresh.disabled = true;
-      await this.plugin.repository.rescan();
-      new Notice("记账统计已刷新");
-      refresh.disabled = false;
+      refresh.addClass("is-refreshing");
+      try {
+        await this.plugin.repository.rescan();
+        new Notice("记账统计已刷新");
+      } finally {
+        refresh.disabled = false;
+        refresh.removeClass("is-refreshing");
+      }
     });
   }
 
