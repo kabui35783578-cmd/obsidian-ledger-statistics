@@ -7,7 +7,8 @@ const {
   categorySummaries,
   summarize,
   compareValue,
-  trendPoints
+  trendPoints,
+  salaryDayRange
 } = require("../dist/core.cjs");
 
 function note(date, body, total = "0.00") {
@@ -121,4 +122,21 @@ test("trend aggregation groups across month boundary", () => {
 test("money parser rejects more than two decimal places", () => {
   assert.equal(parseMoneyToCents("1,017.0"), 101700);
   assert.equal(parseMoneyToCents("1.234"), null);
+});
+
+test("salary day range runs from the 15th through today within the current cycle", () => {
+  assert.deepEqual(salaryDayRange(new Date(2026, 8, 15, 12)), { start: "2026-09-15", end: "2026-09-15" });
+  assert.deepEqual(salaryDayRange(new Date(2026, 8, 30, 12)), { start: "2026-09-15", end: "2026-09-30" });
+});
+
+test("salary day range uses the previous month's 15th before or on the 14th", () => {
+  assert.deepEqual(salaryDayRange(new Date(2026, 8, 1, 12)), { start: "2026-08-15", end: "2026-09-01" });
+  assert.deepEqual(salaryDayRange(new Date(2026, 8, 14, 12)), { start: "2026-08-15", end: "2026-09-14" });
+  assert.deepEqual(salaryDayRange(new Date(2026, 0, 3, 12)), { start: "2025-12-15", end: "2026-01-03" });
+});
+
+test("salary day range can step back through complete previous cycles", () => {
+  assert.deepEqual(salaryDayRange(new Date(2026, 8, 15, 12), 1), { start: "2026-08-15", end: "2026-09-14" });
+  assert.deepEqual(salaryDayRange(new Date(2026, 8, 14, 12), 1), { start: "2026-07-15", end: "2026-08-14" });
+  assert.deepEqual(salaryDayRange(new Date(2026, 0, 3, 12), 1), { start: "2025-11-15", end: "2025-12-14" });
 });

@@ -238,6 +238,42 @@
   background: transparent;
 }
 
+.ledger-time-controls {
+  display: flex;
+  min-width: 286px;
+  flex: 1 1 310px;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.ledger-time-controls .ledger-field {
+  flex: 1 1 auto;
+}
+
+.ledger-period-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  gap: 5px;
+  min-height: 38px;
+  min-width: 38px;
+  padding: 7px 12px;
+  white-space: nowrap;
+}
+
+.ledger-period-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ledger-period-icon svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
 .ledger-refresh-button {
   display: inline-flex;
   align-items: center;
@@ -1009,10 +1045,25 @@ button.ledger-metric:active {
     padding: 4px 12px 14px;
   }
 
-  .ledger-toolbar > .ledger-field:first-child,
+  .ledger-toolbar > .ledger-time-controls,
   .ledger-toolbar > .ledger-date-range,
   .ledger-toolbar > .ledger-refresh-button {
     grid-column: 1 / -1;
+  }
+
+  .ledger-time-controls {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .ledger-time-controls .ledger-field {
+    min-width: 0;
+  }
+
+  .ledger-period-button {
+    min-height: 44px;
+    min-width: 44px;
+    padding-inline: 10px;
   }
 
   .ledger-date-range {

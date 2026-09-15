@@ -260,6 +260,15 @@ function monthRange(year, monthIndex) {
     end: isoFromDate(new Date(year, monthIndex + 1, 0, 12))
   };
 }
+function salaryDayRange(date = /* @__PURE__ */ new Date(), cycleOffset = 0) {
+  const today = isoFromDate(date);
+  const currentStartMonth = date.getDate() <= 14 ? date.getMonth() - 1 : date.getMonth();
+  const startMonth = currentStartMonth - cycleOffset;
+  return {
+    start: isoFromDate(new Date(date.getFullYear(), startMonth, 15, 12)),
+    end: cycleOffset === 0 ? today : isoFromDate(new Date(date.getFullYear(), startMonth + 1, 14, 12))
+  };
+}
 function trendBucket(dateIso, granularity) {
   if (granularity === "day") return { key: dateIso, start: dateIso, end: dateIso, label: dateIso.slice(5) };
   if (granularity === "month") {
@@ -940,6 +949,7 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     super(leaf);
     this.plugin = plugin;
     this.preset = "month";
+    this.periodOffset = 0;
     this.categoryChart = "bar";
     this.categorySort = "amount";
     this.trendChart = "line";
@@ -1056,15 +1066,34 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
       this.filtersExpanded = panel.open;
     });
     const toolbar = panel.createDiv({ cls: "ledger-toolbar" });
-    addSelect(toolbar, "\u65F6\u95F4", this.preset, [["today", "\u4ECA\u5929"], ["month", "\u672C\u6708"], ["previous", "\u4E0A\u6708"], ["year", "\u4ECA\u5E74"], ["custom", "\u81EA\u5B9A\u4E49"]], (value) => {
+    const timeControls = toolbar.createDiv({ cls: "ledger-time-controls" });
+    addSelect(timeControls, "\u65F6\u95F4", this.preset, [["today", "\u4ECA\u5929"], ["month", "\u672C\u6708"], ["previous", "\u4E0A\u6708"], ["salary", "\u5DE5\u8D44\u65E5"], ["year", "\u4ECA\u5E74"], ["custom", "\u81EA\u5B9A\u4E49"]], (value) => {
       this.applyPreset(value);
       this.render();
     });
+    const periodName = this.preset === "today" ? "\u5929" : this.preset === "year" ? "\u5E74" : this.preset === "salary" ? "\u5DE5\u8D44\u5468\u671F" : "\u6708";
+    const previousPeriod = timeControls.createEl("button", {
+      cls: "ledger-button ledger-period-button",
+      attr: { type: "button", title: `\u5207\u6362\u5230\u4E0A\u4E00\u4E2A${periodName}`, "aria-label": `\u5207\u6362\u5230\u4E0A\u4E00\u4E2A${periodName}` }
+    });
+    const previousPeriodIcon = previousPeriod.createSpan({ cls: "ledger-period-icon" });
+    (0, import_obsidian3.setIcon)(previousPeriodIcon, "chevron-left");
+    previousPeriod.disabled = this.preset === "custom";
+    previousPeriod.addEventListener("click", () => this.shiftPeriod(1));
+    const nextPeriod = timeControls.createEl("button", {
+      cls: "ledger-button ledger-period-button",
+      attr: { type: "button", title: `\u8FD4\u56DE\u4E0B\u4E00\u4E2A${periodName}`, "aria-label": `\u8FD4\u56DE\u4E0B\u4E00\u4E2A${periodName}` }
+    });
+    const nextPeriodIcon = nextPeriod.createSpan({ cls: "ledger-period-icon" });
+    (0, import_obsidian3.setIcon)(nextPeriodIcon, "chevron-right");
+    nextPeriod.disabled = this.preset === "custom";
+    nextPeriod.addEventListener("click", () => this.shiftPeriod(-1));
     const dates = toolbar.createDiv({ cls: "ledger-date-range", attr: { "aria-label": "\u65E5\u671F\u8303\u56F4" } });
     addDateInput(dates, "\u5F00\u59CB", this.filter.range.start, (value) => {
       if (isValidIsoDate(value) && value <= this.filter.range.end) {
         this.clearDrillContext();
         this.preset = "custom";
+        this.periodOffset = 0;
         this.filter.range.start = value;
         this.render();
       }
@@ -1073,6 +1102,7 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
       if (isValidIsoDate(value) && value >= this.filter.range.start) {
         this.clearDrillContext();
         this.preset = "custom";
+        this.periodOffset = 0;
         this.filter.range.end = value;
         this.render();
       }
@@ -1399,14 +1429,30 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
   applyPreset(preset) {
     this.clearDrillContext();
     this.preset = preset;
+    this.periodOffset = 0;
     const now = /* @__PURE__ */ new Date();
+    this.filter.range = this.rangeForPreset(preset, now, this.periodOffset);
+  }
+  shiftPeriod(direction) {
+    if (this.preset === "custom") return;
+    this.clearDrillContext();
+    this.periodOffset += direction;
+    this.filter.range = this.rangeForPreset(this.preset, /* @__PURE__ */ new Date(), this.periodOffset);
+    this.render();
+  }
+  rangeForPreset(preset, now, offset) {
     if (preset === "today") {
-      const today = todayIso();
-      this.filter.range = { start: today, end: today };
+      const date = addDays(todayIso(), -offset);
+      return { start: date, end: date };
     }
-    if (preset === "month") this.filter.range = initialRange();
-    if (preset === "previous") this.filter.range = monthRange(now.getFullYear(), now.getMonth() - 1);
-    if (preset === "year") this.filter.range = { start: `${now.getFullYear()}-01-01`, end: todayIso() };
+    if (preset === "month") return monthRange(now.getFullYear(), now.getMonth() - offset);
+    if (preset === "previous") return monthRange(now.getFullYear(), now.getMonth() - 1 - offset);
+    if (preset === "salary") return salaryDayRange(now, offset);
+    if (preset === "year") {
+      const year = now.getFullYear() - offset;
+      return { start: `${year}-01-01`, end: offset === 0 ? todayIso() : `${year}-12-31` };
+    }
+    return { ...this.filter.range };
   }
   allCategories() {
     return [...new Set([...this.plugin.repository.files.values()].flatMap((file) => file.records.map((record) => record.category)))].sort((a, b) => a.localeCompare(b, "zh-CN"));
@@ -1425,6 +1471,7 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     this.captureDrillContext();
     this.filter.range = range;
     this.preset = "custom";
+    this.periodOffset = 0;
     this.activeView = "details";
     this.render();
   }
@@ -1436,6 +1483,7 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     this.clearDrillContext();
     this.filter.range = monthRange(year, month);
     this.preset = "custom";
+    this.periodOffset = 0;
     this.render();
   }
   captureDrillContext() {
@@ -1443,6 +1491,7 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     this.drillContext = {
       filter: cloneFilter(this.filter),
       preset: this.preset,
+      periodOffset: this.periodOffset,
       view: this.activeView
     };
   }
@@ -1451,6 +1500,7 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     const context = this.drillContext;
     this.filter = cloneFilter(context.filter);
     this.preset = context.preset;
+    this.periodOffset = context.periodOffset;
     this.activeView = context.view;
     this.drillContext = null;
     this.render();

@@ -14,6 +14,7 @@ import {
   formatCents,
   isValidIsoDate,
   monthRange,
+  salaryDayRange,
   summarize,
   trendPoints
 } from "./core";
@@ -29,11 +30,12 @@ const VIEW_NAMES: Array<[LedgerViewId, string]> = [
 
 const AUTO_ADVANCE_SWIPE_DISTANCE = 100;
 
-type DatePreset = "today" | "month" | "previous" | "year" | "custom";
+type DatePreset = "today" | "month" | "previous" | "salary" | "year" | "custom";
 
 type DrillContext = {
   filter: FilterState;
   preset: DatePreset;
+  periodOffset: number;
   view: LedgerViewId;
 };
 
@@ -99,6 +101,7 @@ function addDateInput(parent: HTMLElement, label: string, value: string, onChang
 export class LedgerStatisticsView extends ItemView {
   private activeView: LedgerViewId;
   private preset: DatePreset = "month";
+  private periodOffset = 0;
   private filter: FilterState;
   private categoryChart: "bar" | "donut" | "table" = "bar";
   private categorySort: "amount" | "count" = "amount";
@@ -221,15 +224,34 @@ export class LedgerStatisticsView extends ItemView {
     panel.addEventListener("toggle", () => { this.filtersExpanded = panel.open; });
 
     const toolbar = panel.createDiv({ cls: "ledger-toolbar" });
-    addSelect(toolbar, "时间", this.preset, [["today", "今天"], ["month", "本月"], ["previous", "上月"], ["year", "今年"], ["custom", "自定义"]], (value) => {
+    const timeControls = toolbar.createDiv({ cls: "ledger-time-controls" });
+    addSelect(timeControls, "时间", this.preset, [["today", "今天"], ["month", "本月"], ["previous", "上月"], ["salary", "工资日"], ["year", "今年"], ["custom", "自定义"]], (value) => {
       this.applyPreset(value as DatePreset);
       this.render();
     });
+    const periodName = this.preset === "today" ? "天" : this.preset === "year" ? "年" : this.preset === "salary" ? "工资周期" : "月";
+    const previousPeriod = timeControls.createEl("button", {
+      cls: "ledger-button ledger-period-button",
+      attr: { type: "button", title: `切换到上一个${periodName}`, "aria-label": `切换到上一个${periodName}` }
+    });
+    const previousPeriodIcon = previousPeriod.createSpan({ cls: "ledger-period-icon" });
+    setIcon(previousPeriodIcon, "chevron-left");
+    previousPeriod.disabled = this.preset === "custom";
+    previousPeriod.addEventListener("click", () => this.shiftPeriod(1));
+    const nextPeriod = timeControls.createEl("button", {
+      cls: "ledger-button ledger-period-button",
+      attr: { type: "button", title: `返回下一个${periodName}`, "aria-label": `返回下一个${periodName}` }
+    });
+    const nextPeriodIcon = nextPeriod.createSpan({ cls: "ledger-period-icon" });
+    setIcon(nextPeriodIcon, "chevron-right");
+    nextPeriod.disabled = this.preset === "custom";
+    nextPeriod.addEventListener("click", () => this.shiftPeriod(-1));
     const dates = toolbar.createDiv({ cls: "ledger-date-range", attr: { "aria-label": "日期范围" } });
     addDateInput(dates, "开始", this.filter.range.start, (value) => {
       if (isValidIsoDate(value) && value <= this.filter.range.end) {
         this.clearDrillContext();
         this.preset = "custom";
+        this.periodOffset = 0;
         this.filter.range.start = value;
         this.render();
       }
@@ -238,6 +260,7 @@ export class LedgerStatisticsView extends ItemView {
       if (isValidIsoDate(value) && value >= this.filter.range.start) {
         this.clearDrillContext();
         this.preset = "custom";
+        this.periodOffset = 0;
         this.filter.range.end = value;
         this.render();
       }
@@ -543,14 +566,32 @@ export class LedgerStatisticsView extends ItemView {
   private applyPreset(preset: DatePreset): void {
     this.clearDrillContext();
     this.preset = preset;
+    this.periodOffset = 0;
     const now = new Date();
+    this.filter.range = this.rangeForPreset(preset, now, this.periodOffset);
+  }
+
+  private shiftPeriod(direction: 1 | -1): void {
+    if (this.preset === "custom") return;
+    this.clearDrillContext();
+    this.periodOffset += direction;
+    this.filter.range = this.rangeForPreset(this.preset, new Date(), this.periodOffset);
+    this.render();
+  }
+
+  private rangeForPreset(preset: DatePreset, now: Date, offset: number): DateRange {
     if (preset === "today") {
-      const today = todayIso();
-      this.filter.range = { start: today, end: today };
+      const date = addDays(todayIso(), -offset);
+      return { start: date, end: date };
     }
-    if (preset === "month") this.filter.range = initialRange();
-    if (preset === "previous") this.filter.range = monthRange(now.getFullYear(), now.getMonth() - 1);
-    if (preset === "year") this.filter.range = { start: `${now.getFullYear()}-01-01`, end: todayIso() };
+    if (preset === "month") return monthRange(now.getFullYear(), now.getMonth() - offset);
+    if (preset === "previous") return monthRange(now.getFullYear(), now.getMonth() - 1 - offset);
+    if (preset === "salary") return salaryDayRange(now, offset);
+    if (preset === "year") {
+      const year = now.getFullYear() - offset;
+      return { start: `${year}-01-01`, end: offset === 0 ? todayIso() : `${year}-12-31` };
+    }
+    return { ...this.filter.range };
   }
 
   private allCategories(): string[] {
@@ -573,6 +614,7 @@ export class LedgerStatisticsView extends ItemView {
     this.captureDrillContext();
     this.filter.range = range;
     this.preset = "custom";
+    this.periodOffset = 0;
     this.activeView = "details";
     this.render();
   }
@@ -586,6 +628,7 @@ export class LedgerStatisticsView extends ItemView {
     this.clearDrillContext();
     this.filter.range = monthRange(year, month);
     this.preset = "custom";
+    this.periodOffset = 0;
     this.render();
   }
 
@@ -594,6 +637,7 @@ export class LedgerStatisticsView extends ItemView {
     this.drillContext = {
       filter: cloneFilter(this.filter),
       preset: this.preset,
+      periodOffset: this.periodOffset,
       view: this.activeView
     };
   }
@@ -603,6 +647,7 @@ export class LedgerStatisticsView extends ItemView {
     const context = this.drillContext;
     this.filter = cloneFilter(context.filter);
     this.preset = context.preset;
+    this.periodOffset = context.periodOffset;
     this.activeView = context.view;
     this.drillContext = null;
     this.render();

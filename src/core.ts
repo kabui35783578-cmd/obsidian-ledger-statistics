@@ -310,6 +310,16 @@ export function monthRange(year: number, monthIndex: number): DateRange {
   };
 }
 
+export function salaryDayRange(date = new Date(), cycleOffset = 0): DateRange {
+  const today = isoFromDate(date);
+  const currentStartMonth = date.getDate() <= 14 ? date.getMonth() - 1 : date.getMonth();
+  const startMonth = currentStartMonth - cycleOffset;
+  return {
+    start: isoFromDate(new Date(date.getFullYear(), startMonth, 15, 12)),
+    end: cycleOffset === 0 ? today : isoFromDate(new Date(date.getFullYear(), startMonth + 1, 14, 12))
+  };
+}
+
 function trendBucket(dateIso: string, granularity: "day" | "week" | "month"): { key: string; start: string; end: string; label: string } {
   if (granularity === "day") return { key: dateIso, start: dateIso, end: dateIso, label: dateIso.slice(5) };
   if (granularity === "month") {
