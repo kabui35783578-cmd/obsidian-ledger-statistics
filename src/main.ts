@@ -21,10 +21,10 @@ export default class LedgerStatisticsPlugin extends Plugin {
     this.repository.dispose();
   }
 
-  async saveSettings(rescan: boolean): Promise<void> {
+  async saveSettings(rescan: boolean, refresh = true): Promise<void> {
     await this.saveData(this.settings);
     if (rescan) await this.repository.setFolder(this.settings.ledgerFolder);
-    this.refreshViews();
+    if (refresh) this.refreshViews();
   }
 
   private async activateView(): Promise<void> {

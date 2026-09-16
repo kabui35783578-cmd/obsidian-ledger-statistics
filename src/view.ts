@@ -1,4 +1,4 @@
-import { ItemView, MarkdownView, Notice, Platform, TFile, WorkspaceLeaf, setIcon } from "obsidian";
+import { ItemView, MarkdownView, Notice, Platform, TFile, WorkspaceLeaf, requestUrl, setIcon } from "obsidian";
 import type LedgerStatisticsPlugin from "./main";
 import {
   AccountingScope,
@@ -7,6 +7,7 @@ import {
   FilterState,
   LedgerRecord,
   addDays,
+  barkPushUrl,
   categorySummaries,
   compareValue,
   diagnosticsFor,
@@ -112,6 +113,7 @@ export class LedgerStatisticsView extends ItemView {
   private customCurrent: DateRange;
   private customPrevious: DateRange;
   private showDiagnostics = false;
+  private budgetNotificationInFlight = false;
   private filtersExpanded = !Platform.isMobile;
   private drillContext: DrillContext | null = null;
   private pullEligible = false;
@@ -343,6 +345,7 @@ export class LedgerStatisticsView extends ItemView {
       keyword: ""
     });
     const currentCycleCents = currentCycleRecords.reduce((sum, record) => sum + record.cents, 0);
+    this.maybeNotifyBudget(today, todayCents, this.plugin.settings.dailyBudgetCents);
     renderLiquidBudget(parent, todayCents, this.plugin.settings.dailyBudgetCents, today.replace(/-/g, "."), currentCycleCents);
     const metrics = parent.createDiv({ cls: "ledger-metrics" });
     this.metric(metrics, "所选期间总额", formatCents(stats.cents), `${stats.count} 笔`, () => this.goDetails());
@@ -356,6 +359,35 @@ export class LedgerStatisticsView extends ItemView {
     const grid = parent.createDiv({ cls: "ledger-overview-grid" });
     renderHorizontalBars(grid, categorySummaries(records).slice(0, 8), (category) => this.drillCategory(category));
     renderTrendChart(grid, trendPoints(records, this.rangeTrendUnit()), "line", (point) => this.drillRange({ start: point.start, end: point.end }));
+  }
+
+  private maybeNotifyBudget(today: string, spentCents: number, budgetCents: number): void {
+    const barkUrl = this.plugin.settings.barkUrl.trim();
+    if (!barkUrl || budgetCents <= 0 || spentCents < budgetCents || this.plugin.settings.lastBudgetNotificationDate === today || this.budgetNotificationInFlight) return;
+    const overBudgetCents = spentCents - budgetCents;
+    const title = overBudgetCents > 0 ? "今日预算已超支" : "今日预算已用尽";
+    const body = overBudgetCents > 0
+      ? `今日全部支出 ${formatCents(spentCents)}，每日预算 ${formatCents(budgetCents)}，超支 ${formatCents(overBudgetCents)}`
+      : `今日全部支出 ${formatCents(spentCents)}，已达到每日预算 ${formatCents(budgetCents)}`;
+    const url = barkPushUrl(barkUrl, title, body);
+    if (!url) return;
+
+    this.budgetNotificationInFlight = true;
+    void requestUrl({ url, method: "GET", throw: true })
+      .then(async () => {
+        this.plugin.settings.lastBudgetNotificationDate = today;
+        try {
+          await this.plugin.saveSettings(false, false);
+        } catch {
+          // The push succeeded; keep the in-memory guard even if persistence fails.
+        }
+      })
+      .catch(() => {
+        new Notice("Bark 提醒发送失败，请检查推送地址和网络");
+      })
+      .finally(() => {
+        this.budgetNotificationInFlight = false;
+      });
   }
 
   private renderCategory(parent: HTMLElement): void {

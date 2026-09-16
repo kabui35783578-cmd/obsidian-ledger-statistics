@@ -106,6 +106,18 @@ export function formatCents(cents: number): string {
   return `${sign}¥${Math.floor(absolute / 100).toLocaleString("zh-CN")}.${String(absolute % 100).padStart(2, "0")}`;
 }
 
+export function barkPushUrl(baseUrl: string, title: string, body: string): string | null {
+  try {
+    const parsed = new URL(baseUrl.trim());
+    if (parsed.protocol !== "https:") return null;
+    const key = parsed.pathname.split("/").filter(Boolean)[0];
+    if (!key) return null;
+    return `${parsed.origin}/${encodeURIComponent(key)}/${encodeURIComponent(title)}/${encodeURIComponent(body)}`;
+  } catch {
+    return null;
+  }
+}
+
 export function isValidIsoDate(value: string): boolean {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (!match) return false;

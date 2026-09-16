@@ -9,13 +9,17 @@ export interface LedgerSettings {
   defaultView: LedgerViewId;
   excludedCategories: string[];
   dailyBudgetCents: number;
+  barkUrl: string;
+  lastBudgetNotificationDate: string;
 }
 
 export const DEFAULT_SETTINGS: LedgerSettings = {
   ledgerFolder: "记账",
   defaultView: "overview",
   excludedCategories: ["债务/还款"],
-  dailyBudgetCents: 0
+  dailyBudgetCents: 0,
+  barkUrl: "",
+  lastBudgetNotificationDate: ""
 };
 
 const VIEW_NAMES: Record<LedgerViewId, string> = {
@@ -89,6 +93,23 @@ export class LedgerSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings(false);
           });
         text.inputEl.setAttribute("inputmode", "decimal");
+        return text;
+      });
+
+    new Setting(this.containerEl)
+      .setName("Bark 推送地址")
+      .setDesc("粘贴 Bark 地址，例如 https://api.day.app/你的Key；达到或超过今日预算时每天提醒一次。地址只保存在本地，不会上传 GitHub。")
+      .addText((text) => {
+        text
+          .setPlaceholder("https://api.day.app/你的Key")
+          .setValue(this.plugin.settings.barkUrl)
+          .onChange(async (value) => {
+            this.plugin.settings.barkUrl = value.trim();
+            this.plugin.settings.lastBudgetNotificationDate = "";
+            await this.plugin.saveSettings(false);
+          });
+        text.inputEl.type = "password";
+        text.inputEl.setAttribute("autocomplete", "off");
         return text;
       });
 

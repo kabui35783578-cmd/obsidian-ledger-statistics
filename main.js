@@ -66,6 +66,17 @@ function formatCents(cents) {
   const absolute = Math.abs(cents);
   return `${sign}\xA5${Math.floor(absolute / 100).toLocaleString("zh-CN")}.${String(absolute % 100).padStart(2, "0")}`;
 }
+function barkPushUrl(baseUrl, title, body) {
+  try {
+    const parsed = new URL(baseUrl.trim());
+    if (parsed.protocol !== "https:") return null;
+    const key = parsed.pathname.split("/").filter(Boolean)[0];
+    if (!key) return null;
+    return `${parsed.origin}/${encodeURIComponent(key)}/${encodeURIComponent(title)}/${encodeURIComponent(body)}`;
+  } catch (e) {
+    return null;
+  }
+}
 function isValidIsoDate(value) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (!match) return false;
@@ -425,7 +436,9 @@ var DEFAULT_SETTINGS = {
   ledgerFolder: "\u8BB0\u8D26",
   defaultView: "overview",
   excludedCategories: ["\u503A\u52A1/\u8FD8\u6B3E"],
-  dailyBudgetCents: 0
+  dailyBudgetCents: 0,
+  barkUrl: "",
+  lastBudgetNotificationDate: ""
 };
 var VIEW_NAMES = {
   overview: "\u603B\u89C8",
@@ -472,6 +485,16 @@ var LedgerSettingTab = class extends import_obsidian2.PluginSettingTab {
         await this.plugin.saveSettings(false);
       });
       text.inputEl.setAttribute("inputmode", "decimal");
+      return text;
+    });
+    new import_obsidian2.Setting(this.containerEl).setName("Bark \u63A8\u9001\u5730\u5740").setDesc("\u7C98\u8D34 Bark \u5730\u5740\uFF0C\u4F8B\u5982 https://api.day.app/\u4F60\u7684Key\uFF1B\u8FBE\u5230\u6216\u8D85\u8FC7\u4ECA\u65E5\u9884\u7B97\u65F6\u6BCF\u5929\u63D0\u9192\u4E00\u6B21\u3002\u5730\u5740\u53EA\u4FDD\u5B58\u5728\u672C\u5730\uFF0C\u4E0D\u4F1A\u4E0A\u4F20 GitHub\u3002").addText((text) => {
+      text.setPlaceholder("https://api.day.app/\u4F60\u7684Key").setValue(this.plugin.settings.barkUrl).onChange(async (value) => {
+        this.plugin.settings.barkUrl = value.trim();
+        this.plugin.settings.lastBudgetNotificationDate = "";
+        await this.plugin.saveSettings(false);
+      });
+      text.inputEl.type = "password";
+      text.inputEl.setAttribute("autocomplete", "off");
       return text;
     });
     this.containerEl.createEl("p", {
@@ -1043,6 +1066,7 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     this.detailSort = "newest";
     this.compareMode = "auto";
     this.showDiagnostics = false;
+    this.budgetNotificationInFlight = false;
     this.filtersExpanded = !import_obsidian3.Platform.isMobile;
     this.drillContext = null;
     this.pullEligible = false;
@@ -1268,6 +1292,7 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
       keyword: ""
     });
     const currentCycleCents = currentCycleRecords.reduce((sum, record) => sum + record.cents, 0);
+    this.maybeNotifyBudget(today, todayCents, this.plugin.settings.dailyBudgetCents);
     renderLiquidBudget(parent, todayCents, this.plugin.settings.dailyBudgetCents, today.replace(/-/g, "."), currentCycleCents);
     const metrics = parent.createDiv({ cls: "ledger-metrics" });
     this.metric(metrics, "\u6240\u9009\u671F\u95F4\u603B\u989D", formatCents(stats.cents), `${stats.count} \u7B14`, () => this.goDetails());
@@ -1281,6 +1306,27 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     const grid = parent.createDiv({ cls: "ledger-overview-grid" });
     renderHorizontalBars(grid, categorySummaries(records).slice(0, 8), (category) => this.drillCategory(category));
     renderTrendChart(grid, trendPoints(records, this.rangeTrendUnit()), "line", (point) => this.drillRange({ start: point.start, end: point.end }));
+  }
+  maybeNotifyBudget(today, spentCents, budgetCents) {
+    const barkUrl = this.plugin.settings.barkUrl.trim();
+    if (!barkUrl || budgetCents <= 0 || spentCents < budgetCents || this.plugin.settings.lastBudgetNotificationDate === today || this.budgetNotificationInFlight) return;
+    const overBudgetCents = spentCents - budgetCents;
+    const title = overBudgetCents > 0 ? "\u4ECA\u65E5\u9884\u7B97\u5DF2\u8D85\u652F" : "\u4ECA\u65E5\u9884\u7B97\u5DF2\u7528\u5C3D";
+    const body = overBudgetCents > 0 ? `\u4ECA\u65E5\u5168\u90E8\u652F\u51FA ${formatCents(spentCents)}\uFF0C\u6BCF\u65E5\u9884\u7B97 ${formatCents(budgetCents)}\uFF0C\u8D85\u652F ${formatCents(overBudgetCents)}` : `\u4ECA\u65E5\u5168\u90E8\u652F\u51FA ${formatCents(spentCents)}\uFF0C\u5DF2\u8FBE\u5230\u6BCF\u65E5\u9884\u7B97 ${formatCents(budgetCents)}`;
+    const url = barkPushUrl(barkUrl, title, body);
+    if (!url) return;
+    this.budgetNotificationInFlight = true;
+    void (0, import_obsidian3.requestUrl)({ url, method: "GET", throw: true }).then(async () => {
+      this.plugin.settings.lastBudgetNotificationDate = today;
+      try {
+        await this.plugin.saveSettings(false, false);
+      } catch (e) {
+      }
+    }).catch(() => {
+      new import_obsidian3.Notice("Bark \u63D0\u9192\u53D1\u9001\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u63A8\u9001\u5730\u5740\u548C\u7F51\u7EDC");
+    }).finally(() => {
+      this.budgetNotificationInFlight = false;
+    });
   }
   renderCategory(parent) {
     const controls = parent.createDiv({ cls: "ledger-section-controls" });
@@ -1753,10 +1799,10 @@ var LedgerStatisticsPlugin = class extends import_obsidian4.Plugin {
   onunload() {
     this.repository.dispose();
   }
-  async saveSettings(rescan) {
+  async saveSettings(rescan, refresh = true) {
     await this.saveData(this.settings);
     if (rescan) await this.repository.setFolder(this.settings.ledgerFolder);
-    this.refreshViews();
+    if (refresh) this.refreshViews();
   }
   async activateView() {
     let leaf = this.app.workspace.getLeavesOfType(LEDGER_VIEW_TYPE)[0];

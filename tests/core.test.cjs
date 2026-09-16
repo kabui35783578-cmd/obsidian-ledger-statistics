@@ -9,7 +9,8 @@ const {
   compareValue,
   trendPoints,
   salaryDayRange,
-  budgetProgress
+  budgetProgress,
+  barkPushUrl
 } = require("../dist/core.cjs");
 
 function note(date, body, total = "0.00") {
@@ -132,6 +133,16 @@ test("budget progress reports remaining and caps the visual fill when overspent"
     remainingCents: 0,
     overBudgetCents: 0
   });
+});
+
+test("Bark URL accepts a copied test URL and encodes generated title and body", () => {
+  const url = barkPushUrl("https://api.day.app/test-key/old-title/old-body", "今日预算已超支", "超支 ¥10.00");
+  assert.ok(url);
+  assert.match(url, /^https:\/\/api\.day\.app\/test-key\//);
+  assert.match(url, /%E4%BB%8A%E6%97%A5%E9%A2%84%E7%AE%97%E5%B7%B2%E8%B6%85%E6%94%AF/);
+  assert.match(url, /%E8%B6%85%E6%94%AF/);
+  assert.equal(barkPushUrl("http://api.day.app/test-key", "title", "body"), null);
+  assert.equal(barkPushUrl("not-a-url", "title", "body"), null);
 });
 
 test("trend aggregation groups across month boundary", () => {
