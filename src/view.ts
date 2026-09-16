@@ -19,7 +19,7 @@ import {
   trendPoints
 } from "./core";
 import { LedgerViewId } from "./settings";
-import { createButton, renderDonut, renderDumbbell, renderEmpty, renderHorizontalBars, renderTrendChart } from "./ui";
+import { createButton, renderDonut, renderDumbbell, renderEmpty, renderHorizontalBars, renderLiquidBudget, renderTrendChart } from "./ui";
 
 export const LEDGER_VIEW_TYPE = "ledger-statistics-view";
 
@@ -325,6 +325,25 @@ export class LedgerStatisticsView extends ItemView {
     const files = [...this.plugin.repository.files.values()];
     const records = filteredRecords(files, this.filter);
     const stats = summarize(files, records, this.filter.range);
+    const today = todayIso();
+    const todayRecords = filteredRecords(files, {
+      range: { start: today, end: today },
+      scope: "all",
+      excludedCategories: [],
+      categories: [],
+      keyword: ""
+    });
+    const todayCents = todayRecords.reduce((sum, record) => sum + record.cents, 0);
+    const currentCycle = salaryDayRange(new Date());
+    const currentCycleRecords = filteredRecords(files, {
+      range: currentCycle,
+      scope: "all",
+      excludedCategories: [],
+      categories: [],
+      keyword: ""
+    });
+    const currentCycleCents = currentCycleRecords.reduce((sum, record) => sum + record.cents, 0);
+    renderLiquidBudget(parent, todayCents, this.plugin.settings.dailyBudgetCents, today.replace(/-/g, "."), currentCycleCents);
     const metrics = parent.createDiv({ cls: "ledger-metrics" });
     this.metric(metrics, "所选期间总额", formatCents(stats.cents), `${stats.count} 笔`, () => this.goDetails());
     this.metric(metrics, "笔数", String(stats.count), "点击查看全部明细", () => this.goDetails());

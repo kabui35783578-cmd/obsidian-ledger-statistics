@@ -1,5 +1,6 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type LedgerStatisticsPlugin from "./main";
+import { parseMoneyToCents } from "./core";
 
 export type LedgerViewId = "overview" | "category" | "trend" | "calendar" | "details" | "compare";
 
@@ -7,12 +8,14 @@ export interface LedgerSettings {
   ledgerFolder: string;
   defaultView: LedgerViewId;
   excludedCategories: string[];
+  dailyBudgetCents: number;
 }
 
 export const DEFAULT_SETTINGS: LedgerSettings = {
   ledgerFolder: "记账",
   defaultView: "overview",
-  excludedCategories: ["债务/还款"]
+  excludedCategories: ["债务/还款"],
+  dailyBudgetCents: 0
 };
 
 const VIEW_NAMES: Record<LedgerViewId, string> = {
@@ -66,9 +69,38 @@ export class LedgerSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings(false);
         }));
 
+    new Setting(this.containerEl)
+      .setName("每日预算")
+      .setDesc("总览中的今日预算会统计全部分类，包括债务/还款。留空可关闭，最多保留两位小数。")
+      .addText((text) => {
+        text
+          .setPlaceholder("例如 100")
+          .setValue(this.budgetValue())
+          .onChange(async (value) => {
+            const trimmed = value.trim();
+            if (!trimmed) {
+              this.plugin.settings.dailyBudgetCents = 0;
+              await this.plugin.saveSettings(false);
+              return;
+            }
+            const cents = parseMoneyToCents(trimmed);
+            if (cents === null || cents < 0) return;
+            this.plugin.settings.dailyBudgetCents = cents;
+            await this.plugin.saveSettings(false);
+          });
+        text.inputEl.setAttribute("inputmode", "decimal");
+        return text;
+      });
+
     this.containerEl.createEl("p", {
       cls: "setting-item-description",
       text: "插件不会修改账目。正文逐笔记录是统计来源，frontmatter total 仅用于核对。"
     });
+  }
+
+  private budgetValue(): string {
+    const cents = this.plugin.settings.dailyBudgetCents;
+    if (!Number.isFinite(cents) || cents <= 0) return "";
+    return (cents / 100).toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
   }
 }

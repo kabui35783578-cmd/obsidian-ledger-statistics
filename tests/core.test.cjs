@@ -8,7 +8,8 @@ const {
   summarize,
   compareValue,
   trendPoints,
-  salaryDayRange
+  salaryDayRange,
+  budgetProgress
 } = require("../dist/core.cjs");
 
 function note(date, body, total = "0.00") {
@@ -112,6 +113,27 @@ test("zero comparison bases never produce infinity or misleading percentages", (
   assert.equal(compareValue(0, 1000).ratio, -1);
 });
 
+test("budget progress reports remaining and caps the visual fill when overspent", () => {
+  assert.deepEqual(budgetProgress(3850, 10000), {
+    ratio: 0.385,
+    percent: 38.5,
+    remainingCents: 6150,
+    overBudgetCents: 0
+  });
+  assert.deepEqual(budgetProgress(12500, 10000), {
+    ratio: 1.25,
+    percent: 100,
+    remainingCents: 0,
+    overBudgetCents: 2500
+  });
+  assert.deepEqual(budgetProgress(5000, 0), {
+    ratio: 0,
+    percent: 0,
+    remainingCents: 0,
+    overBudgetCents: 0
+  });
+});
+
 test("trend aggregation groups across month boundary", () => {
   const a = parseLedgerFile("记账/20260531日记账.md", note("2026-05-31", "- 12:00｜餐饮｜￥10.00", "10.00"));
   const b = parseLedgerFile("记账/20260601日记账.md", note("2026-06-01", "- 12:00｜餐饮｜￥20.00", "20.00"));
@@ -139,4 +161,21 @@ test("salary day range can step back through complete previous cycles", () => {
   assert.deepEqual(salaryDayRange(new Date(2026, 8, 15, 12), 1), { start: "2026-08-15", end: "2026-09-14" });
   assert.deepEqual(salaryDayRange(new Date(2026, 8, 14, 12), 1), { start: "2026-07-15", end: "2026-08-14" });
   assert.deepEqual(salaryDayRange(new Date(2026, 0, 3, 12), 1), { start: "2025-11-15", end: "2025-12-14" });
+});
+
+test("current salary cycle can include all categories and stops at today", () => {
+  const beforeCycle = parseLedgerFile("记账/20260914日记账.md", note("2026-09-14", "- 12:00｜餐饮｜￥10.00", "10.00"));
+  const currentCycle = parseLedgerFile("记账/20260915日记账.md", note("2026-09-15", "- 12:00｜债务/还款｜￥50.00", "50.00"));
+  const future = parseLedgerFile("记账/20260917日记账.md", note("2026-09-17", "- 12:00｜购物｜￥30.00", "30.00"));
+  const range = salaryDayRange(new Date(2026, 8, 16, 12));
+  const records = filteredRecords([beforeCycle, currentCycle, future], {
+    range,
+    scope: "all",
+    excludedCategories: ["债务/还款"],
+    categories: [],
+    keyword: ""
+  });
+  assert.deepEqual(range, { start: "2026-09-15", end: "2026-09-16" });
+  assert.equal(records.length, 1);
+  assert.equal(records[0].cents, 5000);
 });

@@ -58,6 +58,13 @@ export interface SummaryStats {
   maxRecord: LedgerRecord | null;
 }
 
+export interface BudgetProgress {
+  ratio: number;
+  percent: number;
+  remainingCents: number;
+  overBudgetCents: number;
+}
+
 export interface TrendPoint {
   key: string;
   label: string;
@@ -268,6 +275,19 @@ export function summarize(files: Iterable<ParsedLedgerFile>, records: LedgerReco
     recordedDays,
     averagePerRecordedDayCents: recordedDays === 0 ? 0 : Math.round(cents / recordedDays),
     maxRecord
+  };
+}
+
+export function budgetProgress(spentCents: number, budgetCents: number): BudgetProgress {
+  const spent = Math.max(0, spentCents);
+  const budget = Math.max(0, budgetCents);
+  if (budget === 0) return { ratio: 0, percent: 0, remainingCents: 0, overBudgetCents: 0 };
+  const ratio = spent / budget;
+  return {
+    ratio,
+    percent: Math.min(100, ratio * 100),
+    remainingCents: Math.max(0, budget - spent),
+    overBudgetCents: Math.max(0, spent - budget)
   };
 }
 

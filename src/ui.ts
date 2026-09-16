@@ -1,4 +1,4 @@
-import { CategorySummary, TrendPoint, formatCents } from "./core";
+import { BudgetProgress, CategorySummary, TrendPoint, budgetProgress, formatCents } from "./core";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const INK = "#1C1C1A";
@@ -7,6 +7,7 @@ const MUTED = "#8F8E88";
 const FAINT = "#C6C5BF";
 const GRID = "#DEDDD6";
 const LADDER = ["#1C1C1A", "#4A4944", "#6A6963", "#8F8E88", "#B0AFA9", "#C6C5BF", "#D8D7D1"];
+const MONTH_ESTIMATE_DAYS = 31;
 
 function svgEl<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}): SVGElementTagNameMap[K] {
   const element = document.createElementNS(SVG_NS, tag);
@@ -420,6 +421,63 @@ export function renderDumbbell(parent: HTMLElement, data: DumbbellDatum[], curre
 
 export function renderEmpty(parent: HTMLElement, message: string): void {
   parent.createDiv({ cls: "ledger-empty", text: message });
+}
+
+export function renderLiquidBudget(parent: HTMLElement, spentCents: number, budgetCents: number, dateLabel: string, currentCycleCents: number): void {
+  const card = parent.createDiv({ cls: "ledger-budget-card ledger-reveal" });
+  const heading = card.createDiv({ cls: "ledger-budget-heading" });
+  const title = heading.createDiv();
+  title.createDiv({ cls: "ledger-budget-badge", text: "TODAY · ALL SPENDING" });
+  title.createEl("h3", { text: "今日预算" });
+  title.createDiv({ cls: "ledger-budget-date", text: dateLabel });
+
+  const progress: BudgetProgress = budgetProgress(spentCents, budgetCents);
+  if (budgetCents > 0) {
+    const status = heading.createDiv({ cls: `ledger-budget-status${progress.overBudgetCents > 0 ? " is-over" : ""}` });
+    status.createEl("strong", { text: `${Math.round(progress.ratio * 100)}%` });
+    status.createSpan({ text: progress.overBudgetCents > 0 ? "已超支" : "已使用" });
+  }
+
+  const values = card.createDiv({ cls: "ledger-budget-values" });
+  const spent = values.createDiv({ cls: "ledger-budget-spent" });
+  spent.createSpan({ cls: "ledger-budget-label", text: "今日已花" });
+  spent.createEl("strong", { text: formatCents(spentCents) });
+  if (budgetCents > 0) {
+    values.createSpan({ cls: "ledger-budget-divider", attr: { "aria-hidden": "true" } });
+    const target = values.createDiv({ cls: "ledger-budget-target" });
+    target.createSpan({ cls: "ledger-budget-label", text: "每日预算" });
+    target.createEl("strong", { text: formatCents(budgetCents) });
+    target.createDiv({ cls: "ledger-budget-monthly", text: `按每天 ${formatCents(budgetCents)} 估算，月支出约 ${formatCents(budgetCents * MONTH_ESTIMATE_DAYS)}` });
+    target.createDiv({ cls: "ledger-budget-current", text: `当前支出 ${formatCents(currentCycleCents)}` });
+  }
+
+  if (budgetCents <= 0) {
+    card.createDiv({ cls: "ledger-budget-empty", text: "请在设置中填写每日预算" });
+    return;
+  }
+
+  const track = card.createDiv({
+    cls: "ledger-budget-track",
+    attr: {
+      role: "progressbar",
+      "aria-label": `今日预算，已花 ${formatCents(spentCents)}，预算 ${formatCents(budgetCents)}`,
+      "aria-valuemin": "0",
+      "aria-valuemax": "100",
+      "aria-valuenow": String(Math.round(progress.percent))
+    }
+  });
+  const fill = track.createDiv({ cls: `ledger-budget-fill${progress.overBudgetCents > 0 ? " is-over" : ""}` });
+  fill.style.setProperty("--budget-progress", `${progress.percent}%`);
+
+  const detail = card.createDiv({ cls: `ledger-budget-detail${progress.overBudgetCents > 0 ? " is-over" : ""}` });
+  if (progress.overBudgetCents > 0) {
+    detail.createSpan({ text: `已超支 ${formatCents(progress.overBudgetCents)}` });
+    detail.createSpan({ cls: "ledger-budget-ratio", text: `${Math.round(progress.ratio * 100)}%` });
+  } else {
+    detail.createSpan({ text: `剩余 ${formatCents(progress.remainingCents)}` });
+    detail.createSpan({ cls: "ledger-budget-ratio", text: `${Math.round(progress.ratio * 100)}%` });
+  }
+  card.createDiv({ cls: "ledger-budget-source", text: "TODAY · ALL CATEGORIES · LOCAL LEDGER" });
 }
 
 export function createButton(parent: HTMLElement, text: string, active = false): HTMLButtonElement {

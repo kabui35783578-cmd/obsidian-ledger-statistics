@@ -225,6 +225,18 @@ function summarize(files, records, range) {
     maxRecord
   };
 }
+function budgetProgress(spentCents, budgetCents) {
+  const spent = Math.max(0, spentCents);
+  const budget = Math.max(0, budgetCents);
+  if (budget === 0) return { ratio: 0, percent: 0, remainingCents: 0, overBudgetCents: 0 };
+  const ratio = spent / budget;
+  return {
+    ratio,
+    percent: Math.min(100, ratio * 100),
+    remainingCents: Math.max(0, budget - spent),
+    overBudgetCents: Math.max(0, spent - budget)
+  };
+}
 function categorySummaries(records, sortBy = "amount") {
   var _a;
   const map = /* @__PURE__ */ new Map();
@@ -412,7 +424,8 @@ var import_obsidian2 = require("obsidian");
 var DEFAULT_SETTINGS = {
   ledgerFolder: "\u8BB0\u8D26",
   defaultView: "overview",
-  excludedCategories: ["\u503A\u52A1/\u8FD8\u6B3E"]
+  excludedCategories: ["\u503A\u52A1/\u8FD8\u6B3E"],
+  dailyBudgetCents: 0
 };
 var VIEW_NAMES = {
   overview: "\u603B\u89C8",
@@ -445,10 +458,31 @@ var LedgerSettingTab = class extends import_obsidian2.PluginSettingTab {
       this.plugin.settings.excludedCategories = [...new Set(value.split(/[,，]/).map((item) => item.trim()).filter(Boolean))];
       await this.plugin.saveSettings(false);
     }));
+    new import_obsidian2.Setting(this.containerEl).setName("\u6BCF\u65E5\u9884\u7B97").setDesc("\u603B\u89C8\u4E2D\u7684\u4ECA\u65E5\u9884\u7B97\u4F1A\u7EDF\u8BA1\u5168\u90E8\u5206\u7C7B\uFF0C\u5305\u62EC\u503A\u52A1/\u8FD8\u6B3E\u3002\u7559\u7A7A\u53EF\u5173\u95ED\uFF0C\u6700\u591A\u4FDD\u7559\u4E24\u4F4D\u5C0F\u6570\u3002").addText((text) => {
+      text.setPlaceholder("\u4F8B\u5982 100").setValue(this.budgetValue()).onChange(async (value) => {
+        const trimmed = value.trim();
+        if (!trimmed) {
+          this.plugin.settings.dailyBudgetCents = 0;
+          await this.plugin.saveSettings(false);
+          return;
+        }
+        const cents = parseMoneyToCents(trimmed);
+        if (cents === null || cents < 0) return;
+        this.plugin.settings.dailyBudgetCents = cents;
+        await this.plugin.saveSettings(false);
+      });
+      text.inputEl.setAttribute("inputmode", "decimal");
+      return text;
+    });
     this.containerEl.createEl("p", {
       cls: "setting-item-description",
       text: "\u63D2\u4EF6\u4E0D\u4F1A\u4FEE\u6539\u8D26\u76EE\u3002\u6B63\u6587\u9010\u7B14\u8BB0\u5F55\u662F\u7EDF\u8BA1\u6765\u6E90\uFF0Cfrontmatter total \u4EC5\u7528\u4E8E\u6838\u5BF9\u3002"
     });
+  }
+  budgetValue() {
+    const cents = this.plugin.settings.dailyBudgetCents;
+    if (!Number.isFinite(cents) || cents <= 0) return "";
+    return (cents / 100).toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
   }
 };
 
@@ -463,6 +497,7 @@ var MUTED = "#8F8E88";
 var FAINT = "#C6C5BF";
 var GRID = "#DEDDD6";
 var LADDER = ["#1C1C1A", "#4A4944", "#6A6963", "#8F8E88", "#B0AFA9", "#C6C5BF", "#D8D7D1"];
+var MONTH_ESTIMATE_DAYS = 31;
 function svgEl(tag, attrs = {}) {
   const element = document.createElementNS(SVG_NS, tag);
   for (const [key, value] of Object.entries(attrs)) element.setAttribute(key, String(value));
@@ -877,6 +912,57 @@ function renderDumbbell(parent, data, currentLabel, previousLabel, onClick) {
 function renderEmpty(parent, message) {
   parent.createDiv({ cls: "ledger-empty", text: message });
 }
+function renderLiquidBudget(parent, spentCents, budgetCents, dateLabel, currentCycleCents) {
+  const card = parent.createDiv({ cls: "ledger-budget-card ledger-reveal" });
+  const heading = card.createDiv({ cls: "ledger-budget-heading" });
+  const title = heading.createDiv();
+  title.createDiv({ cls: "ledger-budget-badge", text: "TODAY \xB7 ALL SPENDING" });
+  title.createEl("h3", { text: "\u4ECA\u65E5\u9884\u7B97" });
+  title.createDiv({ cls: "ledger-budget-date", text: dateLabel });
+  const progress = budgetProgress(spentCents, budgetCents);
+  if (budgetCents > 0) {
+    const status = heading.createDiv({ cls: `ledger-budget-status${progress.overBudgetCents > 0 ? " is-over" : ""}` });
+    status.createEl("strong", { text: `${Math.round(progress.ratio * 100)}%` });
+    status.createSpan({ text: progress.overBudgetCents > 0 ? "\u5DF2\u8D85\u652F" : "\u5DF2\u4F7F\u7528" });
+  }
+  const values = card.createDiv({ cls: "ledger-budget-values" });
+  const spent = values.createDiv({ cls: "ledger-budget-spent" });
+  spent.createSpan({ cls: "ledger-budget-label", text: "\u4ECA\u65E5\u5DF2\u82B1" });
+  spent.createEl("strong", { text: formatCents(spentCents) });
+  if (budgetCents > 0) {
+    values.createSpan({ cls: "ledger-budget-divider", attr: { "aria-hidden": "true" } });
+    const target = values.createDiv({ cls: "ledger-budget-target" });
+    target.createSpan({ cls: "ledger-budget-label", text: "\u6BCF\u65E5\u9884\u7B97" });
+    target.createEl("strong", { text: formatCents(budgetCents) });
+    target.createDiv({ cls: "ledger-budget-monthly", text: `\u6309\u6BCF\u5929 ${formatCents(budgetCents)} \u4F30\u7B97\uFF0C\u6708\u652F\u51FA\u7EA6 ${formatCents(budgetCents * MONTH_ESTIMATE_DAYS)}` });
+    target.createDiv({ cls: "ledger-budget-current", text: `\u5F53\u524D\u652F\u51FA ${formatCents(currentCycleCents)}` });
+  }
+  if (budgetCents <= 0) {
+    card.createDiv({ cls: "ledger-budget-empty", text: "\u8BF7\u5728\u8BBE\u7F6E\u4E2D\u586B\u5199\u6BCF\u65E5\u9884\u7B97" });
+    return;
+  }
+  const track = card.createDiv({
+    cls: "ledger-budget-track",
+    attr: {
+      role: "progressbar",
+      "aria-label": `\u4ECA\u65E5\u9884\u7B97\uFF0C\u5DF2\u82B1 ${formatCents(spentCents)}\uFF0C\u9884\u7B97 ${formatCents(budgetCents)}`,
+      "aria-valuemin": "0",
+      "aria-valuemax": "100",
+      "aria-valuenow": String(Math.round(progress.percent))
+    }
+  });
+  const fill = track.createDiv({ cls: `ledger-budget-fill${progress.overBudgetCents > 0 ? " is-over" : ""}` });
+  fill.style.setProperty("--budget-progress", `${progress.percent}%`);
+  const detail = card.createDiv({ cls: `ledger-budget-detail${progress.overBudgetCents > 0 ? " is-over" : ""}` });
+  if (progress.overBudgetCents > 0) {
+    detail.createSpan({ text: `\u5DF2\u8D85\u652F ${formatCents(progress.overBudgetCents)}` });
+    detail.createSpan({ cls: "ledger-budget-ratio", text: `${Math.round(progress.ratio * 100)}%` });
+  } else {
+    detail.createSpan({ text: `\u5269\u4F59 ${formatCents(progress.remainingCents)}` });
+    detail.createSpan({ cls: "ledger-budget-ratio", text: `${Math.round(progress.ratio * 100)}%` });
+  }
+  card.createDiv({ cls: "ledger-budget-source", text: "TODAY \xB7 ALL CATEGORIES \xB7 LOCAL LEDGER" });
+}
 function createButton(parent, text, active = false) {
   const button = parent.createEl("button", { cls: `ledger-button${active ? " is-active" : ""}`, text });
   button.type = "button";
@@ -1164,6 +1250,25 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     const files = [...this.plugin.repository.files.values()];
     const records = filteredRecords(files, this.filter);
     const stats = summarize(files, records, this.filter.range);
+    const today = todayIso();
+    const todayRecords = filteredRecords(files, {
+      range: { start: today, end: today },
+      scope: "all",
+      excludedCategories: [],
+      categories: [],
+      keyword: ""
+    });
+    const todayCents = todayRecords.reduce((sum, record) => sum + record.cents, 0);
+    const currentCycle = salaryDayRange(/* @__PURE__ */ new Date());
+    const currentCycleRecords = filteredRecords(files, {
+      range: currentCycle,
+      scope: "all",
+      excludedCategories: [],
+      categories: [],
+      keyword: ""
+    });
+    const currentCycleCents = currentCycleRecords.reduce((sum, record) => sum + record.cents, 0);
+    renderLiquidBudget(parent, todayCents, this.plugin.settings.dailyBudgetCents, today.replace(/-/g, "."), currentCycleCents);
     const metrics = parent.createDiv({ cls: "ledger-metrics" });
     this.metric(metrics, "\u6240\u9009\u671F\u95F4\u603B\u989D", formatCents(stats.cents), `${stats.count} \u7B14`, () => this.goDetails());
     this.metric(metrics, "\u7B14\u6570", String(stats.count), "\u70B9\u51FB\u67E5\u770B\u5168\u90E8\u660E\u7EC6", () => this.goDetails());
