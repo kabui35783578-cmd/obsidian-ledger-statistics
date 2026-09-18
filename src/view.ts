@@ -123,6 +123,7 @@ export class LedgerStatisticsView extends ItemView {
   private pullPeakDistance = 0;
   private pullHint: HTMLElement | null = null;
   private settleTimer: number | null = null;
+  private filterResizeObserver: ResizeObserver | null = null;
 
   constructor(leaf: WorkspaceLeaf, private plugin: LedgerStatisticsPlugin) {
     super(leaf);
@@ -159,6 +160,8 @@ export class LedgerStatisticsView extends ItemView {
   }
 
   async onClose(): Promise<void> {
+    this.filterResizeObserver?.disconnect();
+    this.filterResizeObserver = null;
     this.resetAutoAdvanceArm();
   }
 
@@ -210,9 +213,12 @@ export class LedgerStatisticsView extends ItemView {
   }
 
   private renderToolbar(root: HTMLElement): void {
-    const panel = root.createEl("details", { cls: "ledger-filter-panel" });
-    panel.open = this.filtersExpanded;
-    const summary = panel.createEl("summary", { cls: "ledger-filter-summary" });
+    this.filterResizeObserver?.disconnect();
+    const panel = root.createDiv({ cls: `ledger-filter-panel${this.filtersExpanded ? " is-open" : ""}` });
+    const summary = panel.createEl("button", {
+      cls: "ledger-filter-summary",
+      attr: { type: "button", "aria-expanded": String(this.filtersExpanded) }
+    });
     const summaryIcon = summary.createSpan({ cls: "ledger-filter-summary-icon" });
     setIcon(summaryIcon, "sliders-horizontal");
     const summaryCopy = summary.createSpan({ cls: "ledger-filter-summary-copy" });
@@ -223,9 +229,9 @@ export class LedgerStatisticsView extends ItemView {
     summaryCopy.createSpan({ text: `${dateLabel} · ${scopeLabel} · ${categoryLabel}` });
     const summaryChevron = summary.createSpan({ cls: "ledger-filter-summary-chevron" });
     setIcon(summaryChevron, "chevron-down");
-    panel.addEventListener("toggle", () => { this.filtersExpanded = panel.open; });
-
-    const toolbar = panel.createDiv({ cls: "ledger-toolbar" });
+    const filterContent = panel.createDiv({ cls: "ledger-filter-content" });
+    filterContent.toggleAttribute("inert", !this.filtersExpanded);
+    const toolbar = filterContent.createDiv({ cls: "ledger-toolbar" });
     const timeControls = toolbar.createDiv({ cls: "ledger-time-controls" });
     addSelect(timeControls, "时间", this.preset, [["today", "今天"], ["month", "本月"], ["previous", "上月"], ["salary", "工资日"], ["year", "今年"], ["custom", "自定义"]], (value) => {
       this.applyPreset(value as DatePreset);
@@ -292,6 +298,22 @@ export class LedgerStatisticsView extends ItemView {
         refresh.disabled = false;
         refresh.removeClass("is-refreshing");
       }
+    });
+
+    const syncFilterHeight = (): void => {
+      filterContent.style.setProperty("--ledger-filter-height", `${toolbar.scrollHeight}px`);
+    };
+    syncFilterHeight();
+    this.filterResizeObserver = new ResizeObserver(() => {
+      if (this.filtersExpanded) syncFilterHeight();
+    });
+    this.filterResizeObserver.observe(toolbar);
+    summary.addEventListener("click", () => {
+      this.filtersExpanded = !this.filtersExpanded;
+      panel.classList.toggle("is-open", this.filtersExpanded);
+      if (this.filtersExpanded) syncFilterHeight();
+      summary.setAttribute("aria-expanded", String(this.filtersExpanded));
+      filterContent.toggleAttribute("inert", !this.filtersExpanded);
     });
   }
 

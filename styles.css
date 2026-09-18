@@ -62,23 +62,42 @@
   border: 0;
   border-radius: 24px;
   background: var(--mono-7);
-  overflow: clip;
+  overflow: hidden;
+  transition: border-radius 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ledger-filter-panel:not(.is-open) {
+  border-radius: 999px;
 }
 
 .ledger-filter-summary {
   display: flex;
+  width: 100%;
   min-height: 58px;
   align-items: center;
   gap: 11px;
   padding: 11px 18px;
+  border: 0;
+  outline: 0;
+  border-radius: inherit;
+  box-shadow: none !important;
+  background: transparent !important;
   color: var(--mono-ink);
   cursor: pointer;
+  font: inherit;
   list-style: none;
+  text-align: left;
   -webkit-tap-highlight-color: transparent;
+  transition: background-color 160ms ease;
 }
 
-.ledger-filter-summary::-webkit-details-marker {
-  display: none;
+.ledger-filter-summary:hover {
+  background: color-mix(in srgb, var(--mono-ink) 4%, transparent) !important;
+}
+
+.ledger-filter-summary:focus-visible {
+  outline: 2px solid var(--mono-ink);
+  outline-offset: -2px;
 }
 
 .ledger-filter-summary-icon,
@@ -119,11 +138,48 @@
 }
 
 .ledger-filter-summary-chevron {
-  transition: transform 180ms ease;
+  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.ledger-filter-panel[open] .ledger-filter-summary-chevron {
+.ledger-filter-panel.is-open .ledger-filter-summary-chevron {
   transform: rotate(180deg);
+}
+
+.ledger-filter-content {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    max-height 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 150ms ease,
+    visibility 0s linear 300ms;
+}
+
+.ledger-filter-content > .ledger-toolbar {
+  min-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition:
+    opacity 160ms ease,
+    transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ledger-filter-panel.is-open .ledger-filter-content {
+  max-height: var(--ledger-filter-height, 0);
+  opacity: 1;
+  visibility: visible;
+  transition:
+    max-height 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 180ms ease 35ms,
+    visibility 0s;
+}
+
+.ledger-filter-panel.is-open .ledger-filter-content > .ledger-toolbar {
+  opacity: 1;
+  transform: translateY(0);
+  transition-delay: 35ms;
 }
 
 .ledger-header {
@@ -1155,6 +1211,14 @@ button.ledger-metric:active {
     animation: none;
     stroke-dasharray: none;
     stroke-dashoffset: 0;
+  }
+
+  .ledger-filter-panel,
+  .ledger-filter-summary,
+  .ledger-filter-summary-chevron,
+  .ledger-filter-content,
+  .ledger-filter-content > .ledger-toolbar {
+    transition: none;
   }
 }
 

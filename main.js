@@ -1076,6 +1076,7 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     this.pullPeakDistance = 0;
     this.pullHint = null;
     this.settleTimer = null;
+    this.filterResizeObserver = null;
     this.activeView = plugin.settings.defaultView;
     const range = initialRange();
     this.filter = {
@@ -1111,6 +1112,9 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     this.render();
   }
   async onClose() {
+    var _a;
+    (_a = this.filterResizeObserver) == null ? void 0 : _a.disconnect();
+    this.filterResizeObserver = null;
     this.resetAutoAdvanceArm();
   }
   refreshSettings() {
@@ -1158,24 +1162,26 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
     scope.setText(this.filter.scope === "consumption" ? "\u5F53\u524D\u53E3\u5F84\uFF1A\u6D88\u8D39\u652F\u51FA" : "\u5F53\u524D\u53E3\u5F84\uFF1A\u5168\u90E8\u652F\u51FA");
   }
   renderToolbar(root) {
-    var _a, _b;
-    const panel = root.createEl("details", { cls: "ledger-filter-panel" });
-    panel.open = this.filtersExpanded;
-    const summary = panel.createEl("summary", { cls: "ledger-filter-summary" });
+    var _a, _b, _c;
+    (_a = this.filterResizeObserver) == null ? void 0 : _a.disconnect();
+    const panel = root.createDiv({ cls: `ledger-filter-panel${this.filtersExpanded ? " is-open" : ""}` });
+    const summary = panel.createEl("button", {
+      cls: "ledger-filter-summary",
+      attr: { type: "button", "aria-expanded": String(this.filtersExpanded) }
+    });
     const summaryIcon = summary.createSpan({ cls: "ledger-filter-summary-icon" });
     (0, import_obsidian3.setIcon)(summaryIcon, "sliders-horizontal");
     const summaryCopy = summary.createSpan({ cls: "ledger-filter-summary-copy" });
     summaryCopy.createEl("strong", { text: "\u7B5B\u9009\u6761\u4EF6" });
-    const categoryLabel = (_a = this.filter.categories[0]) != null ? _a : "\u5168\u90E8\u5206\u7C7B";
+    const categoryLabel = (_b = this.filter.categories[0]) != null ? _b : "\u5168\u90E8\u5206\u7C7B";
     const scopeLabel = this.filter.scope === "consumption" ? "\u6D88\u8D39\u652F\u51FA" : "\u5168\u90E8\u652F\u51FA";
     const dateLabel = this.filter.range.start === this.filter.range.end ? this.filter.range.start.slice(5).replace("-", ".") : `${this.filter.range.start.slice(5).replace("-", ".")}\u2013${this.filter.range.end.slice(5).replace("-", ".")}`;
     summaryCopy.createSpan({ text: `${dateLabel} \xB7 ${scopeLabel} \xB7 ${categoryLabel}` });
     const summaryChevron = summary.createSpan({ cls: "ledger-filter-summary-chevron" });
     (0, import_obsidian3.setIcon)(summaryChevron, "chevron-down");
-    panel.addEventListener("toggle", () => {
-      this.filtersExpanded = panel.open;
-    });
-    const toolbar = panel.createDiv({ cls: "ledger-toolbar" });
+    const filterContent = panel.createDiv({ cls: "ledger-filter-content" });
+    filterContent.toggleAttribute("inert", !this.filtersExpanded);
+    const toolbar = filterContent.createDiv({ cls: "ledger-toolbar" });
     const timeControls = toolbar.createDiv({ cls: "ledger-time-controls" });
     addSelect(timeControls, "\u65F6\u95F4", this.preset, [["today", "\u4ECA\u5929"], ["month", "\u672C\u6708"], ["previous", "\u4E0A\u6708"], ["salary", "\u5DE5\u8D44\u65E5"], ["year", "\u4ECA\u5E74"], ["custom", "\u81EA\u5B9A\u4E49"]], (value) => {
       this.applyPreset(value);
@@ -1223,7 +1229,7 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
       this.render();
     });
     const categories = this.allCategories();
-    addSelect(toolbar, "\u5206\u7C7B", (_b = this.filter.categories[0]) != null ? _b : "", [["", "\u5168\u90E8\u5206\u7C7B"], ...categories.map((category) => [category, category])], (value) => {
+    addSelect(toolbar, "\u5206\u7C7B", (_c = this.filter.categories[0]) != null ? _c : "", [["", "\u5168\u90E8\u5206\u7C7B"], ...categories.map((category) => [category, category])], (value) => {
       this.clearDrillContext();
       this.filter.categories = value ? [value] : [];
       this.render();
@@ -1242,6 +1248,21 @@ var LedgerStatisticsView = class extends import_obsidian3.ItemView {
         refresh.disabled = false;
         refresh.removeClass("is-refreshing");
       }
+    });
+    const syncFilterHeight = () => {
+      filterContent.style.setProperty("--ledger-filter-height", `${toolbar.scrollHeight}px`);
+    };
+    syncFilterHeight();
+    this.filterResizeObserver = new ResizeObserver(() => {
+      if (this.filtersExpanded) syncFilterHeight();
+    });
+    this.filterResizeObserver.observe(toolbar);
+    summary.addEventListener("click", () => {
+      this.filtersExpanded = !this.filtersExpanded;
+      panel.classList.toggle("is-open", this.filtersExpanded);
+      if (this.filtersExpanded) syncFilterHeight();
+      summary.setAttribute("aria-expanded", String(this.filtersExpanded));
+      filterContent.toggleAttribute("inert", !this.filtersExpanded);
     });
   }
   renderTabs(root) {
