@@ -9,6 +9,9 @@ export interface LedgerSettings {
   defaultView: LedgerViewId;
   excludedCategories: string[];
   dailyBudgetCents: number;
+  budgetCategory: string;
+  includeStarredInBudget: boolean;
+  starredRecordIds: string[];
   barkUrl: string;
   lastBudgetNotificationDate: string;
 }
@@ -18,6 +21,9 @@ export const DEFAULT_SETTINGS: LedgerSettings = {
   defaultView: "overview",
   excludedCategories: ["债务/还款"],
   dailyBudgetCents: 0,
+  budgetCategory: "",
+  includeStarredInBudget: true,
+  starredRecordIds: [],
   barkUrl: "",
   lastBudgetNotificationDate: ""
 };
@@ -75,7 +81,7 @@ export class LedgerSettingTab extends PluginSettingTab {
 
     new Setting(this.containerEl)
       .setName("每日预算")
-      .setDesc("总览中的今日预算会统计全部分类，包括债务/还款。留空可关闭，最多保留两位小数。")
+      .setDesc("总览中的今日预算按下方预算分类统计。留空可关闭，最多保留两位小数。")
       .addText((text) => {
         text
           .setPlaceholder("例如 100")
@@ -95,6 +101,35 @@ export class LedgerSettingTab extends PluginSettingTab {
         text.inputEl.setAttribute("inputmode", "decimal");
         return text;
       });
+
+    new Setting(this.containerEl)
+      .setName("预算分类")
+      .setDesc("默认统计全部分类；选择后，今日预算、当前支出和 Bark 提醒只统计该分类。")
+      .addDropdown((dropdown) => {
+        dropdown.addOption("", "全部分类");
+        const categories = this.budgetCategories();
+        for (const category of categories) dropdown.addOption(category, category);
+        const current = this.plugin.settings.budgetCategory;
+        if (current && !categories.includes(current)) dropdown.addOption(current, `${current}（当前无记录）`);
+        dropdown.setValue(current).onChange(async (value) => {
+          this.plugin.settings.budgetCategory = value;
+          this.plugin.settings.lastBudgetNotificationDate = "";
+          await this.plugin.saveSettings(false);
+        });
+      });
+
+    new Setting(this.containerEl)
+      .setName("今日预算星标口径")
+      .setDesc("控制今日已花、当前工资周期支出和 Bark 提醒是否统计已标星记录。")
+      .addDropdown((dropdown) => dropdown
+        .addOption("include", "包含星标支出")
+        .addOption("exclude", "不包含星标支出")
+        .setValue(this.plugin.settings.includeStarredInBudget ? "include" : "exclude")
+        .onChange(async (value) => {
+          this.plugin.settings.includeStarredInBudget = value === "include";
+          this.plugin.settings.lastBudgetNotificationDate = "";
+          await this.plugin.saveSettings(false);
+        }));
 
     new Setting(this.containerEl)
       .setName("Bark 推送地址")
@@ -123,5 +158,11 @@ export class LedgerSettingTab extends PluginSettingTab {
     const cents = this.plugin.settings.dailyBudgetCents;
     if (!Number.isFinite(cents) || cents <= 0) return "";
     return (cents / 100).toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+  }
+
+  private budgetCategories(): string[] {
+    return [...new Set([...this.plugin.repository.files.values()]
+      .flatMap((file) => file.records.map((record) => record.category)))]
+      .sort((a, b) => a.localeCompare(b, "zh-CN"));
   }
 }

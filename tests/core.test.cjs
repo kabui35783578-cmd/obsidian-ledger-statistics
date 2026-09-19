@@ -10,6 +10,7 @@ const {
   trendPoints,
   salaryDayRange,
   budgetProgress,
+  budgetScopedRecords,
   barkPushUrl
 } = require("../dist/core.cjs");
 
@@ -97,6 +98,26 @@ test("filters cross-month dates, accounting scope, category and keyword consiste
   assert.equal(filteredRecords([may, june], { ...baseFilter, keyword: "雨伞" }).length, 1);
   assert.equal(filteredRecords([may, june], { ...baseFilter, categories: ["餐饮"] }).length, 1);
   assert.equal(filteredRecords([may, june], { ...baseFilter, scope: "all" }).length, 3);
+});
+
+test("budget category filtering counts only the selected category", () => {
+  const day = parseLedgerFile("记账/20260912日记账.md", note("2026-09-12", "- 12:00｜餐饮｜￥10.00\n- 18:00｜购物｜￥20.00", "30.00"));
+  const records = filteredRecords([day], {
+    range: { start: "2026-09-12", end: "2026-09-12" },
+    scope: "all",
+    excludedCategories: [],
+    categories: ["餐饮"],
+    keyword: ""
+  });
+  assert.equal(records.length, 1);
+  assert.equal(records[0].cents, 1000);
+});
+
+test("budget starred scope can include or exclude starred records", () => {
+  const day = parseLedgerFile("记账/20260912日记账.md", note("2026-09-12", "- 12:00｜餐饮｜￥10.00\n- 18:00｜购物｜￥20.00", "30.00"));
+  const starredIds = [day.records[0].id];
+  assert.deepEqual(budgetScopedRecords(day.records, true, starredIds).map((record) => record.cents), [1000, 2000]);
+  assert.deepEqual(budgetScopedRecords(day.records, false, starredIds).map((record) => record.cents), [2000]);
 });
 
 test("daily average uses dates with files, including zero days, and not missing calendar dates", () => {

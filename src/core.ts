@@ -272,6 +272,13 @@ export function filteredRecords(files: Iterable<ParsedLedgerFile>, filter: Filte
   return flattenRecords(files).filter((record) => recordMatches(record, filter));
 }
 
+export function budgetScopedRecords(records: Iterable<LedgerRecord>, includeStarred: boolean, starredRecordIds: Iterable<string>): LedgerRecord[] {
+  const copy = [...records];
+  if (includeStarred) return copy;
+  const starred = new Set(starredRecordIds);
+  return copy.filter((record) => !starred.has(record.id));
+}
+
 export function summarize(files: Iterable<ParsedLedgerFile>, records: LedgerRecord[], range: DateRange): SummaryStats {
   const recordedDates = new Set<string>();
   for (const file of files) {

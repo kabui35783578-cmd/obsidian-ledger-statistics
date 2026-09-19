@@ -1,4 +1,4 @@
-import { ItemView, MarkdownView, Notice, Platform, TFile, WorkspaceLeaf, requestUrl, setIcon } from "obsidian";
+import { ItemView, MarkdownView, Menu, Notice, Platform, TFile, WorkspaceLeaf, requestUrl, setIcon } from "obsidian";
 import type LedgerStatisticsPlugin from "./main";
 import {
   AccountingScope,
@@ -8,6 +8,7 @@ import {
   LedgerRecord,
   addDays,
   barkPushUrl,
+  budgetScopedRecords,
   categorySummaries,
   compareValue,
   diagnosticsFor,
@@ -20,7 +21,7 @@ import {
   trendPoints
 } from "./core";
 import { LedgerViewId } from "./settings";
-import { createButton, renderDonut, renderDumbbell, renderEmpty, renderHorizontalBars, renderLiquidBudget, renderTrendChart } from "./ui";
+import { createButton, renderDonut, renderDumbbell, renderEmpty, renderHorizontalBars, renderLiquidBudget, renderStarredExpenses, renderTrendChart } from "./ui";
 
 export const LEDGER_VIEW_TYPE = "ledger-statistics-view";
 
@@ -350,25 +351,27 @@ export class LedgerStatisticsView extends ItemView {
     const records = filteredRecords(files, this.filter);
     const stats = summarize(files, records, this.filter.range);
     const today = todayIso();
-    const todayRecords = filteredRecords(files, {
+    const budgetCategory = this.plugin.settings.budgetCategory;
+    const includeStarred = this.plugin.settings.includeStarredInBudget;
+    const todayRecords = budgetScopedRecords(filteredRecords(files, {
       range: { start: today, end: today },
       scope: "all",
       excludedCategories: [],
-      categories: [],
+      categories: budgetCategory ? [budgetCategory] : [],
       keyword: ""
-    });
+    }), includeStarred, this.plugin.settings.starredRecordIds);
     const todayCents = todayRecords.reduce((sum, record) => sum + record.cents, 0);
     const currentCycle = salaryDayRange(new Date());
-    const currentCycleRecords = filteredRecords(files, {
+    const currentCycleRecords = budgetScopedRecords(filteredRecords(files, {
       range: currentCycle,
       scope: "all",
       excludedCategories: [],
-      categories: [],
+      categories: budgetCategory ? [budgetCategory] : [],
       keyword: ""
-    });
+    }), includeStarred, this.plugin.settings.starredRecordIds);
     const currentCycleCents = currentCycleRecords.reduce((sum, record) => sum + record.cents, 0);
-    this.maybeNotifyBudget(today, todayCents, this.plugin.settings.dailyBudgetCents);
-    renderLiquidBudget(parent, todayCents, this.plugin.settings.dailyBudgetCents, today.replace(/-/g, "."), currentCycleCents);
+    this.maybeNotifyBudget(today, todayCents, this.plugin.settings.dailyBudgetCents, budgetCategory, includeStarred);
+    renderLiquidBudget(parent, todayCents, this.plugin.settings.dailyBudgetCents, today.replace(/-/g, "."), currentCycleCents, budgetCategory, includeStarred);
     const metrics = parent.createDiv({ cls: "ledger-metrics" });
     this.metric(metrics, "所选期间总额", formatCents(stats.cents), `${stats.count} 笔`, () => this.goDetails());
     this.metric(metrics, "笔数", String(stats.count), "点击查看全部明细", () => this.goDetails());
@@ -376,21 +379,24 @@ export class LedgerStatisticsView extends ItemView {
     this.metric(metrics, "最大单笔", stats.maxRecord ? formatCents(stats.maxRecord.cents) : "—", stats.maxRecord ? `${stats.maxRecord.category} · ${stats.maxRecord.date}` : "暂无记录", () => this.goDetails());
     if (records.length === 0) {
       renderEmpty(parent, "当前筛选条件下没有记录。缺少文件的日期不会按零消费处理。");
-      return;
+    } else {
+      const grid = parent.createDiv({ cls: "ledger-overview-grid" });
+      renderHorizontalBars(grid, categorySummaries(records).slice(0, 8), (category) => this.drillCategory(category));
+      renderTrendChart(grid, trendPoints(records, this.rangeTrendUnit()), "line", (point) => this.drillRange({ start: point.start, end: point.end }));
     }
-    const grid = parent.createDiv({ cls: "ledger-overview-grid" });
-    renderHorizontalBars(grid, categorySummaries(records).slice(0, 8), (category) => this.drillCategory(category));
-    renderTrendChart(grid, trendPoints(records, this.rangeTrendUnit()), "line", (point) => this.drillRange({ start: point.start, end: point.end }));
+    renderStarredExpenses(parent, this.starredRecords(), (record) => void this.openRecord(record));
   }
 
-  private maybeNotifyBudget(today: string, spentCents: number, budgetCents: number): void {
+  private maybeNotifyBudget(today: string, spentCents: number, budgetCents: number, budgetCategory: string, includeStarred: boolean): void {
     const barkUrl = this.plugin.settings.barkUrl.trim();
     if (!barkUrl || budgetCents <= 0 || spentCents < budgetCents || this.plugin.settings.lastBudgetNotificationDate === today || this.budgetNotificationInFlight) return;
     const overBudgetCents = spentCents - budgetCents;
     const title = overBudgetCents > 0 ? "今日预算已超支" : "今日预算已用尽";
+    const scopeLabel = budgetCategory || "全部分类";
+    const starredScope = includeStarred ? "含星标" : "不含星标";
     const body = overBudgetCents > 0
-      ? `今日全部支出 ${formatCents(spentCents)}，每日预算 ${formatCents(budgetCents)}，超支 ${formatCents(overBudgetCents)}`
-      : `今日全部支出 ${formatCents(spentCents)}，已达到每日预算 ${formatCents(budgetCents)}`;
+      ? `今日${scopeLabel}支出（${starredScope}）${formatCents(spentCents)}，每日预算 ${formatCents(budgetCents)}，超支 ${formatCents(overBudgetCents)}`
+      : `今日${scopeLabel}支出（${starredScope}）${formatCents(spentCents)}，已达到每日预算 ${formatCents(budgetCents)}`;
     const url = barkPushUrl(barkUrl, title, body);
     if (!url) return;
 
@@ -524,10 +530,23 @@ export class LedgerStatisticsView extends ItemView {
     const tableWrap = parent.createDiv({ cls: "ledger-table-wrap ledger-details-table" });
     const table = tableWrap.createEl("table", { cls: "ledger-table" });
     const head = table.createTHead().insertRow();
-    ["日期", "时间", "分类", "金额", "备注", "来源"].forEach((text) => head.createEl("th", { text }));
+    ["星标", "日期", "时间", "分类", "金额", "备注", "来源"].forEach((text) => head.createEl("th", { text }));
     const body = table.createTBody();
     for (const record of records) {
       const row = body.insertRow();
+      row.dataset.ledgerRecordId = record.id;
+      row.toggleClass("is-starred", this.isStarred(record));
+      this.bindRecordInteractions(row, record);
+      const starCell = row.createEl("td", { cls: "ledger-detail-star" });
+      const starButton = starCell.createEl("button", {
+        cls: `ledger-star-toggle${this.isStarred(record) ? " is-active" : ""}`,
+        attr: { type: "button", "aria-label": this.isStarred(record) ? "取消星标" : "标记为星标" }
+      });
+      setIcon(starButton, "star");
+      starButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        void this.toggleStar(record);
+      });
       row.createEl("td", { text: record.date });
       row.createEl("td", { text: record.time });
       row.createEl("td", { text: record.category });
@@ -539,9 +558,22 @@ export class LedgerStatisticsView extends ItemView {
     const cards = parent.createDiv({ cls: "ledger-detail-cards" });
     for (const record of records) {
       const card = cards.createDiv({ cls: "ledger-detail-card" });
+      card.dataset.ledgerRecordId = record.id;
+      card.toggleClass("is-starred", this.isStarred(record));
+      this.bindRecordInteractions(card, record);
       const top = card.createDiv({ cls: "ledger-detail-card-top" });
       top.createSpan({ text: `${record.date} · ${record.time}` });
-      top.createEl("strong", { text: formatCents(record.cents) });
+      const amount = top.createDiv({ cls: "ledger-detail-card-amount" });
+      amount.createEl("strong", { text: formatCents(record.cents) });
+      const starButton = amount.createEl("button", {
+        cls: `ledger-star-toggle${this.isStarred(record) ? " is-active" : ""}`,
+        attr: { type: "button", "aria-label": this.isStarred(record) ? "取消星标" : "标记为星标" }
+      });
+      setIcon(starButton, "star");
+      starButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        void this.toggleStar(record);
+      });
       card.createDiv({ cls: "ledger-detail-category", text: record.category });
       if (record.note) card.createDiv({ text: record.note });
       const footer = card.createDiv({ cls: "ledger-detail-card-footer" });
@@ -812,6 +844,84 @@ export class LedgerStatisticsView extends ItemView {
     if (this.detailSort === "amount-desc") return copy.sort((a, b) => b.cents - a.cents || b.date.localeCompare(a.date));
     if (this.detailSort === "amount-asc") return copy.sort((a, b) => a.cents - b.cents || b.date.localeCompare(a.date));
     return copy.sort((a, b) => b.date.localeCompare(a.date) || b.line - a.line);
+  }
+
+  private starredRecords(): LedgerRecord[] {
+    const starred = new Set(this.plugin.settings.starredRecordIds);
+    const { start, end } = this.filter.range;
+    return [...this.plugin.repository.files.values()]
+      .flatMap((file) => file.records)
+      .filter((record) => starred.has(record.id) && record.date >= start && record.date <= end)
+      .sort((a, b) => b.cents - a.cents || b.date.localeCompare(a.date) || b.line - a.line);
+  }
+
+  private isStarred(record: LedgerRecord): boolean {
+    return this.plugin.settings.starredRecordIds.includes(record.id);
+  }
+
+  private async toggleStar(record: LedgerRecord): Promise<void> {
+    const starred = new Set(this.plugin.settings.starredRecordIds);
+    const wasStarred = starred.has(record.id);
+    if (wasStarred) starred.delete(record.id); else starred.add(record.id);
+    this.plugin.settings.starredRecordIds = [...starred];
+    await this.plugin.saveSettings(false, false);
+    this.updateStarState(record, !wasStarred);
+    new Notice(wasStarred ? "已取消星标" : "已标记为星标");
+  }
+
+  private updateStarState(record: LedgerRecord, starred: boolean): void {
+    const elements = Array.from(this.contentEl.querySelectorAll("[data-ledger-record-id]")) as HTMLElement[];
+    for (const element of elements) {
+      if (element.dataset.ledgerRecordId !== record.id) continue;
+      element.toggleClass("is-starred", starred);
+      const button = element.querySelector(".ledger-star-toggle") as HTMLElement | null;
+      button?.toggleClass("is-active", starred);
+      button?.setAttribute("aria-label", starred ? "取消星标" : "标记为星标");
+    }
+  }
+
+  private bindRecordInteractions(element: HTMLElement, record: LedgerRecord): void {
+    let longPressTimer: number | null = null;
+    let longPressTriggered = false;
+    const clearLongPress = (): void => {
+      if (longPressTimer !== null) window.clearTimeout(longPressTimer);
+      longPressTimer = null;
+    };
+    element.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      if (longPressTriggered) {
+        longPressTriggered = false;
+        return;
+      }
+      this.showRecordMenu(record, event);
+    });
+    element.addEventListener("pointerdown", (event) => {
+      if (event.pointerType !== "touch") return;
+      clearLongPress();
+      longPressTriggered = false;
+      longPressTimer = window.setTimeout(() => {
+        longPressTimer = null;
+        longPressTriggered = true;
+        this.showRecordMenu(record, { x: event.clientX, y: event.clientY });
+      }, 560);
+    });
+    element.addEventListener("pointerup", clearLongPress);
+    element.addEventListener("pointercancel", clearLongPress);
+    element.addEventListener("pointerleave", clearLongPress);
+  }
+
+  private showRecordMenu(record: LedgerRecord, event: MouseEvent | { x: number; y: number }): void {
+    const starred = this.isStarred(record);
+    const menu = new Menu();
+    menu.addItem((item) => item
+      .setTitle(starred ? "取消星标" : "标记为星标")
+      .setIcon("star")
+      .onClick(() => void this.toggleStar(record)));
+    menu.addItem((item) => item
+      .setTitle("打开来源")
+      .setIcon("file-text")
+      .onClick(() => void this.openRecord(record)));
+    if (event instanceof MouseEvent) menu.showAtMouseEvent(event); else menu.showAtPosition(event);
   }
 
   private autoComparisonRanges(): { current: DateRange; previous: DateRange; description: string } {

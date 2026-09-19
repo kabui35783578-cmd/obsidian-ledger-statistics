@@ -1,4 +1,5 @@
-import { BudgetProgress, CategorySummary, TrendPoint, budgetProgress, formatCents } from "./core";
+import { setIcon } from "obsidian";
+import { BudgetProgress, CategorySummary, LedgerRecord, TrendPoint, budgetProgress, formatCents } from "./core";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const INK = "#1C1C1A";
@@ -423,11 +424,12 @@ export function renderEmpty(parent: HTMLElement, message: string): void {
   parent.createDiv({ cls: "ledger-empty", text: message });
 }
 
-export function renderLiquidBudget(parent: HTMLElement, spentCents: number, budgetCents: number, dateLabel: string, currentCycleCents: number): void {
+export function renderLiquidBudget(parent: HTMLElement, spentCents: number, budgetCents: number, dateLabel: string, currentCycleCents: number, budgetCategory: string, includeStarred: boolean): void {
   const card = parent.createDiv({ cls: "ledger-budget-card ledger-reveal" });
   const heading = card.createDiv({ cls: "ledger-budget-heading" });
   const title = heading.createDiv();
-  title.createDiv({ cls: "ledger-budget-badge", text: "TODAY · ALL SPENDING" });
+  const starredScope = includeStarred ? "含星标" : "不含星标";
+  title.createDiv({ cls: "ledger-budget-badge", text: `TODAY · ${budgetCategory || "ALL SPENDING"} · ${starredScope}` });
   title.createEl("h3", { text: "今日预算" });
   title.createDiv({ cls: "ledger-budget-date", text: dateLabel });
 
@@ -457,14 +459,14 @@ export function renderLiquidBudget(parent: HTMLElement, spentCents: number, budg
   }
 
   const track = card.createDiv({
-    cls: "ledger-budget-track",
-    attr: {
-      role: "progressbar",
-      "aria-label": `今日预算，已花 ${formatCents(spentCents)}，预算 ${formatCents(budgetCents)}`,
-      "aria-valuemin": "0",
-      "aria-valuemax": "100",
-      "aria-valuenow": String(Math.round(progress.percent))
-    }
+      cls: "ledger-budget-track",
+      attr: {
+        role: "progressbar",
+        "aria-label": `${budgetCategory || "全部分类"}今日预算（${starredScope}），已花 ${formatCents(spentCents)}，预算 ${formatCents(budgetCents)}`,
+        "aria-valuemin": "0",
+        "aria-valuemax": "100",
+        "aria-valuenow": String(Math.round(progress.percent))
+      }
   });
   const fill = track.createDiv({ cls: `ledger-budget-fill${progress.overBudgetCents > 0 ? " is-over" : ""}` });
   fill.style.setProperty("--budget-progress", `${progress.percent}%`);
@@ -477,7 +479,41 @@ export function renderLiquidBudget(parent: HTMLElement, spentCents: number, budg
     detail.createSpan({ text: `剩余 ${formatCents(progress.remainingCents)}` });
     detail.createSpan({ cls: "ledger-budget-ratio", text: `${Math.round(progress.ratio * 100)}%` });
   }
-  card.createDiv({ cls: "ledger-budget-source", text: "TODAY · ALL CATEGORIES · LOCAL LEDGER" });
+  card.createDiv({ cls: "ledger-budget-source", text: `TODAY · ${budgetCategory || "ALL CATEGORIES"} · ${includeStarred ? "WITH STARRED" : "EXCLUDING STARRED"} · LOCAL LEDGER` });
+}
+
+export function renderStarredExpenses(parent: HTMLElement, records: LedgerRecord[], onClick: (record: LedgerRecord) => void): void {
+  const card = parent.createDiv({ cls: "ledger-starred-card ledger-reveal" });
+  const heading = card.createDiv({ cls: "ledger-starred-heading" });
+  const headingCopy = heading.createDiv({ cls: "ledger-starred-heading-copy" });
+  headingCopy.createDiv({ cls: "ledger-mono-badge", text: "STARRED EXPENSES · MANUAL CURATION" });
+  headingCopy.createEl("h3", { text: "大额支出" });
+  headingCopy.createDiv({ cls: "ledger-mono-sub", text: "仅汇总所选时间内的手动星标记录，不按金额自动判断。" });
+  const totalCents = records.reduce((sum, record) => sum + record.cents, 0);
+  const summary = heading.createDiv({ cls: "ledger-starred-summary" });
+  summary.createEl("strong", { text: formatCents(totalCents) });
+  summary.createSpan({ text: `${records.length} 笔星标` });
+  if (records.length === 0) {
+    card.createDiv({ cls: "ledger-starred-empty", text: "暂无星标支出 · 在明细中右键或长按一笔记录即可标记" });
+  } else {
+    const list = card.createDiv({ cls: "ledger-starred-list" });
+    for (const record of records) {
+      const item = list.createEl("button", {
+        cls: "ledger-starred-item",
+        attr: { type: "button", "aria-label": `${record.category} ${formatCents(record.cents)}，${record.date}` }
+      });
+      const icon = item.createSpan({ cls: "ledger-starred-item-icon" });
+      setIcon(icon, "star");
+      const copy = item.createDiv({ cls: "ledger-starred-copy" });
+      const top = copy.createDiv({ cls: "ledger-starred-item-top" });
+      top.createEl("strong", { text: record.category });
+      top.createSpan({ text: `${record.date} · ${record.time}` });
+      copy.createDiv({ cls: "ledger-starred-note", text: record.note || "无备注" });
+      item.createEl("strong", { cls: "ledger-starred-amount", text: formatCents(record.cents) });
+      item.addEventListener("click", () => onClick(record));
+    }
+  }
+  card.createDiv({ cls: "ledger-mono-source", text: "STARRED RECORDS · LOCAL LEDGER · MANUAL ONLY" });
 }
 
 export function createButton(parent: HTMLElement, text: string, active = false): HTMLButtonElement {
