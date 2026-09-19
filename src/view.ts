@@ -18,9 +18,10 @@ import {
   monthRange,
   salaryDayRange,
   summarize,
-  trendPoints
+  trendPoints,
+  weekRange
 } from "./core";
-import { LedgerViewId } from "./settings";
+import { DefaultDatePreset, LedgerViewId } from "./settings";
 import { createButton, renderDonut, renderDumbbell, renderEmpty, renderHorizontalBars, renderLiquidBudget, renderStarredExpenses, renderTrendChart } from "./ui";
 
 export const LEDGER_VIEW_TYPE = "ledger-statistics-view";
@@ -32,7 +33,7 @@ const VIEW_NAMES: Array<[LedgerViewId, string]> = [
 
 const AUTO_ADVANCE_SWIPE_DISTANCE = 100;
 
-type DatePreset = "today" | "month" | "previous" | "salary" | "year" | "custom";
+type DatePreset = DefaultDatePreset | "previous" | "custom";
 
 type DrillContext = {
   filter: FilterState;
@@ -44,11 +45,6 @@ type DrillContext = {
 function todayIso(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-}
-
-function initialRange(): DateRange {
-  const now = new Date();
-  return { start: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`, end: todayIso() };
 }
 
 function daysInclusive(range: DateRange): number {
@@ -102,7 +98,7 @@ function addDateInput(parent: HTMLElement, label: string, value: string, onChang
 
 export class LedgerStatisticsView extends ItemView {
   private activeView: LedgerViewId;
-  private preset: DatePreset = "month";
+  private preset: DatePreset;
   private periodOffset = 0;
   private filter: FilterState;
   private categoryChart: "bar" | "donut" | "table" = "bar";
@@ -129,7 +125,8 @@ export class LedgerStatisticsView extends ItemView {
   constructor(leaf: WorkspaceLeaf, private plugin: LedgerStatisticsPlugin) {
     super(leaf);
     this.activeView = plugin.settings.defaultView;
-    const range = initialRange();
+    this.preset = plugin.settings.defaultDatePreset;
+    const range = this.rangeForPreset(this.preset, new Date(), 0);
     this.filter = {
       range,
       scope: "consumption",
@@ -234,11 +231,11 @@ export class LedgerStatisticsView extends ItemView {
     filterContent.toggleAttribute("inert", !this.filtersExpanded);
     const toolbar = filterContent.createDiv({ cls: "ledger-toolbar" });
     const timeControls = toolbar.createDiv({ cls: "ledger-time-controls" });
-    addSelect(timeControls, "时间", this.preset, [["today", "今天"], ["month", "本月"], ["previous", "上月"], ["salary", "工资日"], ["year", "今年"], ["custom", "自定义"]], (value) => {
+    addSelect(timeControls, "时间", this.preset, [["today", "今天"], ["week", "本周"], ["month", "本月"], ["previous", "上月"], ["salary", "工资日"], ["year", "今年"], ["custom", "自定义"]], (value) => {
       this.applyPreset(value as DatePreset);
       this.render();
     });
-    const periodName = this.preset === "today" ? "天" : this.preset === "year" ? "年" : this.preset === "salary" ? "工资周期" : "月";
+    const periodName = this.preset === "today" ? "天" : this.preset === "week" ? "周" : this.preset === "year" ? "年" : this.preset === "salary" ? "工资周期" : "月";
     const previousPeriod = timeControls.createEl("button", {
       cls: "ledger-button ledger-period-button",
       attr: { type: "button", title: `切换到上一个${periodName}`, "aria-label": `切换到上一个${periodName}` }
@@ -689,6 +686,7 @@ export class LedgerStatisticsView extends ItemView {
       const date = addDays(todayIso(), -offset);
       return { start: date, end: date };
     }
+    if (preset === "week") return weekRange(now, offset);
     if (preset === "month") return monthRange(now.getFullYear(), now.getMonth() - offset);
     if (preset === "previous") return monthRange(now.getFullYear(), now.getMonth() - 1 - offset);
     if (preset === "salary") return salaryDayRange(now, offset);

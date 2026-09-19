@@ -9,6 +9,7 @@ const {
   compareValue,
   trendPoints,
   salaryDayRange,
+  weekRange,
   budgetProgress,
   budgetScopedRecords,
   barkPushUrl
@@ -181,6 +182,16 @@ test("money parser rejects more than two decimal places", () => {
 test("salary day range runs from the 15th through today within the current cycle", () => {
   assert.deepEqual(salaryDayRange(new Date(2026, 8, 15, 12)), { start: "2026-09-15", end: "2026-09-15" });
   assert.deepEqual(salaryDayRange(new Date(2026, 8, 30, 12)), { start: "2026-09-15", end: "2026-09-30" });
+});
+
+test("week range starts on Monday and current week stops at today", () => {
+  assert.deepEqual(weekRange(new Date(2026, 8, 19, 12)), { start: "2026-09-14", end: "2026-09-19" });
+  assert.deepEqual(weekRange(new Date(2026, 8, 14, 12)), { start: "2026-09-14", end: "2026-09-14" });
+});
+
+test("week range steps through complete historical weeks across month boundaries", () => {
+  assert.deepEqual(weekRange(new Date(2026, 8, 19, 12), 1), { start: "2026-09-07", end: "2026-09-13" });
+  assert.deepEqual(weekRange(new Date(2026, 8, 2, 12), 1), { start: "2026-08-24", end: "2026-08-30" });
 });
 
 test("salary day range uses the previous month's 15th before or on the 14th", () => {

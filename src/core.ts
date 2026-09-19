@@ -349,6 +349,19 @@ export function monthRange(year: number, monthIndex: number): DateRange {
   };
 }
 
+export function weekRange(date = new Date(), weekOffset = 0): DateRange {
+  const current = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12);
+  const daysSinceMonday = (current.getDay() + 6) % 7;
+  const start = new Date(current);
+  start.setDate(current.getDate() - daysSinceMonday - weekOffset * 7);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  return {
+    start: isoFromDate(start),
+    end: weekOffset === 0 ? isoFromDate(current) : isoFromDate(end)
+  };
+}
+
 export function salaryDayRange(date = new Date(), cycleOffset = 0): DateRange {
   const today = isoFromDate(date);
   const currentStartMonth = date.getDate() <= 14 ? date.getMonth() - 1 : date.getMonth();

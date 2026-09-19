@@ -53,6 +53,62 @@ function accessibleTarget(element: SVGElement, label: string, activate: () => vo
   });
 }
 
+function trendTooltip(x: number, y: number, chartWidth: number, value: string, mobile = false): SVGGElement {
+  const width = Math.max(mobile ? 72 : 64, value.length * (mobile ? 7.2 : 6.4) + 20);
+  const centerX = Math.max(width / 2 + 4, Math.min(chartWidth - width / 2 - 4, x));
+  const textY = Math.max(18, y - 14);
+  const tooltip = svgEl("g", { class: "ledger-trend-tooltip", "aria-hidden": "true" });
+  tooltip.append(
+    svgEl("rect", {
+      x: centerX - width / 2,
+      y: textY - (mobile ? 16 : 14),
+      width,
+      height: mobile ? 22 : 20,
+      rx: mobile ? 11 : 10,
+      class: "ledger-trend-tooltip-bg"
+    })
+  );
+  const label = svgEl("text", {
+    x: centerX,
+    y: textY,
+    "text-anchor": "middle",
+    class: mobile ? "ledger-trend-tooltip-text is-mobile" : "ledger-trend-tooltip-text"
+  });
+  label.textContent = value;
+  tooltip.append(label);
+  return tooltip;
+}
+
+function interactiveTrendTarget(
+  svg: SVGSVGElement,
+  group: SVGGElement,
+  target: SVGElement,
+  label: string,
+  activate: () => void,
+  previewOnFirstActivation = false
+): void {
+  target.setAttribute("tabindex", "0");
+  target.setAttribute("role", "button");
+  target.setAttribute("aria-label", label);
+  target.classList.add("ledger-chart-target", "ledger-trend-hit-target");
+  target.addEventListener("click", (event) => {
+    if (previewOnFirstActivation && !group.classList.contains("is-active")) {
+      event.preventDefault();
+      event.stopPropagation();
+      svg.querySelectorAll(".ledger-trend-point.is-active").forEach((point) => point.classList.remove("is-active"));
+      group.classList.add("is-active");
+      return;
+    }
+    activate();
+  });
+  target.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      activate();
+    }
+  });
+}
+
 function strongestCategory(data: CategorySummary[]): string {
   return data[0]?.category ?? "暂无分类";
 }
@@ -93,11 +149,11 @@ export function renderHorizontalBars(parent: HTMLElement, data: CategorySummary[
     leader ? `每根刻线代表同一金额单位 · 行尾保留精确金额 · ${pctText(leader.cents, total)}` : "分类金额 · 当前筛选范围"
   );
   if (data.length === 0) return renderEmpty(chart, "当前筛选条件下没有可绘制的数据");
-  const width = 760;
-  const rowHeight = 44;
-  const height = data.length * rowHeight + 58;
+  const width = 820;
+  const height = Math.max(330, data.length * 44 + 58);
+  const rowHeight = (height - 58) / data.length;
   const x0 = 126;
-  const plotWidth = 430;
+  const plotWidth = 520;
   const max = Math.max(...data.map((item) => item.cents), 1);
   const unit = niceCurrencyUnit(max);
   const maxUnits = max / unit;
@@ -133,7 +189,7 @@ export function renderHorizontalBars(parent: HTMLElement, data: CategorySummary[
     }
     const value = svgEl("text", { x: x0 + Math.min(plotWidth, item.cents / max * plotWidth) + 12, y: y + 3, class: "ledger-value-label" });
     value.textContent = formatCents(item.cents);
-    const count = svgEl("text", { x: 704, y: y + 3, "text-anchor": "end", class: "ledger-count-label" });
+    const count = svgEl("text", { x: 780, y: y + 3, "text-anchor": "end", class: "ledger-count-label" });
     count.textContent = `${item.count}笔`;
     group.append(value, count);
     svg.append(group);
@@ -249,12 +305,23 @@ function renderMobileTrend(parent: HTMLElement, points: TrendPoint[], isLine: bo
     const y = base - point.cents / max * plotHeight;
     coords.push({ x, y });
     if (!isLine) svg.append(svgEl("line", { x1: x, y1: base, x2: x, y2: y, stroke: index === peakIndex ? INK : MUTED, "stroke-width": index === peakIndex ? 2.4 : 1.4, class: "ledger-fade" }));
-    const hitWidth = Math.max(slot, 24);
-    const hit = svgEl("rect", { x: x - hitWidth / 2, y: top, width: hitWidth, height: plotHeight + 30, fill: "transparent" });
-    accessibleTarget(hit, `${point.label} ${formatCents(point.cents)}，${point.count} 笔`, () => onClick(point));
-    svg.append(hit);
-    if (isLine) svg.append(svgEl("circle", { cx: x, cy: y, r: index === peakIndex ? 4.5 : 3, fill: INK, class: "ledger-pop" }));
-    if (index === peakIndex) {
+    if (isLine) {
+      const group = svgEl("g", { class: "ledger-trend-point" });
+      group.append(
+        svgEl("circle", { cx: x, cy: y, r: index === peakIndex ? 4.5 : 3, fill: INK, class: "ledger-pop ledger-trend-dot" }),
+        trendTooltip(x, y, width, formatCents(point.cents), true)
+      );
+      const hit = svgEl("circle", { cx: x, cy: y, r: 22, fill: "transparent" });
+      interactiveTrendTarget(svg, group, hit, `${point.label} ${formatCents(point.cents)}，${point.count} 笔`, () => onClick(point), true);
+      group.append(hit);
+      svg.append(group);
+    } else {
+      const hitWidth = Math.max(slot, 24);
+      const hit = svgEl("rect", { x: x - hitWidth / 2, y: top, width: hitWidth, height: plotHeight + 30, fill: "transparent" });
+      accessibleTarget(hit, `${point.label} ${formatCents(point.cents)}，${point.count} 笔`, () => onClick(point));
+      svg.append(hit);
+    }
+    if (!isLine && index === peakIndex) {
       const value = svgEl("text", { x, y: Math.max(19, y - 11), "text-anchor": "middle", class: "ledger-mobile-value-label ledger-peak-label" });
       value.textContent = formatCents(point.cents);
       svg.append(value);
@@ -268,7 +335,9 @@ function renderMobileTrend(parent: HTMLElement, points: TrendPoint[], isLine: bo
   const outline = svgEl("path", { d: `M${coords.map((point) => `${point.x} ${point.y}`).join(" L ")}`, fill: "none", stroke: INK, "stroke-width": isLine ? 1.8 : 1.2, pathLength: 1, class: "ledger-draw" });
   if (isLine) svg.insertBefore(outline, svg.firstChild); else svg.append(outline);
   const foot = svgEl("text", { x: width / 2, y: height - 10, "text-anchor": "middle", class: "ledger-mobile-foot-label" });
-  foot.textContent = points.length > 10 ? "左右滑动查看完整时间范围" : "点击数据点查看对应明细";
+  foot.textContent = isLine
+    ? (points.length > 10 ? "左右滑动 · 轻点顶点显示金额" : "轻点顶点显示金额 · 再点一次查看明细")
+    : (points.length > 10 ? "左右滑动查看完整时间范围" : "点击数据点查看对应明细");
   svg.append(foot);
   viewport.append(svg);
 }
@@ -315,11 +384,22 @@ export function renderTrendChart(parent: HTMLElement, points: TrendPoint[], type
         class: "ledger-fade", style: `animation-delay:${index * 0.014}s`
       }));
     }
-    const hit = svgEl("rect", { x: left + slot * index, y: top, width: slot, height: plotHeight, fill: "transparent" });
-    accessibleTarget(hit, `${point.label} ${formatCents(point.cents)}，${point.count} 笔`, () => onClick(point));
-    svg.append(hit);
-    if (isLine) svg.append(svgEl("circle", { cx: x, cy: y, r: peaks.includes(index) ? 4.2 : 2.2, fill: index % 7 >= 5 ? PAPER : INK, stroke: INK, "stroke-width": 1, class: "ledger-pop" }));
-    if (peaks.includes(index)) {
+    if (isLine) {
+      const group = svgEl("g", { class: "ledger-trend-point" });
+      group.append(
+        svgEl("circle", { cx: x, cy: y, r: peaks.includes(index) ? 4.2 : 2.2, fill: index % 7 >= 5 ? PAPER : INK, stroke: INK, "stroke-width": 1, class: "ledger-pop ledger-trend-dot" }),
+        trendTooltip(x, y, width, formatCents(point.cents))
+      );
+      const hit = svgEl("circle", { cx: x, cy: y, r: 14, fill: "transparent" });
+      interactiveTrendTarget(svg, group, hit, `${point.label} ${formatCents(point.cents)}，${point.count} 笔`, () => onClick(point));
+      group.append(hit);
+      svg.append(group);
+    } else {
+      const hit = svgEl("rect", { x: left + slot * index, y: top, width: slot, height: plotHeight, fill: "transparent" });
+      accessibleTarget(hit, `${point.label} ${formatCents(point.cents)}，${point.count} 笔`, () => onClick(point));
+      svg.append(hit);
+    }
+    if (!isLine && peaks.includes(index)) {
       const value = svgEl("text", { x, y: y - 12, "text-anchor": "middle", class: "ledger-value-label ledger-peak-label" });
       value.textContent = formatCents(point.cents);
       svg.append(value);
@@ -334,7 +414,7 @@ export function renderTrendChart(parent: HTMLElement, points: TrendPoint[], type
   const outline = svgEl("path", { d: `M${coords.map((point) => `${point.x} ${point.y}`).join(" L ")}`, fill: "none", stroke: INK, "stroke-width": isLine ? 1.2 : 1, pathLength: 1, class: "ledger-draw" });
   if (isLine) svg.insertBefore(outline, svg.firstChild); else svg.append(outline);
   const foot = svgEl("text", { x: width / 2, y: height - 10, "text-anchor": "middle", class: "ledger-foot-label" });
-  foot.textContent = isLine ? "ONE DOT = ONE PERIOD · HAIRLINE PATH · PEAKS LABELED" : "ONE HAIRLINE = ONE PERIOD, FLOOR TO PEAK";
+  foot.textContent = isLine ? "HOVER A DOT · REVEAL THE EXACT AMOUNT" : "ONE HAIRLINE = ONE PERIOD, FLOOR TO PEAK";
   svg.append(foot);
   chart.append(svg);
   renderMobileTrend(chart, points, isLine, onClick);

@@ -3,10 +3,12 @@ import type LedgerStatisticsPlugin from "./main";
 import { parseMoneyToCents } from "./core";
 
 export type LedgerViewId = "overview" | "category" | "trend" | "calendar" | "details" | "compare";
+export type DefaultDatePreset = "today" | "week" | "month" | "salary" | "year";
 
 export interface LedgerSettings {
   ledgerFolder: string;
   defaultView: LedgerViewId;
+  defaultDatePreset: DefaultDatePreset;
   excludedCategories: string[];
   dailyBudgetCents: number;
   budgetCategory: string;
@@ -19,6 +21,7 @@ export interface LedgerSettings {
 export const DEFAULT_SETTINGS: LedgerSettings = {
   ledgerFolder: "记账",
   defaultView: "overview",
+  defaultDatePreset: "month",
   excludedCategories: ["债务/还款"],
   dailyBudgetCents: 0,
   budgetCategory: "",
@@ -67,6 +70,21 @@ export class LedgerSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings(false);
         });
       });
+
+    new Setting(this.containerEl)
+      .setName("默认时间筛选")
+      .setDesc("下次重新打开统计面板时使用的时间范围。当前周与当前工资周期均截止今天。")
+      .addDropdown((dropdown) => dropdown
+        .addOption("today", "今天")
+        .addOption("week", "本周")
+        .addOption("month", "本月")
+        .addOption("salary", "工资日")
+        .addOption("year", "今年")
+        .setValue(this.plugin.settings.defaultDatePreset)
+        .onChange(async (value) => {
+          this.plugin.settings.defaultDatePreset = value as DefaultDatePreset;
+          await this.plugin.saveSettings(false);
+        }));
 
     new Setting(this.containerEl)
       .setName("消费口径排除分类")

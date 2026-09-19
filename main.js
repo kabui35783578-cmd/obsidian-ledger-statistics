@@ -289,6 +289,18 @@ function monthRange(year, monthIndex) {
     end: isoFromDate(new Date(year, monthIndex + 1, 0, 12))
   };
 }
+function weekRange(date = /* @__PURE__ */ new Date(), weekOffset = 0) {
+  const current = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12);
+  const daysSinceMonday = (current.getDay() + 6) % 7;
+  const start = new Date(current);
+  start.setDate(current.getDate() - daysSinceMonday - weekOffset * 7);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  return {
+    start: isoFromDate(start),
+    end: weekOffset === 0 ? isoFromDate(current) : isoFromDate(end)
+  };
+}
 function salaryDayRange(date = /* @__PURE__ */ new Date(), cycleOffset = 0) {
   const today = isoFromDate(date);
   const currentStartMonth = date.getDate() <= 14 ? date.getMonth() - 1 : date.getMonth();
@@ -441,6 +453,7 @@ var import_obsidian2 = require("obsidian");
 var DEFAULT_SETTINGS = {
   ledgerFolder: "\u8BB0\u8D26",
   defaultView: "overview",
+  defaultDatePreset: "month",
   excludedCategories: ["\u503A\u52A1/\u8FD8\u6B3E"],
   dailyBudgetCents: 0,
   budgetCategory: "",
@@ -476,6 +489,10 @@ var LedgerSettingTab = class extends import_obsidian2.PluginSettingTab {
         await this.plugin.saveSettings(false);
       });
     });
+    new import_obsidian2.Setting(this.containerEl).setName("\u9ED8\u8BA4\u65F6\u95F4\u7B5B\u9009").setDesc("\u4E0B\u6B21\u91CD\u65B0\u6253\u5F00\u7EDF\u8BA1\u9762\u677F\u65F6\u4F7F\u7528\u7684\u65F6\u95F4\u8303\u56F4\u3002\u5F53\u524D\u5468\u4E0E\u5F53\u524D\u5DE5\u8D44\u5468\u671F\u5747\u622A\u6B62\u4ECA\u5929\u3002").addDropdown((dropdown) => dropdown.addOption("today", "\u4ECA\u5929").addOption("week", "\u672C\u5468").addOption("month", "\u672C\u6708").addOption("salary", "\u5DE5\u8D44\u65E5").addOption("year", "\u4ECA\u5E74").setValue(this.plugin.settings.defaultDatePreset).onChange(async (value) => {
+      this.plugin.settings.defaultDatePreset = value;
+      await this.plugin.saveSettings(false);
+    }));
     new import_obsidian2.Setting(this.containerEl).setName("\u6D88\u8D39\u53E3\u5F84\u6392\u9664\u5206\u7C7B").setDesc("\u4EE5\u4E2D\u6587\u9017\u53F7\u6216\u82F1\u6587\u9017\u53F7\u5206\u9694\u3002\u2018\u5168\u90E8\u652F\u51FA\u2019\u53E3\u5F84\u4E0D\u4F1A\u6392\u9664\u8FD9\u4E9B\u5206\u7C7B\u3002").addTextArea((text) => text.setPlaceholder("\u503A\u52A1/\u8FD8\u6B3E").setValue(this.plugin.settings.excludedCategories.join("\uFF0C")).onChange(async (value) => {
       this.plugin.settings.excludedCategories = [...new Set(value.split(/[,，]/).map((item) => item.trim()).filter(Boolean))];
       await this.plugin.saveSettings(false);
@@ -588,6 +605,53 @@ function accessibleTarget(element, label, activate) {
     if (event.key === "Enter" || event.key === " ") activate();
   });
 }
+function trendTooltip(x, y, chartWidth, value, mobile = false) {
+  const width = Math.max(mobile ? 72 : 64, value.length * (mobile ? 7.2 : 6.4) + 20);
+  const centerX = Math.max(width / 2 + 4, Math.min(chartWidth - width / 2 - 4, x));
+  const textY = Math.max(18, y - 14);
+  const tooltip = svgEl("g", { class: "ledger-trend-tooltip", "aria-hidden": "true" });
+  tooltip.append(
+    svgEl("rect", {
+      x: centerX - width / 2,
+      y: textY - (mobile ? 16 : 14),
+      width,
+      height: mobile ? 22 : 20,
+      rx: mobile ? 11 : 10,
+      class: "ledger-trend-tooltip-bg"
+    })
+  );
+  const label = svgEl("text", {
+    x: centerX,
+    y: textY,
+    "text-anchor": "middle",
+    class: mobile ? "ledger-trend-tooltip-text is-mobile" : "ledger-trend-tooltip-text"
+  });
+  label.textContent = value;
+  tooltip.append(label);
+  return tooltip;
+}
+function interactiveTrendTarget(svg, group, target, label, activate, previewOnFirstActivation = false) {
+  target.setAttribute("tabindex", "0");
+  target.setAttribute("role", "button");
+  target.setAttribute("aria-label", label);
+  target.classList.add("ledger-chart-target", "ledger-trend-hit-target");
+  target.addEventListener("click", (event) => {
+    if (previewOnFirstActivation && !group.classList.contains("is-active")) {
+      event.preventDefault();
+      event.stopPropagation();
+      svg.querySelectorAll(".ledger-trend-point.is-active").forEach((point) => point.classList.remove("is-active"));
+      group.classList.add("is-active");
+      return;
+    }
+    activate();
+  });
+  target.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      activate();
+    }
+  });
+}
 function strongestCategory(data) {
   var _a, _b;
   return (_b = (_a = data[0]) == null ? void 0 : _a.category) != null ? _b : "\u6682\u65E0\u5206\u7C7B";
@@ -626,11 +690,11 @@ function renderHorizontalBars(parent, data, onClick) {
     leader ? `\u6BCF\u6839\u523B\u7EBF\u4EE3\u8868\u540C\u4E00\u91D1\u989D\u5355\u4F4D \xB7 \u884C\u5C3E\u4FDD\u7559\u7CBE\u786E\u91D1\u989D \xB7 ${pctText(leader.cents, total)}` : "\u5206\u7C7B\u91D1\u989D \xB7 \u5F53\u524D\u7B5B\u9009\u8303\u56F4"
   );
   if (data.length === 0) return renderEmpty(chart, "\u5F53\u524D\u7B5B\u9009\u6761\u4EF6\u4E0B\u6CA1\u6709\u53EF\u7ED8\u5236\u7684\u6570\u636E");
-  const width = 760;
-  const rowHeight = 44;
-  const height = data.length * rowHeight + 58;
+  const width = 820;
+  const height = Math.max(330, data.length * 44 + 58);
+  const rowHeight = (height - 58) / data.length;
   const x0 = 126;
-  const plotWidth = 430;
+  const plotWidth = 520;
   const max = Math.max(...data.map((item) => item.cents), 1);
   const unit = niceCurrencyUnit(max);
   const maxUnits = max / unit;
@@ -677,7 +741,7 @@ function renderHorizontalBars(parent, data, onClick) {
     }
     const value = svgEl("text", { x: x0 + Math.min(plotWidth, item.cents / max * plotWidth) + 12, y: y + 3, class: "ledger-value-label" });
     value.textContent = formatCents(item.cents);
-    const count = svgEl("text", { x: 704, y: y + 3, "text-anchor": "end", class: "ledger-count-label" });
+    const count = svgEl("text", { x: 780, y: y + 3, "text-anchor": "end", class: "ledger-count-label" });
     count.textContent = `${item.count}\u7B14`;
     group.append(value, count);
     svg.append(group);
@@ -793,12 +857,23 @@ function renderMobileTrend(parent, points, isLine, onClick) {
     const y = base - point.cents / max * plotHeight;
     coords.push({ x, y });
     if (!isLine) svg.append(svgEl("line", { x1: x, y1: base, x2: x, y2: y, stroke: index === peakIndex ? INK : MUTED, "stroke-width": index === peakIndex ? 2.4 : 1.4, class: "ledger-fade" }));
-    const hitWidth = Math.max(slot, 24);
-    const hit = svgEl("rect", { x: x - hitWidth / 2, y: top, width: hitWidth, height: plotHeight + 30, fill: "transparent" });
-    accessibleTarget(hit, `${point.label} ${formatCents(point.cents)}\uFF0C${point.count} \u7B14`, () => onClick(point));
-    svg.append(hit);
-    if (isLine) svg.append(svgEl("circle", { cx: x, cy: y, r: index === peakIndex ? 4.5 : 3, fill: INK, class: "ledger-pop" }));
-    if (index === peakIndex) {
+    if (isLine) {
+      const group = svgEl("g", { class: "ledger-trend-point" });
+      group.append(
+        svgEl("circle", { cx: x, cy: y, r: index === peakIndex ? 4.5 : 3, fill: INK, class: "ledger-pop ledger-trend-dot" }),
+        trendTooltip(x, y, width, formatCents(point.cents), true)
+      );
+      const hit = svgEl("circle", { cx: x, cy: y, r: 22, fill: "transparent" });
+      interactiveTrendTarget(svg, group, hit, `${point.label} ${formatCents(point.cents)}\uFF0C${point.count} \u7B14`, () => onClick(point), true);
+      group.append(hit);
+      svg.append(group);
+    } else {
+      const hitWidth = Math.max(slot, 24);
+      const hit = svgEl("rect", { x: x - hitWidth / 2, y: top, width: hitWidth, height: plotHeight + 30, fill: "transparent" });
+      accessibleTarget(hit, `${point.label} ${formatCents(point.cents)}\uFF0C${point.count} \u7B14`, () => onClick(point));
+      svg.append(hit);
+    }
+    if (!isLine && index === peakIndex) {
       const value = svgEl("text", { x, y: Math.max(19, y - 11), "text-anchor": "middle", class: "ledger-mobile-value-label ledger-peak-label" });
       value.textContent = formatCents(point.cents);
       svg.append(value);
@@ -813,7 +888,7 @@ function renderMobileTrend(parent, points, isLine, onClick) {
   if (isLine) svg.insertBefore(outline, svg.firstChild);
   else svg.append(outline);
   const foot = svgEl("text", { x: width / 2, y: height - 10, "text-anchor": "middle", class: "ledger-mobile-foot-label" });
-  foot.textContent = points.length > 10 ? "\u5DE6\u53F3\u6ED1\u52A8\u67E5\u770B\u5B8C\u6574\u65F6\u95F4\u8303\u56F4" : "\u70B9\u51FB\u6570\u636E\u70B9\u67E5\u770B\u5BF9\u5E94\u660E\u7EC6";
+  foot.textContent = isLine ? points.length > 10 ? "\u5DE6\u53F3\u6ED1\u52A8 \xB7 \u8F7B\u70B9\u9876\u70B9\u663E\u793A\u91D1\u989D" : "\u8F7B\u70B9\u9876\u70B9\u663E\u793A\u91D1\u989D \xB7 \u518D\u70B9\u4E00\u6B21\u67E5\u770B\u660E\u7EC6" : points.length > 10 ? "\u5DE6\u53F3\u6ED1\u52A8\u67E5\u770B\u5B8C\u6574\u65F6\u95F4\u8303\u56F4" : "\u70B9\u51FB\u6570\u636E\u70B9\u67E5\u770B\u5BF9\u5E94\u660E\u7EC6";
   svg.append(foot);
   viewport.append(svg);
 }
@@ -864,11 +939,22 @@ function renderTrendChart(parent, points, type, onClick) {
         style: `animation-delay:${index * 0.014}s`
       }));
     }
-    const hit = svgEl("rect", { x: left + slot * index, y: top, width: slot, height: plotHeight, fill: "transparent" });
-    accessibleTarget(hit, `${point.label} ${formatCents(point.cents)}\uFF0C${point.count} \u7B14`, () => onClick(point));
-    svg.append(hit);
-    if (isLine) svg.append(svgEl("circle", { cx: x, cy: y, r: peaks.includes(index) ? 4.2 : 2.2, fill: index % 7 >= 5 ? PAPER : INK, stroke: INK, "stroke-width": 1, class: "ledger-pop" }));
-    if (peaks.includes(index)) {
+    if (isLine) {
+      const group = svgEl("g", { class: "ledger-trend-point" });
+      group.append(
+        svgEl("circle", { cx: x, cy: y, r: peaks.includes(index) ? 4.2 : 2.2, fill: index % 7 >= 5 ? PAPER : INK, stroke: INK, "stroke-width": 1, class: "ledger-pop ledger-trend-dot" }),
+        trendTooltip(x, y, width, formatCents(point.cents))
+      );
+      const hit = svgEl("circle", { cx: x, cy: y, r: 14, fill: "transparent" });
+      interactiveTrendTarget(svg, group, hit, `${point.label} ${formatCents(point.cents)}\uFF0C${point.count} \u7B14`, () => onClick(point));
+      group.append(hit);
+      svg.append(group);
+    } else {
+      const hit = svgEl("rect", { x: left + slot * index, y: top, width: slot, height: plotHeight, fill: "transparent" });
+      accessibleTarget(hit, `${point.label} ${formatCents(point.cents)}\uFF0C${point.count} \u7B14`, () => onClick(point));
+      svg.append(hit);
+    }
+    if (!isLine && peaks.includes(index)) {
       const value = svgEl("text", { x, y: y - 12, "text-anchor": "middle", class: "ledger-value-label ledger-peak-label" });
       value.textContent = formatCents(point.cents);
       svg.append(value);
@@ -884,7 +970,7 @@ function renderTrendChart(parent, points, type, onClick) {
   if (isLine) svg.insertBefore(outline, svg.firstChild);
   else svg.append(outline);
   const foot = svgEl("text", { x: width / 2, y: height - 10, "text-anchor": "middle", class: "ledger-foot-label" });
-  foot.textContent = isLine ? "ONE DOT = ONE PERIOD \xB7 HAIRLINE PATH \xB7 PEAKS LABELED" : "ONE HAIRLINE = ONE PERIOD, FLOOR TO PEAK";
+  foot.textContent = isLine ? "HOVER A DOT \xB7 REVEAL THE EXACT AMOUNT" : "ONE HAIRLINE = ONE PERIOD, FLOOR TO PEAK";
   svg.append(foot);
   chart.append(svg);
   renderMobileTrend(chart, points, isLine, onClick);
@@ -1071,10 +1157,6 @@ function todayIso() {
   const now = /* @__PURE__ */ new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
-function initialRange() {
-  const now = /* @__PURE__ */ new Date();
-  return { start: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`, end: todayIso() };
-}
 function daysInclusive(range) {
   const start = /* @__PURE__ */ new Date(`${range.start}T12:00:00`);
   const end = /* @__PURE__ */ new Date(`${range.end}T12:00:00`);
@@ -1121,7 +1203,6 @@ var LedgerStatisticsView = class extends import_obsidian4.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
-    this.preset = "month";
     this.periodOffset = 0;
     this.categoryChart = "bar";
     this.categorySort = "amount";
@@ -1142,7 +1223,8 @@ var LedgerStatisticsView = class extends import_obsidian4.ItemView {
     this.settleTimer = null;
     this.filterResizeObserver = null;
     this.activeView = plugin.settings.defaultView;
-    const range = initialRange();
+    this.preset = plugin.settings.defaultDatePreset;
+    const range = this.rangeForPreset(this.preset, /* @__PURE__ */ new Date(), 0);
     this.filter = {
       range,
       scope: "consumption",
@@ -1247,11 +1329,11 @@ var LedgerStatisticsView = class extends import_obsidian4.ItemView {
     filterContent.toggleAttribute("inert", !this.filtersExpanded);
     const toolbar = filterContent.createDiv({ cls: "ledger-toolbar" });
     const timeControls = toolbar.createDiv({ cls: "ledger-time-controls" });
-    addSelect(timeControls, "\u65F6\u95F4", this.preset, [["today", "\u4ECA\u5929"], ["month", "\u672C\u6708"], ["previous", "\u4E0A\u6708"], ["salary", "\u5DE5\u8D44\u65E5"], ["year", "\u4ECA\u5E74"], ["custom", "\u81EA\u5B9A\u4E49"]], (value) => {
+    addSelect(timeControls, "\u65F6\u95F4", this.preset, [["today", "\u4ECA\u5929"], ["week", "\u672C\u5468"], ["month", "\u672C\u6708"], ["previous", "\u4E0A\u6708"], ["salary", "\u5DE5\u8D44\u65E5"], ["year", "\u4ECA\u5E74"], ["custom", "\u81EA\u5B9A\u4E49"]], (value) => {
       this.applyPreset(value);
       this.render();
     });
-    const periodName = this.preset === "today" ? "\u5929" : this.preset === "year" ? "\u5E74" : this.preset === "salary" ? "\u5DE5\u8D44\u5468\u671F" : "\u6708";
+    const periodName = this.preset === "today" ? "\u5929" : this.preset === "week" ? "\u5468" : this.preset === "year" ? "\u5E74" : this.preset === "salary" ? "\u5DE5\u8D44\u5468\u671F" : "\u6708";
     const previousPeriod = timeControls.createEl("button", {
       cls: "ledger-button ledger-period-button",
       attr: { type: "button", title: `\u5207\u6362\u5230\u4E0A\u4E00\u4E2A${periodName}`, "aria-label": `\u5207\u6362\u5230\u4E0A\u4E00\u4E2A${periodName}` }
@@ -1712,6 +1794,7 @@ var LedgerStatisticsView = class extends import_obsidian4.ItemView {
       const date = addDays(todayIso(), -offset);
       return { start: date, end: date };
     }
+    if (preset === "week") return weekRange(now, offset);
     if (preset === "month") return monthRange(now.getFullYear(), now.getMonth() - offset);
     if (preset === "previous") return monthRange(now.getFullYear(), now.getMonth() - 1 - offset);
     if (preset === "salary") return salaryDayRange(now, offset);
