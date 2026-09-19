@@ -859,10 +859,13 @@ function renderMobileTrend(parent, points, isLine, onClick) {
     if (!isLine) svg.append(svgEl("line", { x1: x, y1: base, x2: x, y2: y, stroke: index === peakIndex ? INK : MUTED, "stroke-width": index === peakIndex ? 2.4 : 1.4, class: "ledger-fade" }));
     if (isLine) {
       const group = svgEl("g", { class: "ledger-trend-point" });
-      group.append(
-        svgEl("circle", { cx: x, cy: y, r: index === peakIndex ? 4.5 : 3, fill: INK, class: "ledger-pop ledger-trend-dot" }),
-        trendTooltip(x, y, width, formatCents(point.cents), true)
-      );
+      group.append(svgEl("circle", { cx: x, cy: y, r: index === peakIndex ? 4.5 : 3, fill: INK, class: "ledger-pop ledger-trend-dot" }));
+      if (index === peakIndex) {
+        const peak = svgEl("text", { x, y: Math.max(19, y - 11), "text-anchor": "middle", class: "ledger-mobile-value-label ledger-peak-label ledger-persistent-peak" });
+        peak.textContent = formatCents(point.cents);
+        group.append(peak);
+      }
+      group.append(trendTooltip(x, y, width, formatCents(point.cents), true));
       const hit = svgEl("circle", { cx: x, cy: y, r: 22, fill: "transparent" });
       interactiveTrendTarget(svg, group, hit, `${point.label} ${formatCents(point.cents)}\uFF0C${point.count} \u7B14`, () => onClick(point), true);
       group.append(hit);
@@ -941,10 +944,13 @@ function renderTrendChart(parent, points, type, onClick) {
     }
     if (isLine) {
       const group = svgEl("g", { class: "ledger-trend-point" });
-      group.append(
-        svgEl("circle", { cx: x, cy: y, r: peaks.includes(index) ? 4.2 : 2.2, fill: index % 7 >= 5 ? PAPER : INK, stroke: INK, "stroke-width": 1, class: "ledger-pop ledger-trend-dot" }),
-        trendTooltip(x, y, width, formatCents(point.cents))
-      );
+      group.append(svgEl("circle", { cx: x, cy: y, r: peaks.includes(index) ? 4.2 : 2.2, fill: index % 7 >= 5 ? PAPER : INK, stroke: INK, "stroke-width": 1, class: "ledger-pop ledger-trend-dot" }));
+      if (index === peaks[0]) {
+        const peak = svgEl("text", { x, y: Math.max(18, y - 12), "text-anchor": "middle", class: "ledger-value-label ledger-peak-label ledger-persistent-peak" });
+        peak.textContent = formatCents(point.cents);
+        group.append(peak);
+      }
+      group.append(trendTooltip(x, y, width, formatCents(point.cents)));
       const hit = svgEl("circle", { cx: x, cy: y, r: 14, fill: "transparent" });
       interactiveTrendTarget(svg, group, hit, `${point.label} ${formatCents(point.cents)}\uFF0C${point.count} \u7B14`, () => onClick(point));
       group.append(hit);

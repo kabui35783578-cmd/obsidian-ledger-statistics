@@ -913,6 +913,18 @@ button.ledger-metric:active {
   font-size: 12px;
 }
 
+.ledger-persistent-peak {
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 100ms ease;
+}
+
+.ledger-trend-point:hover .ledger-persistent-peak,
+.ledger-trend-point:focus-within .ledger-persistent-peak,
+.ledger-trend-point.is-active .ledger-persistent-peak {
+  opacity: 0;
+}
+
 .ledger-trend-point:hover .ledger-trend-tooltip,
 .ledger-trend-point:focus-within .ledger-trend-tooltip,
 .ledger-trend-point.is-active .ledger-trend-tooltip {
