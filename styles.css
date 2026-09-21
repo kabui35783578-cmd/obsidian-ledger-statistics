@@ -761,6 +761,18 @@ button.ledger-advisor-refresh:disabled svg {
   overflow-wrap: anywhere;
 }
 
+.ledger-advisor-forecast small {
+  display: block;
+  color: var(--mono-muted);
+  font-size: 10px;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+.ledger-advisor-ai-status.is-error {
+  color: var(--ledger-accent);
+}
+
 .ledger-advisor-observation {
   margin-top: 9px;
   padding: 17px 18px;
@@ -2170,6 +2182,22 @@ button.ledger-advisor-refresh:disabled svg {
   .ledger-advisor-summary-item strong {
     font-size: 1rem;
     text-align: right;
+  }
+
+  .ledger-advisor-summary-item.ledger-advisor-forecast {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 5px 10px;
+  }
+
+  .ledger-advisor-forecast strong {
+    white-space: nowrap;
+    overflow-wrap: normal;
+  }
+
+  .ledger-advisor-forecast small {
+    grid-column: 1 / -1;
+    font-size: 10px;
   }
 
   .ledger-advisor-category-list {

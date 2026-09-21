@@ -27,6 +27,30 @@ function coverage(start, end) {
   return days;
 }
 
+test("stars survive inserted lines and unrelated transactions, and migrate legacy IDs", () => {
+  const { migrateStarredIds, renameStarredIds } = require("../dist/core.cjs");
+  const body = "- 12:00｜餐饮｜￥10.00（午餐）";
+  const original = parseLedgerFile("记账/day.md", note("2026-09-21", body, "10.00")).records[0];
+  const edited = parseLedgerFile("记账/day.md", note("2026-09-21", "\n- 09:00｜购物｜￥20.00\n" + body, "30.00")).records;
+  assert.equal(edited[1].id, original.id);
+  assert.deepEqual(migrateStarredIds([`记账/day.md:${original.line}`], [original]), [original.id]);
+  assert.deepEqual(migrateStarredIds([original.id], edited), [original.id]);
+  assert.deepEqual(budgetScopedRecords(edited, false, [original.id]).map(r => r.cents), [2000]);
+  const renamed = parseLedgerFile("新记账/day.md", note("2026-09-21", body, "10.00")).records[0];
+  assert.deepEqual(renameStarredIds([original.id], "记账", "新记账"), [renamed.id]);
+  const changed = parseLedgerFile("记账/day.md", note("2026-09-21", body.replace("10.00", "11.00"), "11.00")).records[0];
+  assert.notEqual(changed.id, original.id);
+});
+
+test("identical duplicates have separate stars and changing their count cannot transfer a star", () => {
+  const body = "- 12:00｜餐饮｜￥10.00";
+  const two = parseLedgerFile("day.md", note("2026-09-21", body + "\n" + body, "20.00")).records;
+  assert.notEqual(two[0].id, two[1].id);
+  assert.equal(budgetScopedRecords(two, false, [two[0].id]).length, 1);
+  const one = parseLedgerFile("day.md", note("2026-09-21", body, "10.00")).records;
+  assert.equal(budgetScopedRecords(one, false, [two[0].id]).length, 1);
+});
+
 test("missing history is not a zero cycle and suppresses comparative anomalies", () => {
   const records = parseLedgerFile("20260915.md", note("2026-09-15", "- 12:00｜住房｜￥2000.00", "2000.00")).records;
   const result = buildFinanceAdvisorSnapshot(records, new Date(2026, 8, 15, 12), 500000, []);

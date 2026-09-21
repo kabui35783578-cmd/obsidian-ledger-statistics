@@ -375,6 +375,26 @@ export class LedgerStatisticsView extends ItemView {
     }), includeStarred, this.plugin.settings.starredRecordIds);
     const currentCycleCents = currentCycleRecords.reduce((sum, record) => sum + record.cents, 0);
     this.maybeNotifyBudget(today, todayCents, this.plugin.settings.dailyBudgetCents, budgetCategory, includeStarred);
+    const advisorHost = parent.createDiv({ cls: "ledger-advisor-host" });
+    this.renderFinanceSection(advisorHost);
+    renderLiquidBudget(parent, todayCents, this.plugin.settings.dailyBudgetCents, today.replace(/-/g, "."), currentCycleCents, budgetCategory, includeStarred);
+    const metrics = parent.createDiv({ cls: "ledger-metrics" });
+    this.metric(metrics, "所选期间总额", formatCents(stats.cents), `${stats.count} 笔`, () => this.goDetails());
+    this.metric(metrics, "笔数", String(stats.count), "点击查看全部明细", () => this.goDetails());
+    this.metric(metrics, "日均", formatCents(stats.averagePerRecordedDayCents), `分母：${stats.recordedDays} 个有日记账文件的日期`, () => this.goDetails());
+    this.metric(metrics, "最大单笔", stats.maxRecord ? formatCents(stats.maxRecord.cents) : "—", stats.maxRecord ? `${stats.maxRecord.category} · ${stats.maxRecord.date}` : "暂无记录", () => this.goDetails());
+    if (records.length === 0) {
+      renderEmpty(parent, "当前筛选条件下没有记录。缺少文件的日期不会按零消费处理。");
+    } else {
+      const grid = parent.createDiv({ cls: "ledger-overview-grid" });
+      renderHorizontalBars(grid, categorySummaries(records).slice(0, 8), (category) => this.drillCategory(category));
+      renderTrendChart(grid, trendPoints(records, this.rangeTrendUnit()), "line", (point) => this.drillRange({ start: point.start, end: point.end }));
+    }
+    renderStarredExpenses(parent, this.starredRecords(), (record) => void this.openRecord(record));
+  }
+
+  private renderFinanceSection(parent: HTMLElement, animate = true): void {
+    const files = [...this.plugin.repository.files.values()];
     const financeSnapshot = buildFinanceAdvisorSnapshot(
       flattenRecords(files),
       new Date(),
@@ -399,31 +419,28 @@ export class LedgerStatisticsView extends ItemView {
     } else if (this.financeAdviceLoading) {
       financeState = { status: "loading", advice: stale ? null : cached, message: "正在判断最值得关注的变化，最长等待 60 秒…", canRefresh: true };
     } else if (cached) {
-      financeState = { status: "ready", advice: stale ? null : cached, message: `${this.financeAdviceError ? `本次刷新失败：${this.financeAdviceError}。` : ""}${stale ? "账目或统计依据已变化，AI 判断待更新；当前显示本地判断。" : "今日判断已缓存。"}上次生成：${cacheTime}。`, canRefresh: true };
+      financeState = { status: this.financeAdviceError ? "error" : "ready", advice: stale ? null : cached, message: `${this.financeAdviceError ? `本次刷新失败：${this.financeAdviceError}。` : ""}${stale ? "账目或统计依据已变化，AI 判断待更新；当前显示本地判断。" : this.financeAdviceError ? "正在显示上次结果。" : "今日判断已缓存。"}上次生成：${cacheTime}。`, canRefresh: true };
     } else if (this.financeAdviceError) {
       financeState = { status: "error", advice: null, message: `${this.financeAdviceError}，已回退为本地判断。`, canRefresh: true };
     } else {
       financeState = { status: "local", advice: null, message: "点击“刷新判断”生成首次结果；以后每天自动更新一次。", canRefresh: true };
     }
-    renderFinanceAdvisor(parent, financeSnapshot, financeState, () => void this.loadFinanceAdvice(financeSnapshot, true));
+    renderFinanceAdvisor(parent, financeSnapshot, financeState, () => void this.loadFinanceAdvice(financeSnapshot, true), animate);
     if (configured && financeSnapshot.salaryCents > 0 && this.plugin.settings.financeAdviceCache && !cached && !this.financeAdviceLoading && this.financeAdviceAttemptedDate !== financeSnapshot.currentRange.end) {
       this.financeAdviceAttemptedDate = financeSnapshot.currentRange.end;
       window.setTimeout(() => void this.loadFinanceAdvice(financeSnapshot, false), 0);
     }
-    renderLiquidBudget(parent, todayCents, this.plugin.settings.dailyBudgetCents, today.replace(/-/g, "."), currentCycleCents, budgetCategory, includeStarred);
-    const metrics = parent.createDiv({ cls: "ledger-metrics" });
-    this.metric(metrics, "所选期间总额", formatCents(stats.cents), `${stats.count} 笔`, () => this.goDetails());
-    this.metric(metrics, "笔数", String(stats.count), "点击查看全部明细", () => this.goDetails());
-    this.metric(metrics, "日均", formatCents(stats.averagePerRecordedDayCents), `分母：${stats.recordedDays} 个有日记账文件的日期`, () => this.goDetails());
-    this.metric(metrics, "最大单笔", stats.maxRecord ? formatCents(stats.maxRecord.cents) : "—", stats.maxRecord ? `${stats.maxRecord.category} · ${stats.maxRecord.date}` : "暂无记录", () => this.goDetails());
-    if (records.length === 0) {
-      renderEmpty(parent, "当前筛选条件下没有记录。缺少文件的日期不会按零消费处理。");
-    } else {
-      const grid = parent.createDiv({ cls: "ledger-overview-grid" });
-      renderHorizontalBars(grid, categorySummaries(records).slice(0, 8), (category) => this.drillCategory(category));
-      renderTrendChart(grid, trendPoints(records, this.rangeTrendUnit()), "line", (point) => this.drillRange({ start: point.start, end: point.end }));
-    }
-    renderStarredExpenses(parent, this.starredRecords(), (record) => void this.openRecord(record));
+  }
+
+  private refreshFinanceSection(): void {
+    const host = this.contentEl.querySelector<HTMLElement>(".ledger-advisor-host");
+    if (!host || !this.containerEl.isConnected) return;
+    const scrollTop = this.contentEl.scrollTop;
+    const focused = host.contains(document.activeElement);
+    host.empty();
+    this.renderFinanceSection(host, false);
+    this.contentEl.scrollTop = scrollTop;
+    if (focused) host.querySelector<HTMLButtonElement>(".ledger-advisor-refresh")?.focus({ preventScroll: true });
   }
 
   private async loadFinanceAdvice(snapshot: ReturnType<typeof buildFinanceAdvisorSnapshot>, manual: boolean): Promise<void> {
@@ -434,7 +451,7 @@ export class LedgerStatisticsView extends ItemView {
     }
     this.financeAdviceLoading = true;
     this.financeAdviceError = "";
-    this.render();
+    this.refreshFinanceSection();
     try {
       const advice = await requestFinanceAdvice({
         endpoint: this.plugin.settings.financeAiEndpoint,
@@ -454,7 +471,7 @@ export class LedgerStatisticsView extends ItemView {
       if (manual) new Notice(this.financeAdviceError);
     } finally {
       this.financeAdviceLoading = false;
-      this.render();
+      this.refreshFinanceSection();
     }
   }
 

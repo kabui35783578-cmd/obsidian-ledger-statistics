@@ -24,9 +24,6 @@ __export(main_exports, {
 module.exports = __toCommonJS(main_exports);
 var import_obsidian6 = require("obsidian");
 
-// src/repository.ts
-var import_obsidian = require("obsidian");
-
 // src/core.ts
 var FULL_WIDTH_MAP = {
   "\uFF10": "0",
@@ -121,7 +118,7 @@ function parseFrontmatter(raw) {
   return { date, total, endLine };
 }
 function parseLedgerFile(path, raw) {
-  var _a;
+  var _a, _b, _c;
   const diagnostics = [];
   const records = [];
   const frontmatter = parseFrontmatter(raw);
@@ -201,7 +198,42 @@ function parseLedgerFile(path, raw) {
       });
     }
   }
+  const counts = /* @__PURE__ */ new Map();
+  const occurrences = /* @__PURE__ */ new Map();
+  const identity = (record) => JSON.stringify([record.path, record.date, record.time, record.category, record.cents, record.note]);
+  for (const record of records) {
+    const key = identity(record);
+    counts.set(key, ((_b = counts.get(key)) != null ? _b : 0) + 1);
+  }
+  for (const record of records) {
+    const key = identity(record);
+    const ordinal = ((_c = occurrences.get(key)) != null ? _c : 0) + 1;
+    occurrences.set(key, ordinal);
+    record.id = `ledger-v2:${JSON.stringify([...JSON.parse(key), counts.get(key), ordinal])}`;
+  }
   return { path, date, frontmatterTotalCents, records, diagnostics };
+}
+function migrateStarredIds(ids, records) {
+  const legacy = new Map(records.map((record) => [`${record.path}:${record.line}`, record.id]));
+  return [...new Set(ids.map((id) => {
+    var _a;
+    return id.startsWith("ledger-v2:") || id.startsWith("unresolved:") ? id : (_a = legacy.get(id)) != null ? _a : `unresolved:${id}`;
+  }))];
+}
+function renameStarredIds(ids, oldPath, newPath) {
+  return ids.map((id) => {
+    if (!id.startsWith("ledger-v2:")) return id;
+    try {
+      const parts = JSON.parse(id.slice(10));
+      if (typeof parts[0] !== "string") return id;
+      if (parts[0] === oldPath || parts[0].startsWith(`${oldPath}/`)) {
+        parts[0] = newPath + parts[0].slice(oldPath.length);
+        return `ledger-v2:${JSON.stringify(parts)}`;
+      }
+    } catch (e) {
+    }
+    return id;
+  });
 }
 function flattenRecords(files) {
   const records = [];
@@ -584,6 +616,7 @@ function diagnosticsFor(files) {
 }
 
 // src/repository.ts
+var import_obsidian = require("obsidian");
 var LedgerRepository = class {
   constructor(app, folder, onChange) {
     this.app = app;
@@ -1559,9 +1592,10 @@ function renderDumbbell(parent, data, currentLabel, previousLabel, onClick) {
 function renderEmpty(parent, message) {
   parent.createDiv({ cls: "ledger-empty", text: message });
 }
-function renderFinanceAdvisor(parent, snapshot, state, onRefresh) {
+function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true) {
   var _a, _b, _c, _d, _e, _f, _g, _h;
-  const card = parent.createDiv({ cls: "ledger-advisor-card ledger-reveal" });
+  const card = parent.createDiv({ cls: `ledger-advisor-card${animate ? " ledger-reveal" : ""}` });
+  card.setAttribute("aria-busy", String(state.status === "loading"));
   const heading = card.createDiv({ cls: "ledger-advisor-heading" });
   const copy = heading.createDiv({ cls: "ledger-advisor-heading-copy" });
   copy.createDiv({ cls: "ledger-advisor-badge", text: "AI FINANCE BRIEF \xB7 SALARY CYCLE" });
@@ -1593,7 +1627,7 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh) {
   const average2 = summary.createDiv({ cls: "ledger-advisor-summary-item" });
   average2.createSpan({ text: snapshot.historyCycleCount === 2 ? "\u524D\u4E24\u4E2A\u5B8C\u6574\u5468\u671F\u5E73\u5747" : `\u53EF\u7528\u5386\u53F2\u5468\u671F ${snapshot.historyCycleCount}/2` });
   average2.createEl("strong", { text: snapshot.historyCycleCount > 0 ? formatCents(snapshot.historicalAverageSpentCents) : "\u53C2\u8003\u6570\u636E\u4E0D\u8DB3" });
-  const forecast = summary.createDiv({ cls: "ledger-advisor-summary-item" });
+  const forecast = summary.createDiv({ cls: "ledger-advisor-summary-item ledger-advisor-forecast" });
   forecast.createSpan({ text: `\u5468\u671F\u672B\u652F\u51FA\u53C2\u8003${snapshot.forecastAvailable && snapshot.forecastConfidence === "low" ? " \xB7 \u4F4E\u7F6E\u4FE1\u5EA6" : ""}` });
   forecast.createEl("strong", { text: snapshot.forecastAvailable ? formatCents(snapshot.forecastCents) : "\u6570\u636E\u4E0D\u8DB3\uFF0C\u6682\u4E0D\u9884\u6D4B" });
   forecast.createEl("small", { text: "\u5DF2\u82B1\u91D1\u989D\uFF0B\u5386\u53F2\u5269\u4F59\u9636\u6BB5\u5E73\u5747\u652F\u51FA" });
@@ -2011,7 +2045,6 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
     back.addEventListener("click", () => this.restoreDrillContext());
   }
   renderOverview(parent) {
-    var _a, _b, _c;
     const files = [...this.plugin.repository.files.values()];
     const records = filteredRecords(files, this.filter);
     const stats = summarize(files, records, this.filter.range);
@@ -2036,6 +2069,26 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
     }), includeStarred, this.plugin.settings.starredRecordIds);
     const currentCycleCents = currentCycleRecords.reduce((sum, record) => sum + record.cents, 0);
     this.maybeNotifyBudget(today, todayCents, this.plugin.settings.dailyBudgetCents, budgetCategory, includeStarred);
+    const advisorHost = parent.createDiv({ cls: "ledger-advisor-host" });
+    this.renderFinanceSection(advisorHost);
+    renderLiquidBudget(parent, todayCents, this.plugin.settings.dailyBudgetCents, today.replace(/-/g, "."), currentCycleCents, budgetCategory, includeStarred);
+    const metrics = parent.createDiv({ cls: "ledger-metrics" });
+    this.metric(metrics, "\u6240\u9009\u671F\u95F4\u603B\u989D", formatCents(stats.cents), `${stats.count} \u7B14`, () => this.goDetails());
+    this.metric(metrics, "\u7B14\u6570", String(stats.count), "\u70B9\u51FB\u67E5\u770B\u5168\u90E8\u660E\u7EC6", () => this.goDetails());
+    this.metric(metrics, "\u65E5\u5747", formatCents(stats.averagePerRecordedDayCents), `\u5206\u6BCD\uFF1A${stats.recordedDays} \u4E2A\u6709\u65E5\u8BB0\u8D26\u6587\u4EF6\u7684\u65E5\u671F`, () => this.goDetails());
+    this.metric(metrics, "\u6700\u5927\u5355\u7B14", stats.maxRecord ? formatCents(stats.maxRecord.cents) : "\u2014", stats.maxRecord ? `${stats.maxRecord.category} \xB7 ${stats.maxRecord.date}` : "\u6682\u65E0\u8BB0\u5F55", () => this.goDetails());
+    if (records.length === 0) {
+      renderEmpty(parent, "\u5F53\u524D\u7B5B\u9009\u6761\u4EF6\u4E0B\u6CA1\u6709\u8BB0\u5F55\u3002\u7F3A\u5C11\u6587\u4EF6\u7684\u65E5\u671F\u4E0D\u4F1A\u6309\u96F6\u6D88\u8D39\u5904\u7406\u3002");
+    } else {
+      const grid = parent.createDiv({ cls: "ledger-overview-grid" });
+      renderHorizontalBars(grid, categorySummaries(records).slice(0, 8), (category) => this.drillCategory(category));
+      renderTrendChart(grid, trendPoints(records, this.rangeTrendUnit()), "line", (point) => this.drillRange({ start: point.start, end: point.end }));
+    }
+    renderStarredExpenses(parent, this.starredRecords(), (record) => void this.openRecord(record));
+  }
+  renderFinanceSection(parent, animate = true) {
+    var _a, _b, _c;
+    const files = [...this.plugin.repository.files.values()];
     const financeSnapshot = buildFinanceAdvisorSnapshot(
       flattenRecords(files),
       /* @__PURE__ */ new Date(),
@@ -2056,31 +2109,28 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
     } else if (this.financeAdviceLoading) {
       financeState = { status: "loading", advice: stale ? null : cached, message: "\u6B63\u5728\u5224\u65AD\u6700\u503C\u5F97\u5173\u6CE8\u7684\u53D8\u5316\uFF0C\u6700\u957F\u7B49\u5F85 60 \u79D2\u2026", canRefresh: true };
     } else if (cached) {
-      financeState = { status: "ready", advice: stale ? null : cached, message: `${this.financeAdviceError ? `\u672C\u6B21\u5237\u65B0\u5931\u8D25\uFF1A${this.financeAdviceError}\u3002` : ""}${stale ? "\u8D26\u76EE\u6216\u7EDF\u8BA1\u4F9D\u636E\u5DF2\u53D8\u5316\uFF0CAI \u5224\u65AD\u5F85\u66F4\u65B0\uFF1B\u5F53\u524D\u663E\u793A\u672C\u5730\u5224\u65AD\u3002" : "\u4ECA\u65E5\u5224\u65AD\u5DF2\u7F13\u5B58\u3002"}\u4E0A\u6B21\u751F\u6210\uFF1A${cacheTime}\u3002`, canRefresh: true };
+      financeState = { status: this.financeAdviceError ? "error" : "ready", advice: stale ? null : cached, message: `${this.financeAdviceError ? `\u672C\u6B21\u5237\u65B0\u5931\u8D25\uFF1A${this.financeAdviceError}\u3002` : ""}${stale ? "\u8D26\u76EE\u6216\u7EDF\u8BA1\u4F9D\u636E\u5DF2\u53D8\u5316\uFF0CAI \u5224\u65AD\u5F85\u66F4\u65B0\uFF1B\u5F53\u524D\u663E\u793A\u672C\u5730\u5224\u65AD\u3002" : this.financeAdviceError ? "\u6B63\u5728\u663E\u793A\u4E0A\u6B21\u7ED3\u679C\u3002" : "\u4ECA\u65E5\u5224\u65AD\u5DF2\u7F13\u5B58\u3002"}\u4E0A\u6B21\u751F\u6210\uFF1A${cacheTime}\u3002`, canRefresh: true };
     } else if (this.financeAdviceError) {
       financeState = { status: "error", advice: null, message: `${this.financeAdviceError}\uFF0C\u5DF2\u56DE\u9000\u4E3A\u672C\u5730\u5224\u65AD\u3002`, canRefresh: true };
     } else {
       financeState = { status: "local", advice: null, message: "\u70B9\u51FB\u201C\u5237\u65B0\u5224\u65AD\u201D\u751F\u6210\u9996\u6B21\u7ED3\u679C\uFF1B\u4EE5\u540E\u6BCF\u5929\u81EA\u52A8\u66F4\u65B0\u4E00\u6B21\u3002", canRefresh: true };
     }
-    renderFinanceAdvisor(parent, financeSnapshot, financeState, () => void this.loadFinanceAdvice(financeSnapshot, true));
+    renderFinanceAdvisor(parent, financeSnapshot, financeState, () => void this.loadFinanceAdvice(financeSnapshot, true), animate);
     if (configured && financeSnapshot.salaryCents > 0 && this.plugin.settings.financeAdviceCache && !cached && !this.financeAdviceLoading && this.financeAdviceAttemptedDate !== financeSnapshot.currentRange.end) {
       this.financeAdviceAttemptedDate = financeSnapshot.currentRange.end;
       window.setTimeout(() => void this.loadFinanceAdvice(financeSnapshot, false), 0);
     }
-    renderLiquidBudget(parent, todayCents, this.plugin.settings.dailyBudgetCents, today.replace(/-/g, "."), currentCycleCents, budgetCategory, includeStarred);
-    const metrics = parent.createDiv({ cls: "ledger-metrics" });
-    this.metric(metrics, "\u6240\u9009\u671F\u95F4\u603B\u989D", formatCents(stats.cents), `${stats.count} \u7B14`, () => this.goDetails());
-    this.metric(metrics, "\u7B14\u6570", String(stats.count), "\u70B9\u51FB\u67E5\u770B\u5168\u90E8\u660E\u7EC6", () => this.goDetails());
-    this.metric(metrics, "\u65E5\u5747", formatCents(stats.averagePerRecordedDayCents), `\u5206\u6BCD\uFF1A${stats.recordedDays} \u4E2A\u6709\u65E5\u8BB0\u8D26\u6587\u4EF6\u7684\u65E5\u671F`, () => this.goDetails());
-    this.metric(metrics, "\u6700\u5927\u5355\u7B14", stats.maxRecord ? formatCents(stats.maxRecord.cents) : "\u2014", stats.maxRecord ? `${stats.maxRecord.category} \xB7 ${stats.maxRecord.date}` : "\u6682\u65E0\u8BB0\u5F55", () => this.goDetails());
-    if (records.length === 0) {
-      renderEmpty(parent, "\u5F53\u524D\u7B5B\u9009\u6761\u4EF6\u4E0B\u6CA1\u6709\u8BB0\u5F55\u3002\u7F3A\u5C11\u6587\u4EF6\u7684\u65E5\u671F\u4E0D\u4F1A\u6309\u96F6\u6D88\u8D39\u5904\u7406\u3002");
-    } else {
-      const grid = parent.createDiv({ cls: "ledger-overview-grid" });
-      renderHorizontalBars(grid, categorySummaries(records).slice(0, 8), (category) => this.drillCategory(category));
-      renderTrendChart(grid, trendPoints(records, this.rangeTrendUnit()), "line", (point) => this.drillRange({ start: point.start, end: point.end }));
-    }
-    renderStarredExpenses(parent, this.starredRecords(), (record) => void this.openRecord(record));
+  }
+  refreshFinanceSection() {
+    var _a;
+    const host = this.contentEl.querySelector(".ledger-advisor-host");
+    if (!host || !this.containerEl.isConnected) return;
+    const scrollTop = this.contentEl.scrollTop;
+    const focused = host.contains(document.activeElement);
+    host.empty();
+    this.renderFinanceSection(host, false);
+    this.contentEl.scrollTop = scrollTop;
+    if (focused) (_a = host.querySelector(".ledger-advisor-refresh")) == null ? void 0 : _a.focus({ preventScroll: true });
   }
   async loadFinanceAdvice(snapshot, manual) {
     if (this.financeAdviceLoading) return;
@@ -2090,7 +2140,7 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
     }
     this.financeAdviceLoading = true;
     this.financeAdviceError = "";
-    this.render();
+    this.refreshFinanceSection();
     try {
       const advice = await requestFinanceAdvice({
         endpoint: this.plugin.settings.financeAiEndpoint,
@@ -2110,7 +2160,7 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
       if (manual) new import_obsidian5.Notice(this.financeAdviceError);
     } finally {
       this.financeAdviceLoading = false;
-      this.render();
+      this.refreshFinanceSection();
     }
   }
   maybeNotifyBudget(today, spentCents, budgetCents, budgetCategory, includeStarred) {
@@ -2695,6 +2745,18 @@ var LedgerStatisticsPlugin = class extends import_obsidian6.Plugin {
     this.addCommand({ id: "open-ledger-statistics", name: "\u6253\u5F00\u8BB0\u8D26\u7EDF\u8BA1", callback: () => void this.activateView() });
     this.addSettingTab(new LedgerSettingTab(this.app, this));
     await this.repository.start();
+    const migrated = migrateStarredIds(this.settings.starredRecordIds, flattenRecords(this.repository.files.values()));
+    if (JSON.stringify(migrated) !== JSON.stringify(this.settings.starredRecordIds)) {
+      this.settings.starredRecordIds = migrated;
+      await this.saveSettings(false);
+    }
+    this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
+      const renamed = renameStarredIds(this.settings.starredRecordIds, oldPath, file.path);
+      if (JSON.stringify(renamed) !== JSON.stringify(this.settings.starredRecordIds)) {
+        this.settings.starredRecordIds = renamed;
+        void this.saveSettings(false);
+      }
+    }));
   }
   onunload() {
     this.repository.dispose();

@@ -1,4 +1,5 @@
 import { Plugin } from "obsidian";
+import { flattenRecords, migrateStarredIds, renameStarredIds } from "./core";
 import { LedgerRepository } from "./repository";
 import { DEFAULT_SETTINGS, LedgerSettingTab, LedgerSettings } from "./settings";
 import { LedgerStatisticsView, LEDGER_VIEW_TYPE } from "./view";
@@ -15,6 +16,18 @@ export default class LedgerStatisticsPlugin extends Plugin {
     this.addCommand({ id: "open-ledger-statistics", name: "打开记账统计", callback: () => void this.activateView() });
     this.addSettingTab(new LedgerSettingTab(this.app, this));
     await this.repository.start();
+    const migrated = migrateStarredIds(this.settings.starredRecordIds, flattenRecords(this.repository.files.values()));
+    if (JSON.stringify(migrated) !== JSON.stringify(this.settings.starredRecordIds)) {
+      this.settings.starredRecordIds = migrated;
+      await this.saveSettings(false);
+    }
+    this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
+      const renamed = renameStarredIds(this.settings.starredRecordIds, oldPath, file.path);
+      if (JSON.stringify(renamed) !== JSON.stringify(this.settings.starredRecordIds)) {
+        this.settings.starredRecordIds = renamed;
+        void this.saveSettings(false);
+      }
+    }));
   }
 
   onunload(): void {

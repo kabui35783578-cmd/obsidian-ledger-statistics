@@ -520,8 +520,9 @@ export function renderEmpty(parent: HTMLElement, message: string): void {
   parent.createDiv({ cls: "ledger-empty", text: message });
 }
 
-export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvisorSnapshot, state: FinanceAdviceViewState, onRefresh: () => void): void {
-  const card = parent.createDiv({ cls: "ledger-advisor-card ledger-reveal" });
+export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvisorSnapshot, state: FinanceAdviceViewState, onRefresh: () => void, animate = true): void {
+  const card = parent.createDiv({ cls: `ledger-advisor-card${animate ? " ledger-reveal" : ""}` });
+  card.setAttribute("aria-busy", String(state.status === "loading"));
   const heading = card.createDiv({ cls: "ledger-advisor-heading" });
   const copy = heading.createDiv({ cls: "ledger-advisor-heading-copy" });
   copy.createDiv({ cls: "ledger-advisor-badge", text: "AI FINANCE BRIEF · SALARY CYCLE" });
@@ -557,7 +558,7 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
   const average = summary.createDiv({ cls: "ledger-advisor-summary-item" });
   average.createSpan({ text: snapshot.historyCycleCount === 2 ? "前两个完整周期平均" : `可用历史周期 ${snapshot.historyCycleCount}/2` });
   average.createEl("strong", { text: snapshot.historyCycleCount > 0 ? formatCents(snapshot.historicalAverageSpentCents) : "参考数据不足" });
-  const forecast = summary.createDiv({ cls: "ledger-advisor-summary-item" });
+  const forecast = summary.createDiv({ cls: "ledger-advisor-summary-item ledger-advisor-forecast" });
   forecast.createSpan({ text: `周期末支出参考${snapshot.forecastAvailable && snapshot.forecastConfidence === "low" ? " · 低置信度" : ""}` });
   forecast.createEl("strong", { text: snapshot.forecastAvailable ? formatCents(snapshot.forecastCents) : "数据不足，暂不预测" });
   forecast.createEl("small", { text: "已花金额＋历史剩余阶段平均支出" });

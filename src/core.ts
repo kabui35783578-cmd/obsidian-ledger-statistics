@@ -299,7 +299,41 @@ export function parseLedgerFile(path: string, raw: string): ParsedLedgerFile {
     }
   }
 
+  const counts = new Map<string, number>();
+  const occurrences = new Map<string, number>();
+  const identity = (record: LedgerRecord): string => JSON.stringify([record.path, record.date, record.time, record.category, record.cents, record.note]);
+  for (const record of records) {
+    const key = identity(record);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  for (const record of records) {
+    const key = identity(record);
+    const ordinal = (occurrences.get(key) ?? 0) + 1;
+    occurrences.set(key, ordinal);
+    record.id = `ledger-v2:${JSON.stringify([...JSON.parse(key), counts.get(key), ordinal])}`;
+  }
   return { path, date, frontmatterTotalCents, records, diagnostics };
+}
+
+export function migrateStarredIds(ids: string[], records: LedgerRecord[]): string[] {
+  const legacy = new Map(records.map((record) => [`${record.path}:${record.line}`, record.id]));
+  return [...new Set(ids.map((id) => id.startsWith("ledger-v2:") || id.startsWith("unresolved:")
+    ? id : legacy.get(id) ?? `unresolved:${id}`))];
+}
+
+export function renameStarredIds(ids: string[], oldPath: string, newPath: string): string[] {
+  return ids.map((id) => {
+    if (!id.startsWith("ledger-v2:")) return id;
+    try {
+      const parts = JSON.parse(id.slice(10));
+      if (typeof parts[0] !== "string") return id;
+      if (parts[0] === oldPath || parts[0].startsWith(`${oldPath}/`)) {
+        parts[0] = newPath + parts[0].slice(oldPath.length);
+        return `ledger-v2:${JSON.stringify(parts)}`;
+      }
+    } catch { /* Preserve unrecognized saved IDs. */ }
+    return id;
+  });
 }
 
 export function flattenRecords(files: Iterable<ParsedLedgerFile>): LedgerRecord[] {
