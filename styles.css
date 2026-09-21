@@ -773,6 +773,40 @@ button.ledger-advisor-refresh:disabled svg {
   color: var(--ledger-accent);
 }
 
+.ledger-advisor-evidence,
+.ledger-advisor-coverage {
+  margin-top: 10px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--mono-paper);
+  color: var(--mono-ink);
+  font-size: 12px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.ledger-advisor-evidence summary,
+.ledger-advisor-coverage summary {
+  cursor: pointer;
+  min-height: 28px;
+  line-height: 28px;
+  font-weight: 600;
+}
+
+.ledger-advisor-data-issue { margin: 8px 0; }
+.ledger-advisor-data-issue span { display: block; }
+.ledger-advisor-data-issue button {
+  height: auto;
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+  color: var(--mono-ink);
+  background: transparent;
+  box-shadow: none;
+  text-decoration: underline;
+  padding: 4px 0;
+}
+
 .ledger-advisor-observation {
   margin-top: 9px;
   padding: 17px 18px;

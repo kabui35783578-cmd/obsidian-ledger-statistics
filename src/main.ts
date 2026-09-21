@@ -1,4 +1,6 @@
-import { Plugin } from "obsidian";
+import { Notice, Plugin, requestUrl } from "obsidian";
+import { BudgetMonitor } from "./budget-monitor";
+import { sharedRequestGate } from "./request-gate";
 import { flattenRecords, migrateStarredIds, renameStarredIds } from "./core";
 import { LedgerRepository } from "./repository";
 import { DEFAULT_SETTINGS, LedgerSettingTab, LedgerSettings } from "./settings";
@@ -7,10 +9,17 @@ import { LedgerStatisticsView, LEDGER_VIEW_TYPE } from "./view";
 export default class LedgerStatisticsPlugin extends Plugin {
   settings: LedgerSettings = DEFAULT_SETTINGS;
   repository!: LedgerRepository;
+  private budgetMonitor!: BudgetMonitor;
+  private saveQueue: Promise<void> = Promise.resolve();
 
   async onload(): Promise<void> {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<LedgerSettings> | null);
-    this.repository = new LedgerRepository(this.app, this.settings.ledgerFolder, () => this.refreshViews());
+    this.budgetMonitor = new BudgetMonitor(() => this.settings, (url) => requestUrl({ url, method: "GET", throw: true }),
+      () => this.saveSettings(false, false), (message) => new Notice(message), sharedRequestGate(`bark:${this.app.vault.getName()}`));
+    this.repository = new LedgerRepository(this.app, this.settings.ledgerFolder, () => {
+      this.refreshViews();
+      this.checkBudget();
+    });
     this.registerView(LEDGER_VIEW_TYPE, (leaf) => new LedgerStatisticsView(leaf, this));
     this.addRibbonIcon("chart-pie", "打开记账统计", () => void this.activateView());
     this.addCommand({ id: "open-ledger-statistics", name: "打开记账统计", callback: () => void this.activateView() });
@@ -28,16 +37,41 @@ export default class LedgerStatisticsPlugin extends Plugin {
         void this.saveSettings(false);
       }
     }));
+    this.registerInterval(window.setInterval(() => this.tick(), 30_000));
+    this.registerDomEvent(document, "visibilitychange", () => {
+      if (!document.hidden) this.tick();
+    });
+    this.registerDomEvent(window, "focus", () => this.tick());
+    this.checkBudget();
   }
 
   onunload(): void {
+    this.budgetMonitor?.stop();
+    for (const leaf of this.app.workspace.getLeavesOfType(LEDGER_VIEW_TYPE)) {
+      if (leaf.view instanceof LedgerStatisticsView) leaf.view.cancelFinanceRequest();
+    }
     this.repository.dispose();
   }
 
   async saveSettings(rescan: boolean, refresh = true): Promise<void> {
-    await this.saveData(this.settings);
+    const data = JSON.parse(JSON.stringify(this.settings));
+    const saved = this.saveQueue.then(() => this.saveData(data));
+    this.saveQueue = saved.catch(() => {});
+    await saved;
     if (rescan) await this.repository.setFolder(this.settings.ledgerFolder);
     if (refresh) this.refreshViews();
+    this.checkBudget();
+  }
+
+  private checkBudget(): void {
+    if (this.repository?.loaded) void this.budgetMonitor.check([...this.repository.files.values()]);
+  }
+
+  private tick(): void {
+    for (const leaf of this.app.workspace.getLeavesOfType(LEDGER_VIEW_TYPE)) {
+      if (leaf.view instanceof LedgerStatisticsView) leaf.view.refreshDate();
+    }
+    this.checkBudget();
   }
 
   private async activateView(): Promise<void> {

@@ -7,6 +7,8 @@ export class LedgerRepository {
   private notifyTimer: number | null = null;
   private generation = 0;
   private ready = false;
+  private disposed = false;
+  private revisions = new Map<string, number>();
 
   constructor(
     private app: App,
@@ -33,20 +35,27 @@ export class LedgerRepository {
   }
 
   async rescan(): Promise<void> {
+    if (this.disposed) return;
     const generation = ++this.generation;
-    const next = new Map<string, ParsedLedgerFile>();
+    this.ready = false;
     const files = this.app.vault.getMarkdownFiles().filter((file) => this.isLedgerFile(file));
-    await Promise.all(files.map(async (file) => {
-      const parsed = await this.read(file);
-      if (parsed && generation === this.generation) next.set(file.path, parsed);
+    const paths = new Set(files.map((file) => file.path));
+    for (const path of this.cache.keys()) if (!paths.has(path)) this.cache.delete(path);
+    // Bounded reads avoid flooding mobile storage. All updates share revision guards.
+    let index = 0;
+    await Promise.all(Array.from({ length: Math.min(8, files.length) }, async () => {
+      while (index < files.length && generation === this.generation && !this.disposed) {
+        await this.update(files[index++], generation);
+      }
     }));
-    if (generation !== this.generation) return;
-    this.cache = next;
+    if (generation !== this.generation || this.disposed) return;
     this.ready = true;
     this.scheduleNotify();
   }
 
   dispose(): void {
+    this.disposed = true;
+    this.generation++;
     for (const ref of this.refs) this.app.vault.offref(ref);
     this.refs = [];
     if (this.notifyTimer !== null) window.clearTimeout(this.notifyTimer);
@@ -62,38 +71,51 @@ export class LedgerRepository {
 
   private async handleCreateOrModify(file: TAbstractFile): Promise<void> {
     if (!(file instanceof TFile) || !this.isLedgerFile(file)) return;
-    const parsed = await this.read(file);
-    if (parsed) {
-      this.cache.set(file.path, parsed);
+    await this.update(file, this.generation);
+  }
+
+  private async update(file: TFile, generation: number): Promise<void> {
+    if (this.disposed || generation !== this.generation || !this.isLedgerFile(file)) return;
+    const path = file.path;
+    const revision = (this.revisions.get(path) ?? 0) + 1;
+    this.revisions.set(path, revision);
+    const parsed = await this.read(file, path);
+    if (!this.disposed && generation === this.generation && this.revisions.get(path) === revision
+      && file.path === path && this.app.vault.getAbstractFileByPath(path) === file && this.isLedgerFile(file) && parsed) {
+      this.cache.set(path, parsed);
       this.scheduleNotify();
     }
   }
 
   private handleDelete(file: TAbstractFile): void {
-    if (this.cache.delete(file.path)) this.scheduleNotify();
+    this.invalidatePath(file.path);
   }
 
   private async handleRename(file: TAbstractFile, oldPath: string): Promise<void> {
-    const removed = this.cache.delete(oldPath);
-    if (file instanceof TFile && this.isLedgerFile(file)) {
-      const parsed = await this.read(file);
-      if (parsed) this.cache.set(file.path, parsed);
-      this.scheduleNotify();
-    } else if (removed) {
-      this.scheduleNotify();
-    }
+    this.invalidatePath(oldPath);
+    if (file instanceof TFile) await this.handleCreateOrModify(file);
+    else await this.rescan();
   }
 
-  private async read(file: TFile): Promise<ParsedLedgerFile | null> {
+  private invalidatePath(path: string): void {
+    for (const key of new Set([...this.cache.keys(), ...this.revisions.keys(), path])) {
+      if (key !== path && !key.startsWith(`${path}/`)) continue;
+      this.revisions.set(key, (this.revisions.get(key) ?? 0) + 1);
+      this.cache.delete(key);
+    }
+    this.scheduleNotify();
+  }
+
+  private async read(file: TFile, path: string): Promise<ParsedLedgerFile | null> {
     try {
-      return parseLedgerFile(file.path, await this.app.vault.cachedRead(file));
+      return parseLedgerFile(path, await this.app.vault.read(file));
     } catch (error) {
       return {
-        path: file.path,
+        path,
         date: null,
         frontmatterTotalCents: null,
         records: [],
-        diagnostics: [{ kind: "parse", path: file.path, reason: `读取失败：${error instanceof Error ? error.message : String(error)}` }]
+        diagnostics: [{ kind: "parse", path, reason: `读取失败：${error instanceof Error ? error.message : String(error)}` }]
       };
     }
   }
@@ -104,6 +126,7 @@ export class LedgerRepository {
   }
 
   private scheduleNotify(): void {
+    if (this.disposed) return;
     if (this.notifyTimer !== null) window.clearTimeout(this.notifyTimer);
     this.notifyTimer = window.setTimeout(() => {
       this.notifyTimer = null;

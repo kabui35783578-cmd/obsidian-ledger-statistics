@@ -388,8 +388,33 @@ function financeCompleteDates(files) {
   }
   return [...valid].filter((date) => !invalid.has(date));
 }
+function financeCoverageReport(files, date) {
+  var _a;
+  const complete = new Set(financeCompleteDates(files));
+  const byDate = /* @__PURE__ */ new Map();
+  for (const file of files) {
+    if (file.date) byDate.set(file.date, [...(_a = byDate.get(file.date)) != null ? _a : [], file]);
+  }
+  return {
+    cycles: [salaryDayRange(date), salaryCycleFullRange(date, 1), salaryCycleFullRange(date, 2)].map((range, index) => {
+      const missingDates = [];
+      const problems = [];
+      for (let day = range.start; day <= range.end; day = addDays(day, 1)) {
+        if (complete.has(day)) continue;
+        const entries = byDate.get(day);
+        if (!entries) missingDates.push(day);
+        else for (const file of entries) {
+          const reason = file.diagnostics.map((item) => item.reason).join("\uFF1B") || (file.records.length === 0 && file.frontmatterTotalCents !== 0 ? "\u7A7A\u767D\u8D26\u672C\uFF0C\u672A\u660E\u786E\u8BB0\u5F55\u96F6\u6D88\u8D39" : "");
+          if (reason) problems.push({ path: file.path, date: day, reason });
+        }
+      }
+      return { range, label: index === 0 ? "\u5F53\u524D\u5468\u671F" : `\u524D\u7B2C ${index} \u4E2A\u5468\u671F`, missingDates, problems };
+    }),
+    undated: files.filter((file) => !file.date).map((file) => ({ path: file.path, reason: file.diagnostics.map((d) => d.reason).join("\uFF1B") || "\u65E5\u671F\u65E0\u6CD5\u8BC6\u522B" }))
+  };
+}
 function buildFinanceAdvisorSnapshot(records, date, salaryCents, excludedCategories, completeDates = [...new Set(records.map((record) => record.date))]) {
-  var _a, _b, _c, _d;
+  var _a, _b, _c, _d, _e;
   const currentRange = salaryDayRange(date);
   const fullCurrentRange = salaryCycleFullRange(date);
   const previousRanges = [salaryCycleFullRange(date, 1), salaryCycleFullRange(date, 2)];
@@ -544,7 +569,8 @@ function buildFinanceAdvisorSnapshot(records, date, salaryCents, excludedCategor
         priority: 78 + Math.min(20, Math.round(record.cents / Math.max(1, threshold) * 5)),
         category: record.category,
         title: `\u51FA\u73B0\u4E00\u7B14\u8F83\u5927\u7684${record.category}\u652F\u51FA`,
-        detail: `\u5355\u7B14 ${formatCents(record.cents)}\uFF0C\u660E\u663E\u9AD8\u4E8E\u8BE5\u5206\u7C7B\u8FC7\u5F80\u5355\u7B14\u6C34\u5E73\u3002`
+        detail: `\u5355\u7B14 ${formatCents(record.cents)}\uFF0C\u660E\u663E\u9AD8\u4E8E\u8BE5\u5206\u7C7B\u8FC7\u5F80\u5355\u7B14\u6C34\u5E73\u3002`,
+        evidence: [`\u4EA4\u6613\u65E5\u671F\uFF1A${record.date}`, `\u5386\u53F2\u8BE5\u5206\u7C7B\u5355\u7B14\u4E2D\u4F4D\u6570\uFF1A${formatCents(historicalMedian)}`, `\u672C\u6B21\u89E6\u53D1\u95E8\u69DB\uFF1A${formatCents(threshold)}`]
       });
       largeExpenseIndex += 1;
     }
@@ -557,6 +583,21 @@ function buildFinanceAdvisorSnapshot(records, date, salaryCents, excludedCategor
     detail: historyCycleCount < 2 || !currentCoverage ? `\u53EF\u7528\u5B8C\u6574\u5386\u53F2\u5468\u671F ${historyCycleCount}/2\uFF1B\u7F3A\u5931\u6216\u5B58\u5728\u6838\u5BF9\u95EE\u9898\u7684\u8D26\u672C\u4E0D\u6309\u96F6\u6D88\u8D39\u5904\u7406\uFF0C\u6682\u4E0D\u5224\u65AD\u6D88\u8D39\u5F02\u5E38\u3002` : "\u6682\u672A\u89E6\u53D1\u53EF\u9760\u7684\u5F02\u5E38\u63D0\u9192\u3002"
   });
   events.sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id, "zh-CN"));
+  for (const event of events) {
+    const category = snapshots.find((item) => item.category === event.category);
+    event.evidence = [
+      ...(_e = event.evidence) != null ? _e : [],
+      `\u5F53\u524D\u5468\u671F\uFF1A${currentRange.start} \u2014 ${currentRange.end}\uFF08${elapsedDays} \u5929\uFF09`,
+      `\u53EF\u7528\u5386\u53F2\u5468\u671F\uFF1A${historyCycleCount}/2`,
+      ...usableRanges.map((range) => `\u5386\u53F2\u7A97\u53E3\uFF1A${range.start} \u2014 ${range.end}\uFF1B\u540C\u671F\u622A\u81F3 ${addDays(range.start, Math.min(elapsedDays, daysInclusive(range)) - 1)}`),
+      ...category ? [
+        `\u5206\u7C7B\u652F\u51FA\uFF1A${formatCents(category.currentCents)}\uFF1B\u5386\u53F2\u540C\u671F\u5E73\u5747\uFF1A${formatCents(category.baselineProgressCents)}`,
+        `\u5206\u7C7B\u7B14\u6570\uFF1A${category.currentCount}\uFF1B\u5386\u53F2\u540C\u671F\u5E73\u5747\uFF1A${category.baselineProgressCount}`
+      ] : [],
+      ...event.type.startsWith("salary-") ? [`\u5DF2\u82B1\uFF1A${formatCents(currentSpentCents)}\uFF1B\u5386\u53F2\u5269\u4F59\u9636\u6BB5\u5E73\u5747\uFF1A${formatCents(forecastCents - currentSpentCents)}`, `\u5468\u671F\u672B\u53C2\u8003\uFF1A${formatCents(forecastCents)}\uFF1B\u5DE5\u8D44\uFF1A${formatCents(salaryCents)}`, `\u9884\u6D4B\u7F6E\u4FE1\u5EA6\uFF1A${forecastConfidence === "low" ? "\u4F4E" : "\u4E00\u822C"}\uFF0C\u4ED8\u6B3E\u65E5\u671F\u53D8\u5316\u53EF\u80FD\u5F71\u54CD\u7ED3\u679C\u3002`] : [],
+      `\u89E6\u53D1\u8BF4\u660E\uFF1A${event.detail}`
+    ];
+  }
   return {
     currentRange,
     fullCurrentRange,
@@ -615,6 +656,100 @@ function diagnosticsFor(files) {
   });
 }
 
+// src/budget-monitor.ts
+function barkSucceeded(response) {
+  const body = response.json;
+  return response.status >= 200 && response.status < 300 && (body == null ? void 0 : body.code) === 200 && (body == null ? void 0 : body.message) === "success";
+}
+var BudgetMonitor = class {
+  constructor(settings, send, save, notify, gate, timeoutMs = 3e4) {
+    this.settings = settings;
+    this.send = send;
+    this.save = save;
+    this.notify = notify;
+    this.gate = gate;
+    this.timeoutMs = timeoutMs;
+    this.inFlight = false;
+    this.stopped = false;
+    this.retryAfter = 0;
+  }
+  stop() {
+    this.stopped = true;
+  }
+  async check(files, now = /* @__PURE__ */ new Date()) {
+    const settings = this.settings();
+    const today = isoFromDate(now);
+    if (this.stopped || this.inFlight || this.gate.busy || now.getTime() < this.retryAfter || !settings.barkUrl || settings.dailyBudgetCents <= 0 || settings.lastBudgetNotificationDate === today) return;
+    const records = budgetScopedRecords(filteredRecords(files, {
+      range: { start: today, end: today },
+      scope: "all",
+      excludedCategories: [],
+      categories: settings.budgetCategory ? [settings.budgetCategory] : [],
+      keyword: ""
+    }), settings.includeStarredInBudget, settings.starredRecordIds);
+    const spent = records.reduce((sum, record) => sum + record.cents, 0);
+    if (spent < settings.dailyBudgetCents) return;
+    const over = spent - settings.dailyBudgetCents;
+    const title = over > 0 ? "\u4ECA\u65E5\u9884\u7B97\u5DF2\u8D85\u652F" : "\u4ECA\u65E5\u9884\u7B97\u5DF2\u7528\u5C3D";
+    const scope = `${settings.budgetCategory || "\u5168\u90E8\u5206\u7C7B"}\uFF08${settings.includeStarredInBudget ? "\u542B\u661F\u6807" : "\u4E0D\u542B\u661F\u6807"}\uFF09`;
+    const body = `\u4ECA\u65E5${scope}\u652F\u51FA ${formatCents(spent)}\uFF0C\u6BCF\u65E5\u9884\u7B97 ${formatCents(settings.dailyBudgetCents)}${over > 0 ? `\uFF0C\u8D85\u652F ${formatCents(over)}` : "\uFF0C\u5DF2\u8FBE\u5230\u6BCF\u65E5\u9884\u7B97"}`;
+    const url = barkPushUrl(settings.barkUrl, title, body);
+    if (!url) return;
+    this.inFlight = true;
+    try {
+      await this.gate.run(async () => {
+        const response = await this.send(url);
+        if (!barkSucceeded(response)) throw new Error("Bark \u672A\u786E\u8BA4\u53D1\u9001\u6210\u529F");
+        if (this.stopped) return;
+        this.settings().lastBudgetNotificationDate = today;
+        await this.save();
+      }, void 0, this.timeoutMs);
+    } catch (e) {
+      this.retryAfter = now.getTime() + 5 * 6e4;
+      if (!this.stopped) this.notify("\u9884\u7B97\u63D0\u9192\u53D1\u9001\u6216\u4FDD\u5B58\u5931\u8D25\uFF0C\u7A0D\u540E\u81EA\u52A8\u91CD\u8BD5\uFF1B\u8BF7\u68C0\u67E5 Bark \u5730\u5740\u4E0E\u7F51\u7EDC\u3002");
+    } finally {
+      this.inFlight = false;
+    }
+  }
+};
+
+// src/request-gate.ts
+var RequestGate = class {
+  constructor() {
+    this.busy = false;
+  }
+  async run(operation, signal, timeoutMs = 6e4) {
+    if (signal == null ? void 0 : signal.aborted) throw new Error("\u8BF7\u6C42\u5DF2\u53D6\u6D88");
+    if (this.busy) throw new Error("\u4E0A\u6B21\u8BF7\u6C42\u7684\u8FDE\u63A5\u5C1A\u672A\u7ED3\u675F\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5");
+    this.busy = true;
+    const pending = Promise.resolve().then(() => {
+      if (signal == null ? void 0 : signal.aborted) throw new Error("\u8BF7\u6C42\u5DF2\u53D6\u6D88");
+      return operation();
+    }).finally(() => {
+      this.busy = false;
+    });
+    let timer;
+    let cancel;
+    const deadline = new Promise((_, reject) => {
+      cancel = () => reject(new Error("\u8BF7\u6C42\u5DF2\u53D6\u6D88"));
+      signal == null ? void 0 : signal.addEventListener("abort", cancel, { once: true });
+      timer = setTimeout(() => reject(new Error("\u8BF7\u6C42\u8D85\u8FC7\u7B49\u5F85\u65F6\u9650\uFF0C\u5DF2\u505C\u6B62\u7B49\u5F85\uFF1B\u8FDE\u63A5\u7ED3\u675F\u524D\u4E0D\u4F1A\u91CD\u590D\u8BF7\u6C42")), timeoutMs);
+    });
+    try {
+      return await Promise.race([pending, deadline]);
+    } finally {
+      if (timer !== void 0) clearTimeout(timer);
+      if (cancel) signal == null ? void 0 : signal.removeEventListener("abort", cancel);
+    }
+  }
+};
+var host = globalThis;
+function sharedRequestGate(key) {
+  var _a, _b;
+  const gates = (_a = host.__ledgerRequestGates) != null ? _a : host.__ledgerRequestGates = {};
+  return (_b = gates[key]) != null ? _b : gates[key] = new RequestGate();
+}
+
 // src/repository.ts
 var import_obsidian = require("obsidian");
 var LedgerRepository = class {
@@ -627,6 +762,8 @@ var LedgerRepository = class {
     this.notifyTimer = null;
     this.generation = 0;
     this.ready = false;
+    this.disposed = false;
+    this.revisions = /* @__PURE__ */ new Map();
   }
   get files() {
     return this.cache;
@@ -643,19 +780,25 @@ var LedgerRepository = class {
     await this.rescan();
   }
   async rescan() {
+    if (this.disposed) return;
     const generation = ++this.generation;
-    const next = /* @__PURE__ */ new Map();
+    this.ready = false;
     const files = this.app.vault.getMarkdownFiles().filter((file) => this.isLedgerFile(file));
-    await Promise.all(files.map(async (file) => {
-      const parsed = await this.read(file);
-      if (parsed && generation === this.generation) next.set(file.path, parsed);
+    const paths = new Set(files.map((file) => file.path));
+    for (const path of this.cache.keys()) if (!paths.has(path)) this.cache.delete(path);
+    let index = 0;
+    await Promise.all(Array.from({ length: Math.min(8, files.length) }, async () => {
+      while (index < files.length && generation === this.generation && !this.disposed) {
+        await this.update(files[index++], generation);
+      }
     }));
-    if (generation !== this.generation) return;
-    this.cache = next;
+    if (generation !== this.generation || this.disposed) return;
     this.ready = true;
     this.scheduleNotify();
   }
   dispose() {
+    this.disposed = true;
+    this.generation++;
     for (const ref of this.refs) this.app.vault.offref(ref);
     this.refs = [];
     if (this.notifyTimer !== null) window.clearTimeout(this.notifyTimer);
@@ -669,35 +812,47 @@ var LedgerRepository = class {
   }
   async handleCreateOrModify(file) {
     if (!(file instanceof import_obsidian.TFile) || !this.isLedgerFile(file)) return;
-    const parsed = await this.read(file);
-    if (parsed) {
-      this.cache.set(file.path, parsed);
+    await this.update(file, this.generation);
+  }
+  async update(file, generation) {
+    var _a;
+    if (this.disposed || generation !== this.generation || !this.isLedgerFile(file)) return;
+    const path = file.path;
+    const revision = ((_a = this.revisions.get(path)) != null ? _a : 0) + 1;
+    this.revisions.set(path, revision);
+    const parsed = await this.read(file, path);
+    if (!this.disposed && generation === this.generation && this.revisions.get(path) === revision && file.path === path && this.app.vault.getAbstractFileByPath(path) === file && this.isLedgerFile(file) && parsed) {
+      this.cache.set(path, parsed);
       this.scheduleNotify();
     }
   }
   handleDelete(file) {
-    if (this.cache.delete(file.path)) this.scheduleNotify();
+    this.invalidatePath(file.path);
   }
   async handleRename(file, oldPath) {
-    const removed = this.cache.delete(oldPath);
-    if (file instanceof import_obsidian.TFile && this.isLedgerFile(file)) {
-      const parsed = await this.read(file);
-      if (parsed) this.cache.set(file.path, parsed);
-      this.scheduleNotify();
-    } else if (removed) {
-      this.scheduleNotify();
-    }
+    this.invalidatePath(oldPath);
+    if (file instanceof import_obsidian.TFile) await this.handleCreateOrModify(file);
+    else await this.rescan();
   }
-  async read(file) {
+  invalidatePath(path) {
+    var _a;
+    for (const key of /* @__PURE__ */ new Set([...this.cache.keys(), ...this.revisions.keys(), path])) {
+      if (key !== path && !key.startsWith(`${path}/`)) continue;
+      this.revisions.set(key, ((_a = this.revisions.get(key)) != null ? _a : 0) + 1);
+      this.cache.delete(key);
+    }
+    this.scheduleNotify();
+  }
+  async read(file, path) {
     try {
-      return parseLedgerFile(file.path, await this.app.vault.cachedRead(file));
+      return parseLedgerFile(path, await this.app.vault.read(file));
     } catch (error) {
       return {
-        path: file.path,
+        path,
         date: null,
         frontmatterTotalCents: null,
         records: [],
-        diagnostics: [{ kind: "parse", path: file.path, reason: `\u8BFB\u53D6\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}` }]
+        diagnostics: [{ kind: "parse", path, reason: `\u8BFB\u53D6\u5931\u8D25\uFF1A${error instanceof Error ? error.message : String(error)}` }]
       };
     }
   }
@@ -706,6 +861,7 @@ var LedgerRepository = class {
     return file.extension.toLowerCase() === "md" && (folder === "" || file.path.startsWith(`${folder}/`));
   }
   scheduleNotify() {
+    if (this.disposed) return;
     if (this.notifyTimer !== null) window.clearTimeout(this.notifyTimer);
     this.notifyTimer = window.setTimeout(() => {
       this.notifyTimer = null;
@@ -890,49 +1046,14 @@ var import_obsidian5 = require("obsidian");
 // src/ai.ts
 var import_obsidian3 = require("obsidian");
 var FINANCE_AI_PROFILE = `\u4F60\u662F\u4E00\u540D\u514B\u5236\u3001\u53EF\u9760\u7684\u4E2A\u4EBA\u8D22\u52A1\u89C2\u5BDF\u5458\u3002
-
-\u4F60\u7684\u804C\u8D23\u4E0D\u662F\u91CD\u65B0\u8BA1\u7B97\u8D26\u76EE\uFF0C\u800C\u662F\u4ECE\u7A0B\u5E8F\u63D0\u4F9B\u7684\u201C\u8D22\u52A1\u4E8B\u4EF6\u5019\u9009\u6C60\u201D\u4E2D\uFF0C\u5224\u65AD\u5F53\u524D\u6700\u503C\u5F97\u7528\u6237\u77E5\u9053\u7684\u53D8\u5316\uFF0C\u5E76\u628A\u5B83\u8868\u8FBE\u6E05\u695A\u3002
-
-\u7A0B\u5E8F\u5DF2\u7ECF\u8D1F\u8D23\uFF1A
-- \u8BA1\u7B97\u5DE5\u8D44\u5468\u671F\u3001\u652F\u51FA\u3001\u4F59\u989D\u548C\u9884\u6D4B\u91D1\u989D
-- \u5BF9\u6BD4\u524D\u4E24\u4E2A\u5B8C\u6574\u5DE5\u8D44\u5468\u671F
-- \u626B\u63CF\u5168\u90E8\u6D88\u8D39\u5206\u7C7B
-- \u8BC6\u522B\u91D1\u989D\u5F02\u5E38\u3001\u9891\u7387\u53D8\u5316\u3001\u7B14\u5747\u91D1\u989D\u53D8\u5316\u3001\u5927\u989D\u5355\u7B14\u548C\u6D88\u8D39\u7ED3\u6784\u53D8\u5316
-- \u751F\u6210\u5206\u7C7B\u53C2\u8003\u4F59\u91CF
-
-\u4F60\u5FC5\u987B\u9075\u5B88\uFF1A
-1. \u53EA\u80FD\u4F7F\u7528\u8F93\u5165\u4E2D\u5DF2\u7ECF\u63D0\u4F9B\u7684\u4E8B\u5B9E\u3001\u91D1\u989D\u548C\u4E8B\u4EF6\u3002
-2. \u4E0D\u5F97\u81EA\u884C\u8BA1\u7B97\u3001\u4FEE\u6539\u3001\u8865\u5168\u6216\u63A8\u6D4B\u4EFB\u4F55\u91D1\u989D\u3002
-3. \u4E0D\u5F97\u865A\u6784\u5546\u5BB6\u3001\u6D88\u8D39\u539F\u56E0\u3001\u7528\u6237\u610F\u56FE\u3001\u6536\u5165\u6765\u6E90\u6216\u751F\u6D3B\u72B6\u51B5\u3002
-4. \u4E0D\u8981\u56FA\u5B9A\u5173\u6CE8\u9910\u996E\u6216\u8D2D\u7269\uFF0C\u5E94\u5728\u5168\u90E8\u5019\u9009\u5206\u7C7B\u4E2D\u5224\u65AD\u3002
-5. \u4F18\u5148\u9009\u62E9\u540C\u65F6\u5177\u5907\u4EE5\u4E0B\u7279\u5F81\u7684\u4E8B\u4EF6\uFF1A\u5BF9\u5DE5\u8D44\u4F59\u989D\u5F71\u54CD\u8F83\u5927\u3001\u4E0E\u524D\u4E24\u4E2A\u5468\u671F\u76F8\u6BD4\u53D8\u5316\u660E\u663E\u3001\u6837\u672C\u6570\u91CF\u8DB3\u591F\u3001\u5BF9\u7528\u6237\u63A5\u4E0B\u6765\u7684\u6D88\u8D39\u51B3\u7B56\u6709\u5E2E\u52A9\u3002
-6. \u964D\u4F4E\u4EE5\u4E0B\u4E8B\u4EF6\u7684\u4F18\u5148\u7EA7\uFF1A\u53EA\u6709\u767E\u5206\u6BD4\u53D8\u5316\u4F46\u5B9E\u9645\u91D1\u989D\u5F88\u5C0F\u3001\u53EA\u591A\u4E00\u7B14\u6216\u6837\u672C\u8FC7\u5C11\u3001\u4E0E\u66F4\u91CD\u8981\u4E8B\u4EF6\u91CD\u590D\u8868\u8FBE\u3001\u5DE5\u8D44\u5468\u671F\u521A\u5F00\u59CB\u4E14\u6682\u65F6\u65E0\u6CD5\u5F62\u6210\u53EF\u9760\u5224\u65AD\u3002
-7. \u5982\u679C\u6CA1\u6709\u660E\u663E\u4E14\u53EF\u9760\u7684\u53D8\u5316\uFF0C\u76F4\u63A5\u8BF4\u660E\u201C\u76EE\u524D\u6CA1\u6709\u503C\u5F97\u7279\u522B\u63D0\u9192\u7684\u53D8\u5316\u201D\uFF0C\u4E0D\u8981\u4E3A\u4E86\u663E\u5F97\u6709\u7528\u800C\u5236\u9020\u95EE\u9898\u3002
-8. \u201C\u5206\u7C7B\u53C2\u8003\u4F59\u91CF\u201D\u53EA\u662F\u6839\u636E\u524D\u4E24\u4E2A\u5468\u671F\u5E73\u5747\u5F97\u51FA\u7684\u53C2\u8003\uFF0C\u4E0D\u662F\u9884\u7B97\uFF0C\u4E5F\u4E0D\u4EE3\u8868\u7528\u6237\u4E00\u5B9A\u53EF\u4EE5\u82B1\u5B8C\u3002\u4F7F\u7528\u201C\u6309\u8FC7\u5F80\u5468\u671F\u53C2\u8003\uFF0C\u8FD8\u53EF\u5B89\u6392\u2026\u2026\u201D\u4E00\u7C7B\u8868\u8FF0\uFF0C\u4E0D\u5F97\u4F7F\u7528\u4FDD\u8BC1\u6027\u63AA\u8F9E\u3002
-9. \u4E0D\u63D0\u4F9B\u6295\u8D44\u3001\u501F\u8D37\u3001\u7A0E\u52A1\u6216\u9AD8\u98CE\u9669\u8D22\u52A1\u5EFA\u8BAE\u3002
-10. \u4E0D\u63D0\u53CA AI\u3001\u6A21\u578B\u3001\u63D0\u793A\u8BCD\u6216\u5185\u90E8\u8BA1\u7B97\u8FC7\u7A0B\u3002
-
-\u8F93\u51FA\u8981\u6C42\uFF1A
-- \u53EA\u9009\u62E9\u4E00\u4E2A\u6700\u503C\u5F97\u5173\u6CE8\u7684\u4E3B\u4E8B\u4EF6\u3002
-- \u5206\u7C7B\u5EFA\u8BAE\u6700\u591A\u9009\u62E9\u4E09\u4E2A\u771F\u6B63\u76F8\u5173\u7684\u5206\u7C7B\u3002
-- \u6807\u9898\u4E0D\u8D85\u8FC7 16 \u4E2A\u4E2D\u6587\u5B57\u7B26\u3002
-- \u603B\u7ED3\u6700\u591A\u4E24\u53E5\u8BDD\uFF0C\u907F\u514D\u7A7A\u8BDD\u548C\u8BF4\u6559\u3002
-- \u8BED\u6C14\u76F4\u63A5\u3001\u514B\u5236\u3001\u5177\u4F53\uFF0C\u4E0D\u5236\u9020\u7126\u8651\u3002
-- \u6240\u6709\u4E8B\u4EF6\u548C\u5206\u7C7B\u5FC5\u987B\u5F15\u7528\u8F93\u5165\u4E2D\u5B58\u5728\u7684 ID \u6216\u540D\u79F0\u3002
-
-\u4E25\u683C\u8F93\u51FA JSON\uFF0C\u4E0D\u8981\u4F7F\u7528 Markdown \u4EE3\u7801\u5757\uFF1A
-{
-  "primary_event_id": "\u5019\u9009\u4E8B\u4EF6ID\uFF1B\u6CA1\u6709\u660E\u663E\u53D8\u5316\u65F6\u586B\u5199 stable",
-  "headline": "\u7B80\u77ED\u6807\u9898",
-  "summary": "\u5BF9\u53D8\u5316\u7684\u5177\u4F53\u8BF4\u660E\uFF0C\u4EE5\u53CA\u7528\u6237\u63A5\u4E0B\u6765\u6700\u503C\u5F97\u6CE8\u610F\u7684\u4E8B\u60C5",
-  "category_lines": [
-    {
-      "category": "\u8F93\u5165\u4E2D\u5B58\u5728\u7684\u5206\u7C7B\u540D\u79F0",
-      "text": "\u57FA\u4E8E\u8FC7\u5F80\u5468\u671F\u53C2\u8003\u7684\u7B80\u77ED\u8BF4\u660E"
-    }
-  ],
-  "tone": "normal \u6216 warning"
-}`;
+\u4ECE\u7A0B\u5E8F\u7ED9\u51FA\u7684\u5019\u9009\u4E8B\u4EF6\u4E2D\uFF0C\u9009\u62E9\u6700\u503C\u5F97\u7528\u6237\u5173\u6CE8\u7684\u4E00\u9879\uFF0C\u5E76\u9009\u62E9\u6700\u591A\u4E09\u4E2A\u76F8\u5173\u5206\u7C7B\u3002
+\u4F18\u5148\u8003\u8651\u91D1\u989D\u5F71\u54CD\u3001\u6837\u672C\u53EF\u9760\u6027\u3001\u53D8\u5316\u7A0B\u5EA6\u548C\u4E0B\u4E00\u6B65\u51B3\u7B56\u4EF7\u503C\uFF1B\u4E0D\u8981\u56FA\u5B9A\u5173\u6CE8\u9910\u996E\u6216\u8D2D\u7269\u3002
+\u5386\u53F2\u4E0D\u8DB3\u3001\u5468\u671F\u521D\u671F\u6216\u4F4E\u7F6E\u4FE1\u5EA6\u65F6\uFF0C\u964D\u4F4E\u9884\u6D4B\u4E8B\u4EF6\u4F18\u5148\u7EA7\u3002\u6CA1\u6709\u53EF\u9760\u53D8\u5316\u65F6\u9009\u62E9 stable\u3002
+\u91D1\u989D\u3001\u6807\u9898\u548C\u4E8B\u5B9E\u8BF4\u660E\u5168\u90E8\u7531\u7A0B\u5E8F\u6839\u636E\u6240\u9009\u4E8B\u4EF6\u751F\u6210\uFF1B\u4E0D\u8981\u8F93\u51FA\u4EFB\u4F55\u81EA\u7531\u6587\u672C\u6216\u6570\u5B57\u3002
+action_id \u53EA\u80FD\u662F observe\uFF08\u7EE7\u7EED\u89C2\u5BDF\uFF09\u3001review\uFF08\u6838\u5BF9\u76F8\u5173\u8BB0\u5F55\uFF09\u3001plan\uFF08\u68C0\u67E5\u540E\u7EED\u652F\u51FA\u5B89\u6392\uFF09\u3002
+\u4E0D\u63D0\u4F9B\u6295\u8D44\u3001\u501F\u8D37\u6216\u7A0E\u52A1\u5EFA\u8BAE\u3002\u5206\u7C7B\u53C2\u8003\u4F59\u91CF\u4E0D\u662F\u9884\u7B97\u6216\u6D88\u8D39\u8BB8\u53EF\u3002
+\u53EA\u8F93\u51FA JSON\uFF1A
+{"primary_event_id":"\u8F93\u5165\u4E2D\u5B58\u5728\u7684\u4E8B\u4EF6ID","action_id":"observe","category_names":["\u8F93\u5165\u4E2D\u5B58\u5728\u7684\u5206\u7C7B\u540D\u79F0"]}`;
 var FINANCE_AI_TIMEOUT_MS = 6e4;
 function compactText(value, maxLength) {
   if (typeof value !== "string") return null;
@@ -957,30 +1078,35 @@ function parseFinanceAdvice(raw, snapshot) {
   if (typeof parsed !== "object" || parsed === null) throw new Error("AI \u8FD4\u56DE\u683C\u5F0F\u4E0D\u6B63\u786E");
   const value = parsed;
   const primaryEventId = compactText(value.primary_event_id, 160);
-  const headline = compactText(value.headline, 16);
-  const summary = compactText(value.summary, 140);
-  const tone = value.tone === "warning" ? "warning" : value.tone === "normal" ? "normal" : null;
-  const allowedEvents = new Set(snapshot.events.map((event) => event.id));
-  if (!primaryEventId || !allowedEvents.has(primaryEventId)) throw new Error("AI \u9009\u62E9\u4E86\u4E0D\u5B58\u5728\u7684\u5019\u9009\u4E8B\u4EF6");
-  if (!headline || !summary || !tone) throw new Error("AI \u8FD4\u56DE\u7F3A\u5C11\u6807\u9898\u3001\u603B\u7ED3\u6216\u8BED\u6C14");
-  const allowedCategories = new Set(snapshot.categories.map((item) => item.category));
+  const event = snapshot.events.find((item) => item.id === primaryEventId);
+  if (!event) throw new Error("AI \u9009\u62E9\u4E86\u4E0D\u5B58\u5728\u7684\u5019\u9009\u4E8B\u4EF6");
+  const actions = {
+    observe: "\u5EFA\u8BAE\u7EE7\u7EED\u89C2\u5BDF\u540E\u7EED\u8BB0\u5F55\u3002",
+    review: "\u53EF\u4EE5\u6838\u5BF9\u76F8\u5173\u8BB0\u5F55\uFF0C\u786E\u8BA4\u662F\u5426\u5B58\u5728\u8865\u8BB0\u6216\u91CD\u590D\u8BB0\u8D26\u3002",
+    plan: "\u53EF\u4EE5\u7ED3\u5408\u540E\u7EED\u5DF2\u77E5\u652F\u51FA\uFF0C\u68C0\u67E5\u672C\u5468\u671F\u7684\u5B89\u6392\u3002"
+  };
+  const action = typeof value.action_id === "string" && Object.prototype.hasOwnProperty.call(actions, value.action_id) ? actions[value.action_id] : void 0;
+  if (!action || !Array.isArray(value.category_names)) throw new Error("AI \u8FD4\u56DE\u7684\u9009\u62E9\u683C\u5F0F\u4E0D\u6B63\u786E");
   const categoryLines = [];
-  if (Array.isArray(value.category_lines)) {
-    for (const item of value.category_lines.slice(0, 3)) {
-      if (typeof item !== "object" || item === null) continue;
-      const row = item;
-      const category = compactText(row.category, 80);
-      const text = compactText(row.text, 100);
-      if (category && text && allowedCategories.has(category) && !categoryLines.some((line) => line.category === category)) {
-        categoryLines.push({ category, text });
-      }
+  for (const name of value.category_names.slice(0, 3)) {
+    if (typeof name !== "string") throw new Error("AI \u8FD4\u56DE\u7684\u5206\u7C7B\u65E0\u6548");
+    const category = snapshot.categories.find((item) => item.category === name);
+    if (!category) throw new Error("AI \u9009\u62E9\u4E86\u4E0D\u5B58\u5728\u7684\u5206\u7C7B");
+    if (snapshot.historyCycleCount > 0 && !categoryLines.some((line) => line.category === name)) {
+      categoryLines.push({ category: name, text: `\u6309\u8FC7\u5F80\u5468\u671F\u53C2\u8003\uFF0C\u53C2\u8003\u4F59\u91CF ${formatCents(category.remainingReferenceCents)}\uFF1B\u4E0D\u7B49\u540C\u4E8E\u9884\u7B97\u3002` });
     }
   }
-  return { primaryEventId, headline, summary, categoryLines, tone };
+  return {
+    primaryEventId: event.id,
+    headline: event.title,
+    summary: `${event.detail}${action}`,
+    categoryLines,
+    tone: event.type === "salary-pressure" && snapshot.forecastConfidence === "normal" ? "warning" : "normal"
+  };
 }
 function financeSnapshotFingerprint(snapshot) {
   const source = JSON.stringify({
-    schema: 2,
+    schema: 3,
     snapshot,
     date: snapshot.currentRange.end,
     salary: snapshot.salaryCents,
@@ -1047,7 +1173,7 @@ function validateEndpoint(value) {
   if (trimmedPath === "/v1") url.pathname = `${trimmedPath}/chat/completions`;
   return url.toString();
 }
-async function requestFinanceAdvice(config, snapshot) {
+async function requestFinanceAdvice(config, snapshot, signal, gate = sharedRequestGate("ai")) {
   var _a, _b, _c;
   const endpoint = validateEndpoint(config.endpoint);
   const model = config.model.trim();
@@ -1069,23 +1195,14 @@ async function requestFinanceAdvice(config, snapshot) {
   if (/^mimo-/i.test(model) && endpointHost.endsWith("xiaomimimo.com")) {
     requestBody.thinking = { type: "disabled" };
   }
-  let timeoutId = 0;
-  const timeout = new Promise((_, reject) => {
-    timeoutId = window.setTimeout(() => reject(new Error("AI \u8BF7\u6C42\u8D85\u8FC7 60 \u79D2\uFF0C\u5DF2\u505C\u6B62\u7B49\u5F85")), FINANCE_AI_TIMEOUT_MS);
-  });
-  let response;
-  try {
-    response = await Promise.race([(0, import_obsidian3.requestUrl)({
-      url: endpoint,
-      method: "POST",
-      headers,
-      contentType: "application/json",
-      body: JSON.stringify(requestBody),
-      throw: true
-    }), timeout]);
-  } finally {
-    window.clearTimeout(timeoutId);
-  }
+  const response = await gate.run(() => (0, import_obsidian3.requestUrl)({
+    url: endpoint,
+    method: "POST",
+    headers,
+    contentType: "application/json",
+    body: JSON.stringify(requestBody),
+    throw: true
+  }), signal, FINANCE_AI_TIMEOUT_MS);
   const responseBody = response.json;
   const content = jsonTextFromResponse((_c = (_b = (_a = responseBody == null ? void 0 : responseBody.choices) == null ? void 0 : _a[0]) == null ? void 0 : _b.message) == null ? void 0 : _c.content);
   if (!content) throw new Error("AI \u63A5\u53E3\u6CA1\u6709\u8FD4\u56DE\u53EF\u7528\u5185\u5BB9");
@@ -1592,8 +1709,8 @@ function renderDumbbell(parent, data, currentLabel, previousLabel, onClick) {
 function renderEmpty(parent, message) {
   parent.createDiv({ cls: "ledger-empty", text: message });
 }
-function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true) {
-  var _a, _b, _c, _d, _e, _f, _g, _h;
+function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true, coverage, onOpenFile) {
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j;
   const card = parent.createDiv({ cls: `ledger-advisor-card${animate ? " ledger-reveal" : ""}` });
   card.setAttribute("aria-busy", String(state.status === "loading"));
   const heading = card.createDiv({ cls: "ledger-advisor-heading" });
@@ -1631,13 +1748,42 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
   forecast.createSpan({ text: `\u5468\u671F\u672B\u652F\u51FA\u53C2\u8003${snapshot.forecastAvailable && snapshot.forecastConfidence === "low" ? " \xB7 \u4F4E\u7F6E\u4FE1\u5EA6" : ""}` });
   forecast.createEl("strong", { text: snapshot.forecastAvailable ? formatCents(snapshot.forecastCents) : "\u6570\u636E\u4E0D\u8DB3\uFF0C\u6682\u4E0D\u9884\u6D4B" });
   forecast.createEl("small", { text: "\u5DF2\u82B1\u91D1\u989D\uFF0B\u5386\u53F2\u5269\u4F59\u9636\u6BB5\u5E73\u5747\u652F\u51FA" });
-  const event = snapshot.events[0];
-  const observation = card.createDiv({ cls: `ledger-advisor-observation is-${event.type}${((_a = state.advice) == null ? void 0 : _a.tone) === "warning" ? " is-warning" : ""}` });
+  const event = (_a = snapshot.events.find((item) => {
+    var _a2;
+    return item.id === ((_a2 = state.advice) == null ? void 0 : _a2.primaryEventId);
+  })) != null ? _a : snapshot.events[0];
+  const observation = card.createDiv({ cls: `ledger-advisor-observation is-${event.type}${((_b = state.advice) == null ? void 0 : _b.tone) === "warning" ? " is-warning" : ""}` });
   observation.createDiv({ cls: "ledger-advisor-observation-label", text: state.advice ? "AI \u8D22\u52A1\u5224\u65AD" : "\u672C\u5730\u5019\u9009\u5224\u65AD" });
-  observation.createEl("h4", { text: (_c = (_b = state.advice) == null ? void 0 : _b.headline) != null ? _c : event.title });
-  observation.createEl("p", { text: (_e = (_d = state.advice) == null ? void 0 : _d.summary) != null ? _e : event.detail });
+  observation.createEl("h4", { text: (_d = (_c = state.advice) == null ? void 0 : _c.headline) != null ? _d : event.title });
+  observation.createEl("p", { text: (_f = (_e = state.advice) == null ? void 0 : _e.summary) != null ? _f : event.detail });
   if (state.message) observation.createDiv({ cls: `ledger-advisor-ai-status is-${state.status}`, text: state.message });
-  const adviceCategories = new Map((_g = (_f = state.advice) == null ? void 0 : _f.categoryLines.map((line) => [line.category, line.text])) != null ? _g : []);
+  const evidence = card.createEl("details", { cls: "ledger-advisor-evidence" });
+  evidence.createEl("summary", { text: "\u67E5\u770B\u5224\u65AD\u4F9D\u636E" });
+  evidence.createEl("strong", { text: event.title });
+  const evidenceList = evidence.createEl("ul");
+  for (const line of (_g = event.evidence) != null ? _g : [event.detail]) evidenceList.createEl("li", { text: line });
+  if (coverage) {
+    const issueCount = coverage.undated.length + coverage.cycles.reduce((sum, cycle) => sum + cycle.missingDates.length + cycle.problems.length, 0);
+    const details = card.createEl("details", { cls: "ledger-advisor-coverage" });
+    details.createEl("summary", { text: issueCount ? `\u67E5\u770B\u6570\u636E\u7F3A\u53E3 \xB7 ${issueCount} \u9879` : "\u67E5\u770B\u6570\u636E\u5B8C\u6574\u6027 \xB7 \u8BB0\u5F55\u9F50\u5168" });
+    const problemLink = (path, reason) => {
+      const row = details.createDiv({ cls: "ledger-advisor-data-issue" });
+      const button = row.createEl("button", { text: path, attr: { type: "button" } });
+      button.addEventListener("click", () => onOpenFile == null ? void 0 : onOpenFile(path));
+      row.createSpan({ text: reason });
+    };
+    for (const cycle of coverage.cycles) {
+      details.createEl("h4", { text: `${cycle.label}\uFF1A${cycle.range.start} \u2014 ${cycle.range.end}` });
+      if (!cycle.missingDates.length && !cycle.problems.length) details.createEl("p", { text: "\u6BCF\u5929\u5747\u6709\u53EF\u7528\u8D26\u672C\uFF0C\u5305\u542B\u660E\u786E\u8BB0\u5F55\u7684\u96F6\u6D88\u8D39\u65E5\u3002" });
+      if (cycle.missingDates.length) details.createEl("p", { text: `\u7F3A\u5C11\u65E5\u671F\uFF1A${cycle.missingDates.join("\u3001")}` });
+      for (const problem of cycle.problems) problemLink(problem.path, `${problem.date}\uFF1A${problem.reason}`);
+    }
+    if (coverage.undated.length) {
+      details.createEl("h4", { text: "\u65E0\u6CD5\u5F52\u5165\u65E5\u671F\u7684\u8D26\u672C" });
+      for (const problem of coverage.undated) problemLink(problem.path, problem.reason);
+    }
+  }
+  const adviceCategories = new Map((_i = (_h = state.advice) == null ? void 0 : _h.categoryLines.map((line) => [line.category, line.text])) != null ? _i : []);
   const references = state.advice && adviceCategories.size > 0 ? snapshot.categories.filter((item) => adviceCategories.has(item.category)).slice(0, 3) : snapshot.categories.filter((item) => item.baselineCycleCents > 0 || item.currentCents > 0).sort((a, b) => b.remainingReferenceCents - a.remainingReferenceCents || b.baselineCycleCents - a.baselineCycleCents).slice(0, 3);
   if (references.length > 0 && snapshot.historyCycleCount > 0) {
     const section = card.createDiv({ cls: "ledger-advisor-categories" });
@@ -1650,7 +1796,7 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
       row.createSpan({ text: item.category });
       const value = row.createDiv();
       value.createEl("strong", { text: formatCents(item.remainingReferenceCents) });
-      value.createEl("small", { text: (_h = adviceCategories.get(item.category)) != null ? _h : `\u8FC7\u5F80\u5468\u671F\u5747\u503C ${formatCents(item.baselineCycleCents)}` });
+      value.createEl("small", { text: (_j = adviceCategories.get(item.category)) != null ? _j : `\u8FC7\u5F80\u5468\u671F\u5747\u503C ${formatCents(item.baselineCycleCents)}` });
     }
   }
   card.createDiv({ cls: "ledger-advisor-source", text: "CURRENT SALARY CYCLE \xB7 PREVIOUS 2 FULL CYCLES \xB7 ALL CATEGORIES SCANNED \xB7 LOCAL LEDGER" });
@@ -1815,7 +1961,10 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
     this.detailSort = "newest";
     this.compareMode = "auto";
     this.showDiagnostics = false;
-    this.budgetNotificationInFlight = false;
+    this.lastDate = todayIso();
+    this.closed = false;
+    this.financeController = null;
+    this.financeAutoTimer = null;
     this.financeAdviceLoading = false;
     this.financeAdviceError = "";
     this.financeAdviceAttemptedDate = "";
@@ -1853,6 +2002,7 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
     return "chart-pie";
   }
   async onOpen() {
+    this.closed = false;
     this.containerEl.addClass("ledger-statistics-view");
     this.registerDomEvent(this.contentEl, "touchstart", (event) => this.handleAutoAdvanceTouchStart(event), { passive: true });
     this.registerDomEvent(this.contentEl, "touchmove", (event) => this.handleAutoAdvanceTouchMove(event), { passive: false });
@@ -1866,12 +2016,33 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
   }
   async onClose() {
     var _a;
+    this.closed = true;
+    this.cancelFinanceRequest();
     (_a = this.filterResizeObserver) == null ? void 0 : _a.disconnect();
     this.filterResizeObserver = null;
     this.resetAutoAdvanceArm();
   }
   refreshSettings() {
     this.filter.excludedCategories = [...this.plugin.settings.excludedCategories];
+    this.render();
+  }
+  cancelFinanceRequest() {
+    var _a;
+    (_a = this.financeController) == null ? void 0 : _a.abort();
+    if (this.financeAutoTimer !== null) window.clearTimeout(this.financeAutoTimer);
+    this.financeAutoTimer = null;
+  }
+  refreshDate(now = /* @__PURE__ */ new Date()) {
+    const date = isoFromDate(now);
+    if (this.closed || date === this.lastDate) return;
+    this.lastDate = date;
+    this.cancelFinanceRequest();
+    if (this.periodOffset === 0 && this.preset !== "custom" && this.preset !== "previous") {
+      this.filter.range = this.rangeForPreset(this.preset, now, 0);
+    }
+    if (this.drillContext && this.drillContext.periodOffset === 0 && this.drillContext.preset !== "custom" && this.drillContext.preset !== "previous") {
+      this.drillContext.filter.range = this.rangeForPreset(this.drillContext.preset, now, 0);
+    }
     this.render();
   }
   render() {
@@ -2068,7 +2239,6 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
       keyword: ""
     }), includeStarred, this.plugin.settings.starredRecordIds);
     const currentCycleCents = currentCycleRecords.reduce((sum, record) => sum + record.cents, 0);
-    this.maybeNotifyBudget(today, todayCents, this.plugin.settings.dailyBudgetCents, budgetCategory, includeStarred);
     const advisorHost = parent.createDiv({ cls: "ledger-advisor-host" });
     this.renderFinanceSection(advisorHost);
     renderLiquidBudget(parent, todayCents, this.plugin.settings.dailyBudgetCents, today.replace(/-/g, "."), currentCycleCents, budgetCategory, includeStarred);
@@ -2115,38 +2285,52 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
     } else {
       financeState = { status: "local", advice: null, message: "\u70B9\u51FB\u201C\u5237\u65B0\u5224\u65AD\u201D\u751F\u6210\u9996\u6B21\u7ED3\u679C\uFF1B\u4EE5\u540E\u6BCF\u5929\u81EA\u52A8\u66F4\u65B0\u4E00\u6B21\u3002", canRefresh: true };
     }
-    renderFinanceAdvisor(parent, financeSnapshot, financeState, () => void this.loadFinanceAdvice(financeSnapshot, true), animate);
+    renderFinanceAdvisor(
+      parent,
+      financeSnapshot,
+      financeState,
+      () => void this.loadFinanceAdvice(financeSnapshot, true),
+      animate,
+      financeCoverageReport(files, /* @__PURE__ */ new Date()),
+      (path) => void this.app.workspace.openLinkText(path, "", false)
+    );
     if (configured && financeSnapshot.salaryCents > 0 && this.plugin.settings.financeAdviceCache && !cached && !this.financeAdviceLoading && this.financeAdviceAttemptedDate !== financeSnapshot.currentRange.end) {
       this.financeAdviceAttemptedDate = financeSnapshot.currentRange.end;
-      window.setTimeout(() => void this.loadFinanceAdvice(financeSnapshot, false), 0);
+      this.financeAutoTimer = window.setTimeout(() => {
+        this.financeAutoTimer = null;
+        if (!this.closed) void this.loadFinanceAdvice(financeSnapshot, false);
+      }, 0);
     }
   }
   refreshFinanceSection() {
     var _a;
-    const host = this.contentEl.querySelector(".ledger-advisor-host");
-    if (!host || !this.containerEl.isConnected) return;
+    const host2 = this.contentEl.querySelector(".ledger-advisor-host");
+    if (!host2 || !this.containerEl.isConnected) return;
     const scrollTop = this.contentEl.scrollTop;
-    const focused = host.contains(document.activeElement);
-    host.empty();
-    this.renderFinanceSection(host, false);
+    const focused = host2.contains(document.activeElement);
+    host2.empty();
+    this.renderFinanceSection(host2, false);
     this.contentEl.scrollTop = scrollTop;
-    if (focused) (_a = host.querySelector(".ledger-advisor-refresh")) == null ? void 0 : _a.focus({ preventScroll: true });
+    if (focused) (_a = host2.querySelector(".ledger-advisor-refresh")) == null ? void 0 : _a.focus({ preventScroll: true });
   }
   async loadFinanceAdvice(snapshot, manual) {
-    if (this.financeAdviceLoading) return;
+    if (this.financeAdviceLoading || this.closed || !this.plugin.settings.financeAiEnabled) return;
     if (snapshot.salaryCents <= 0) {
       if (manual) new import_obsidian5.Notice("\u8BF7\u5148\u5728\u63D2\u4EF6\u8BBE\u7F6E\u4E2D\u586B\u5199\u6BCF\u4E2A\u5DE5\u8D44\u5468\u671F\u5230\u8D26\u5DE5\u8D44");
       return;
     }
     this.financeAdviceLoading = true;
+    const controller = new AbortController();
+    this.financeController = controller;
+    const config = { endpoint: this.plugin.settings.financeAiEndpoint, apiKey: this.plugin.settings.financeAiApiKey, model: this.plugin.settings.financeAiModel };
     this.financeAdviceError = "";
     this.refreshFinanceSection();
     try {
-      const advice = await requestFinanceAdvice({
-        endpoint: this.plugin.settings.financeAiEndpoint,
-        apiKey: this.plugin.settings.financeAiApiKey,
-        model: this.plugin.settings.financeAiModel
-      }, snapshot);
+      const advice = await requestFinanceAdvice(config, snapshot, controller.signal, sharedRequestGate(`ai:${this.app.vault.getName()}`));
+      if (controller.signal.aborted || this.closed || !this.plugin.settings.financeAiEnabled) return;
+      if (config.endpoint !== this.plugin.settings.financeAiEndpoint || config.model !== this.plugin.settings.financeAiModel || config.apiKey !== this.plugin.settings.financeAiApiKey) {
+        throw new Error("AI \u914D\u7F6E\u5DF2\u53D8\u5316\uFF0C\u672C\u6B21\u7ED3\u679C\u5DF2\u5E9F\u5F03\uFF0C\u8BF7\u91CD\u65B0\u5224\u65AD");
+      }
       this.plugin.settings.financeAdviceCache = {
         date: snapshot.currentRange.end,
         fingerprint: financeSnapshotFingerprint(snapshot),
@@ -2156,35 +2340,15 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
       await this.plugin.saveSettings(false, false);
       if (manual) new import_obsidian5.Notice("\u8D22\u52A1\u5224\u65AD\u5DF2\u66F4\u65B0");
     } catch (error) {
-      this.financeAdviceError = error instanceof Error ? error.message : "AI \u8BF7\u6C42\u5931\u8D25";
-      if (manual) new import_obsidian5.Notice(this.financeAdviceError);
-    } finally {
-      this.financeAdviceLoading = false;
-      this.refreshFinanceSection();
-    }
-  }
-  maybeNotifyBudget(today, spentCents, budgetCents, budgetCategory, includeStarred) {
-    const barkUrl = this.plugin.settings.barkUrl.trim();
-    if (!barkUrl || budgetCents <= 0 || spentCents < budgetCents || this.plugin.settings.lastBudgetNotificationDate === today || this.budgetNotificationInFlight) return;
-    const overBudgetCents = spentCents - budgetCents;
-    const title = overBudgetCents > 0 ? "\u4ECA\u65E5\u9884\u7B97\u5DF2\u8D85\u652F" : "\u4ECA\u65E5\u9884\u7B97\u5DF2\u7528\u5C3D";
-    const scopeLabel = budgetCategory || "\u5168\u90E8\u5206\u7C7B";
-    const starredScope = includeStarred ? "\u542B\u661F\u6807" : "\u4E0D\u542B\u661F\u6807";
-    const body = overBudgetCents > 0 ? `\u4ECA\u65E5${scopeLabel}\u652F\u51FA\uFF08${starredScope}\uFF09${formatCents(spentCents)}\uFF0C\u6BCF\u65E5\u9884\u7B97 ${formatCents(budgetCents)}\uFF0C\u8D85\u652F ${formatCents(overBudgetCents)}` : `\u4ECA\u65E5${scopeLabel}\u652F\u51FA\uFF08${starredScope}\uFF09${formatCents(spentCents)}\uFF0C\u5DF2\u8FBE\u5230\u6BCF\u65E5\u9884\u7B97 ${formatCents(budgetCents)}`;
-    const url = barkPushUrl(barkUrl, title, body);
-    if (!url) return;
-    this.budgetNotificationInFlight = true;
-    void (0, import_obsidian5.requestUrl)({ url, method: "GET", throw: true }).then(async () => {
-      this.plugin.settings.lastBudgetNotificationDate = today;
-      try {
-        await this.plugin.saveSettings(false, false);
-      } catch (e) {
+      if (!controller.signal.aborted && !this.closed) {
+        this.financeAdviceError = error instanceof Error ? error.message : "AI \u8BF7\u6C42\u5931\u8D25";
+        if (manual) new import_obsidian5.Notice(this.financeAdviceError);
       }
-    }).catch(() => {
-      new import_obsidian5.Notice("Bark \u63D0\u9192\u53D1\u9001\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u63A8\u9001\u5730\u5740\u548C\u7F51\u7EDC");
-    }).finally(() => {
-      this.budgetNotificationInFlight = false;
-    });
+    } finally {
+      if (this.financeController === controller) this.financeController = null;
+      this.financeAdviceLoading = false;
+      if (!this.closed) this.refreshFinanceSection();
+    }
   }
   renderCategory(parent) {
     const controls = parent.createDiv({ cls: "ledger-section-controls" });
@@ -2477,7 +2641,7 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
   }
   rangeForPreset(preset, now, offset) {
     if (preset === "today") {
-      const date = addDays(todayIso(), -offset);
+      const date = addDays(isoFromDate(now), -offset);
       return { start: date, end: date };
     }
     if (preset === "week") return weekRange(now, offset);
@@ -2486,7 +2650,7 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
     if (preset === "salary") return salaryDayRange(now, offset);
     if (preset === "year") {
       const year = now.getFullYear() - offset;
-      return { start: `${year}-01-01`, end: offset === 0 ? todayIso() : `${year}-12-31` };
+      return { start: `${year}-01-01`, end: offset === 0 ? isoFromDate(now) : `${year}-12-31` };
     }
     return { ...this.filter.range };
   }
@@ -2736,10 +2900,21 @@ var LedgerStatisticsPlugin = class extends import_obsidian6.Plugin {
   constructor() {
     super(...arguments);
     this.settings = DEFAULT_SETTINGS;
+    this.saveQueue = Promise.resolve();
   }
   async onload() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-    this.repository = new LedgerRepository(this.app, this.settings.ledgerFolder, () => this.refreshViews());
+    this.budgetMonitor = new BudgetMonitor(
+      () => this.settings,
+      (url) => (0, import_obsidian6.requestUrl)({ url, method: "GET", throw: true }),
+      () => this.saveSettings(false, false),
+      (message) => new import_obsidian6.Notice(message),
+      sharedRequestGate(`bark:${this.app.vault.getName()}`)
+    );
+    this.repository = new LedgerRepository(this.app, this.settings.ledgerFolder, () => {
+      this.refreshViews();
+      this.checkBudget();
+    });
     this.registerView(LEDGER_VIEW_TYPE, (leaf) => new LedgerStatisticsView(leaf, this));
     this.addRibbonIcon("chart-pie", "\u6253\u5F00\u8BB0\u8D26\u7EDF\u8BA1", () => void this.activateView());
     this.addCommand({ id: "open-ledger-statistics", name: "\u6253\u5F00\u8BB0\u8D26\u7EDF\u8BA1", callback: () => void this.activateView() });
@@ -2757,14 +2932,40 @@ var LedgerStatisticsPlugin = class extends import_obsidian6.Plugin {
         void this.saveSettings(false);
       }
     }));
+    this.registerInterval(window.setInterval(() => this.tick(), 3e4));
+    this.registerDomEvent(document, "visibilitychange", () => {
+      if (!document.hidden) this.tick();
+    });
+    this.registerDomEvent(window, "focus", () => this.tick());
+    this.checkBudget();
   }
   onunload() {
+    var _a;
+    (_a = this.budgetMonitor) == null ? void 0 : _a.stop();
+    for (const leaf of this.app.workspace.getLeavesOfType(LEDGER_VIEW_TYPE)) {
+      if (leaf.view instanceof LedgerStatisticsView) leaf.view.cancelFinanceRequest();
+    }
     this.repository.dispose();
   }
   async saveSettings(rescan, refresh = true) {
-    await this.saveData(this.settings);
+    const data = JSON.parse(JSON.stringify(this.settings));
+    const saved = this.saveQueue.then(() => this.saveData(data));
+    this.saveQueue = saved.catch(() => {
+    });
+    await saved;
     if (rescan) await this.repository.setFolder(this.settings.ledgerFolder);
     if (refresh) this.refreshViews();
+    this.checkBudget();
+  }
+  checkBudget() {
+    var _a;
+    if ((_a = this.repository) == null ? void 0 : _a.loaded) void this.budgetMonitor.check([...this.repository.files.values()]);
+  }
+  tick() {
+    for (const leaf of this.app.workspace.getLeavesOfType(LEDGER_VIEW_TYPE)) {
+      if (leaf.view instanceof LedgerStatisticsView) leaf.view.refreshDate();
+    }
+    this.checkBudget();
   }
   async activateView() {
     let leaf = this.app.workspace.getLeavesOfType(LEDGER_VIEW_TYPE)[0];

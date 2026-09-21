@@ -1,5 +1,5 @@
 import { setIcon } from "obsidian";
-import { BudgetProgress, CategorySummary, FinanceAdvisorSnapshot, LedgerRecord, TrendPoint, budgetProgress, formatCents } from "./core";
+import { BudgetProgress, CategorySummary, FinanceAdvisorSnapshot, FinanceCoverageReport, LedgerRecord, TrendPoint, budgetProgress, formatCents } from "./core";
 import type { FinanceAdvice } from "./ai";
 
 export interface FinanceAdviceViewState {
@@ -520,7 +520,7 @@ export function renderEmpty(parent: HTMLElement, message: string): void {
   parent.createDiv({ cls: "ledger-empty", text: message });
 }
 
-export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvisorSnapshot, state: FinanceAdviceViewState, onRefresh: () => void, animate = true): void {
+export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvisorSnapshot, state: FinanceAdviceViewState, onRefresh: () => void, animate = true, coverage?: FinanceCoverageReport, onOpenFile?: (path: string) => void): void {
   const card = parent.createDiv({ cls: `ledger-advisor-card${animate ? " ledger-reveal" : ""}` });
   card.setAttribute("aria-busy", String(state.status === "loading"));
   const heading = card.createDiv({ cls: "ledger-advisor-heading" });
@@ -563,12 +563,40 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
   forecast.createEl("strong", { text: snapshot.forecastAvailable ? formatCents(snapshot.forecastCents) : "数据不足，暂不预测" });
   forecast.createEl("small", { text: "已花金额＋历史剩余阶段平均支出" });
 
-  const event = snapshot.events[0];
+  const event = snapshot.events.find((item) => item.id === state.advice?.primaryEventId) ?? snapshot.events[0];
   const observation = card.createDiv({ cls: `ledger-advisor-observation is-${event.type}${state.advice?.tone === "warning" ? " is-warning" : ""}` });
   observation.createDiv({ cls: "ledger-advisor-observation-label", text: state.advice ? "AI 财务判断" : "本地候选判断" });
   observation.createEl("h4", { text: state.advice?.headline ?? event.title });
   observation.createEl("p", { text: state.advice?.summary ?? event.detail });
   if (state.message) observation.createDiv({ cls: `ledger-advisor-ai-status is-${state.status}`, text: state.message });
+
+  const evidence = card.createEl("details", { cls: "ledger-advisor-evidence" });
+  evidence.createEl("summary", { text: "查看判断依据" });
+  evidence.createEl("strong", { text: event.title });
+  const evidenceList = evidence.createEl("ul");
+  for (const line of event.evidence ?? [event.detail]) evidenceList.createEl("li", { text: line });
+
+  if (coverage) {
+    const issueCount = coverage.undated.length + coverage.cycles.reduce((sum, cycle) => sum + cycle.missingDates.length + cycle.problems.length, 0);
+    const details = card.createEl("details", { cls: "ledger-advisor-coverage" });
+    details.createEl("summary", { text: issueCount ? `查看数据缺口 · ${issueCount} 项` : "查看数据完整性 · 记录齐全" });
+    const problemLink = (path: string, reason: string) => {
+      const row = details.createDiv({ cls: "ledger-advisor-data-issue" });
+      const button = row.createEl("button", { text: path, attr: { type: "button" } });
+      button.addEventListener("click", () => onOpenFile?.(path));
+      row.createSpan({ text: reason });
+    };
+    for (const cycle of coverage.cycles) {
+      details.createEl("h4", { text: `${cycle.label}：${cycle.range.start} — ${cycle.range.end}` });
+      if (!cycle.missingDates.length && !cycle.problems.length) details.createEl("p", { text: "每天均有可用账本，包含明确记录的零消费日。" });
+      if (cycle.missingDates.length) details.createEl("p", { text: `缺少日期：${cycle.missingDates.join("、")}` });
+      for (const problem of cycle.problems) problemLink(problem.path, `${problem.date}：${problem.reason}`);
+    }
+    if (coverage.undated.length) {
+      details.createEl("h4", { text: "无法归入日期的账本" });
+      for (const problem of coverage.undated) problemLink(problem.path, problem.reason);
+    }
+  }
 
   const adviceCategories = new Map(state.advice?.categoryLines.map((line) => [line.category, line.text]) ?? []);
   const references = state.advice && adviceCategories.size > 0

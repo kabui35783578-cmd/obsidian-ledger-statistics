@@ -1,4 +1,5 @@
-import { ItemView, MarkdownView, Menu, Notice, Platform, TFile, WorkspaceLeaf, requestUrl, setIcon } from "obsidian";
+import { ItemView, MarkdownView, Menu, Notice, Platform, TFile, WorkspaceLeaf, setIcon } from "obsidian";
+import { sharedRequestGate } from "./request-gate";
 import type LedgerStatisticsPlugin from "./main";
 import { financeSnapshotFingerprint, requestFinanceAdvice } from "./ai";
 import {
@@ -8,9 +9,10 @@ import {
   FilterState,
   LedgerRecord,
   addDays,
-  barkPushUrl,
   buildFinanceAdvisorSnapshot,
   financeCompleteDates,
+  financeCoverageReport,
+  isoFromDate,
   budgetScopedRecords,
   categorySummaries,
   compareValue,
@@ -114,7 +116,10 @@ export class LedgerStatisticsView extends ItemView {
   private customCurrent: DateRange;
   private customPrevious: DateRange;
   private showDiagnostics = false;
-  private budgetNotificationInFlight = false;
+  private lastDate = todayIso();
+  private closed = false;
+  private financeController: AbortController | null = null;
+  private financeAutoTimer: number | null = null;
   private financeAdviceLoading = false;
   private financeAdviceError = "";
   private financeAdviceAttemptedDate = "";
@@ -151,6 +156,7 @@ export class LedgerStatisticsView extends ItemView {
   getIcon(): string { return "chart-pie"; }
 
   async onOpen(): Promise<void> {
+    this.closed = false;
     this.containerEl.addClass("ledger-statistics-view");
     this.registerDomEvent(this.contentEl, "touchstart", (event) => this.handleAutoAdvanceTouchStart(event), { passive: true });
     this.registerDomEvent(this.contentEl, "touchmove", (event) => this.handleAutoAdvanceTouchMove(event), { passive: false });
@@ -165,6 +171,8 @@ export class LedgerStatisticsView extends ItemView {
   }
 
   async onClose(): Promise<void> {
+    this.closed = true;
+    this.cancelFinanceRequest();
     this.filterResizeObserver?.disconnect();
     this.filterResizeObserver = null;
     this.resetAutoAdvanceArm();
@@ -172,6 +180,26 @@ export class LedgerStatisticsView extends ItemView {
 
   refreshSettings(): void {
     this.filter.excludedCategories = [...this.plugin.settings.excludedCategories];
+    this.render();
+  }
+
+  cancelFinanceRequest(): void {
+    this.financeController?.abort();
+    if (this.financeAutoTimer !== null) window.clearTimeout(this.financeAutoTimer);
+    this.financeAutoTimer = null;
+  }
+
+  refreshDate(now = new Date()): void {
+    const date = isoFromDate(now);
+    if (this.closed || date === this.lastDate) return;
+    this.lastDate = date;
+    this.cancelFinanceRequest();
+    if (this.periodOffset === 0 && this.preset !== "custom" && this.preset !== "previous") {
+      this.filter.range = this.rangeForPreset(this.preset, now, 0);
+    }
+    if (this.drillContext && this.drillContext.periodOffset === 0 && this.drillContext.preset !== "custom" && this.drillContext.preset !== "previous") {
+      this.drillContext.filter.range = this.rangeForPreset(this.drillContext.preset, now, 0);
+    }
     this.render();
   }
 
@@ -374,7 +402,6 @@ export class LedgerStatisticsView extends ItemView {
       keyword: ""
     }), includeStarred, this.plugin.settings.starredRecordIds);
     const currentCycleCents = currentCycleRecords.reduce((sum, record) => sum + record.cents, 0);
-    this.maybeNotifyBudget(today, todayCents, this.plugin.settings.dailyBudgetCents, budgetCategory, includeStarred);
     const advisorHost = parent.createDiv({ cls: "ledger-advisor-host" });
     this.renderFinanceSection(advisorHost);
     renderLiquidBudget(parent, todayCents, this.plugin.settings.dailyBudgetCents, today.replace(/-/g, "."), currentCycleCents, budgetCategory, includeStarred);
@@ -425,10 +452,14 @@ export class LedgerStatisticsView extends ItemView {
     } else {
       financeState = { status: "local", advice: null, message: "点击“刷新判断”生成首次结果；以后每天自动更新一次。", canRefresh: true };
     }
-    renderFinanceAdvisor(parent, financeSnapshot, financeState, () => void this.loadFinanceAdvice(financeSnapshot, true), animate);
+    renderFinanceAdvisor(parent, financeSnapshot, financeState, () => void this.loadFinanceAdvice(financeSnapshot, true), animate,
+      financeCoverageReport(files, new Date()), (path) => void this.app.workspace.openLinkText(path, "", false));
     if (configured && financeSnapshot.salaryCents > 0 && this.plugin.settings.financeAdviceCache && !cached && !this.financeAdviceLoading && this.financeAdviceAttemptedDate !== financeSnapshot.currentRange.end) {
       this.financeAdviceAttemptedDate = financeSnapshot.currentRange.end;
-      window.setTimeout(() => void this.loadFinanceAdvice(financeSnapshot, false), 0);
+      this.financeAutoTimer = window.setTimeout(() => {
+        this.financeAutoTimer = null;
+        if (!this.closed) void this.loadFinanceAdvice(financeSnapshot, false);
+      }, 0);
     }
   }
 
@@ -444,20 +475,23 @@ export class LedgerStatisticsView extends ItemView {
   }
 
   private async loadFinanceAdvice(snapshot: ReturnType<typeof buildFinanceAdvisorSnapshot>, manual: boolean): Promise<void> {
-    if (this.financeAdviceLoading) return;
+    if (this.financeAdviceLoading || this.closed || !this.plugin.settings.financeAiEnabled) return;
     if (snapshot.salaryCents <= 0) {
       if (manual) new Notice("请先在插件设置中填写每个工资周期到账工资");
       return;
     }
     this.financeAdviceLoading = true;
+    const controller = new AbortController();
+    this.financeController = controller;
+    const config = { endpoint: this.plugin.settings.financeAiEndpoint, apiKey: this.plugin.settings.financeAiApiKey, model: this.plugin.settings.financeAiModel };
     this.financeAdviceError = "";
     this.refreshFinanceSection();
     try {
-      const advice = await requestFinanceAdvice({
-        endpoint: this.plugin.settings.financeAiEndpoint,
-        apiKey: this.plugin.settings.financeAiApiKey,
-        model: this.plugin.settings.financeAiModel
-      }, snapshot);
+      const advice = await requestFinanceAdvice(config, snapshot, controller.signal, sharedRequestGate(`ai:${this.app.vault.getName()}`));
+      if (controller.signal.aborted || this.closed || !this.plugin.settings.financeAiEnabled) return;
+      if (config.endpoint !== this.plugin.settings.financeAiEndpoint || config.model !== this.plugin.settings.financeAiModel || config.apiKey !== this.plugin.settings.financeAiApiKey) {
+        throw new Error("AI 配置已变化，本次结果已废弃，请重新判断");
+      }
       this.plugin.settings.financeAdviceCache = {
         date: snapshot.currentRange.end,
         fingerprint: financeSnapshotFingerprint(snapshot),
@@ -467,44 +501,17 @@ export class LedgerStatisticsView extends ItemView {
       await this.plugin.saveSettings(false, false);
       if (manual) new Notice("财务判断已更新");
     } catch (error) {
-      this.financeAdviceError = error instanceof Error ? error.message : "AI 请求失败";
-      if (manual) new Notice(this.financeAdviceError);
+      if (!controller.signal.aborted && !this.closed) {
+        this.financeAdviceError = error instanceof Error ? error.message : "AI 请求失败";
+        if (manual) new Notice(this.financeAdviceError);
+      }
     } finally {
+      if (this.financeController === controller) this.financeController = null;
       this.financeAdviceLoading = false;
-      this.refreshFinanceSection();
+      if (!this.closed) this.refreshFinanceSection();
     }
   }
 
-  private maybeNotifyBudget(today: string, spentCents: number, budgetCents: number, budgetCategory: string, includeStarred: boolean): void {
-    const barkUrl = this.plugin.settings.barkUrl.trim();
-    if (!barkUrl || budgetCents <= 0 || spentCents < budgetCents || this.plugin.settings.lastBudgetNotificationDate === today || this.budgetNotificationInFlight) return;
-    const overBudgetCents = spentCents - budgetCents;
-    const title = overBudgetCents > 0 ? "今日预算已超支" : "今日预算已用尽";
-    const scopeLabel = budgetCategory || "全部分类";
-    const starredScope = includeStarred ? "含星标" : "不含星标";
-    const body = overBudgetCents > 0
-      ? `今日${scopeLabel}支出（${starredScope}）${formatCents(spentCents)}，每日预算 ${formatCents(budgetCents)}，超支 ${formatCents(overBudgetCents)}`
-      : `今日${scopeLabel}支出（${starredScope}）${formatCents(spentCents)}，已达到每日预算 ${formatCents(budgetCents)}`;
-    const url = barkPushUrl(barkUrl, title, body);
-    if (!url) return;
-
-    this.budgetNotificationInFlight = true;
-    void requestUrl({ url, method: "GET", throw: true })
-      .then(async () => {
-        this.plugin.settings.lastBudgetNotificationDate = today;
-        try {
-          await this.plugin.saveSettings(false, false);
-        } catch {
-          // The push succeeded; keep the in-memory guard even if persistence fails.
-        }
-      })
-      .catch(() => {
-        new Notice("Bark 提醒发送失败，请检查推送地址和网络");
-      })
-      .finally(() => {
-        this.budgetNotificationInFlight = false;
-      });
-  }
 
   private renderCategory(parent: HTMLElement): void {
     const controls = parent.createDiv({ cls: "ledger-section-controls" });
@@ -774,7 +781,7 @@ export class LedgerStatisticsView extends ItemView {
 
   private rangeForPreset(preset: DatePreset, now: Date, offset: number): DateRange {
     if (preset === "today") {
-      const date = addDays(todayIso(), -offset);
+      const date = addDays(isoFromDate(now), -offset);
       return { start: date, end: date };
     }
     if (preset === "week") return weekRange(now, offset);
@@ -783,7 +790,7 @@ export class LedgerStatisticsView extends ItemView {
     if (preset === "salary") return salaryDayRange(now, offset);
     if (preset === "year") {
       const year = now.getFullYear() - offset;
-      return { start: `${year}-01-01`, end: offset === 0 ? todayIso() : `${year}-12-31` };
+      return { start: `${year}-01-01`, end: offset === 0 ? isoFromDate(now) : `${year}-12-31` };
     }
     return { ...this.filter.range };
   }
