@@ -191,8 +191,6 @@
 .ledger-header {
   justify-content: space-between;
   margin-bottom: 22px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--mono-ink);
 }
 
 .ledger-header h2 {
@@ -412,8 +410,7 @@
 .ledger-tabs {
   margin: 16px 0 22px;
   overflow-x: auto;
-  padding-bottom: 6px;
-  border-bottom: 1px solid color-mix(in srgb, var(--mono-ink) 28%, transparent);
+  padding-bottom: 4px;
 }
 
 .ledger-tabs .ledger-button {
@@ -1656,8 +1653,8 @@ button.ledger-metric:active {
 
   .ledger-tabs {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 4px 6px;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 4px;
     margin: 12px 0 16px;
     overflow: visible;
     padding: 0;
