@@ -1,6 +1,7 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type LedgerStatisticsPlugin from "./main";
 import { parseMoneyToCents } from "./core";
+import type { FinanceAdviceCache } from "./ai";
 
 export type LedgerViewId = "overview" | "category" | "trend" | "calendar" | "details" | "compare";
 export type DefaultDatePreset = "today" | "week" | "month" | "salary" | "year";
@@ -10,6 +11,12 @@ export interface LedgerSettings {
   defaultView: LedgerViewId;
   defaultDatePreset: DefaultDatePreset;
   excludedCategories: string[];
+  salaryCents: number;
+  financeAiEnabled: boolean;
+  financeAiEndpoint: string;
+  financeAiModel: string;
+  financeAiApiKey: string;
+  financeAdviceCache: FinanceAdviceCache | null;
   dailyBudgetCents: number;
   budgetCategory: string;
   includeStarredInBudget: boolean;
@@ -23,6 +30,12 @@ export const DEFAULT_SETTINGS: LedgerSettings = {
   defaultView: "overview",
   defaultDatePreset: "month",
   excludedCategories: ["债务/还款"],
+  salaryCents: 0,
+  financeAiEnabled: false,
+  financeAiEndpoint: "https://api.openai.com/v1/chat/completions",
+  financeAiModel: "",
+  financeAiApiKey: "",
+  financeAdviceCache: null,
   dailyBudgetCents: 0,
   budgetCategory: "",
   includeStarredInBudget: true,
@@ -39,6 +52,9 @@ const VIEW_NAMES: Record<LedgerViewId, string> = {
   details: "明细",
   compare: "对比"
 };
+
+const OPENAI_CHAT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
+const MIMO_CHAT_ENDPOINT = "https://api.xiaomimimo.com/v1/chat/completions";
 
 export class LedgerSettingTab extends PluginSettingTab {
   constructor(app: App, private plugin: LedgerStatisticsPlugin) {
@@ -96,6 +112,93 @@ export class LedgerSettingTab extends PluginSettingTab {
           this.plugin.settings.excludedCategories = [...new Set(value.split(/[,，]/).map((item) => item.trim()).filter(Boolean))];
           await this.plugin.saveSettings(false);
         }));
+
+    new Setting(this.containerEl)
+      .setName("每个工资周期到账工资")
+      .setDesc("用于财务观察卡片。余额会用这笔工资减去本工资周期内的全部支出；数据仅保存在本地。")
+      .addText((text) => {
+        text
+          .setPlaceholder("例如 8000")
+          .setValue(this.moneyValue(this.plugin.settings.salaryCents))
+          .onChange(async (value) => {
+            const trimmed = value.trim();
+            if (!trimmed) {
+              this.plugin.settings.salaryCents = 0;
+              this.plugin.settings.financeAdviceCache = null;
+              await this.plugin.saveSettings(false);
+              return;
+            }
+            const cents = parseMoneyToCents(trimmed);
+            if (cents === null || cents < 0) return;
+            this.plugin.settings.salaryCents = cents;
+            this.plugin.settings.financeAdviceCache = null;
+            await this.plugin.saveSettings(false);
+          });
+        text.inputEl.setAttribute("inputmode", "decimal");
+        return text;
+      });
+
+    new Setting(this.containerEl)
+      .setName("启用 AI 财务判断")
+      .setDesc("只发送程序生成的汇总、候选事件和分类参考值，不发送账本文件、路径或消费备注。每天自动请求最多一次，也可在卡片中手动刷新。")
+      .addToggle((toggle) => toggle
+        .setValue(this.plugin.settings.financeAiEnabled)
+        .onChange(async (value) => {
+          this.plugin.settings.financeAiEnabled = value;
+          await this.plugin.saveSettings(false);
+          this.display();
+        }));
+
+    if (this.plugin.settings.financeAiEnabled) {
+      new Setting(this.containerEl)
+        .setName("AI 接口地址")
+        .setDesc("兼容 OpenAI Chat Completions 的完整接口地址；非本机地址必须使用 HTTPS。")
+        .addText((text) => text
+          .setPlaceholder("https://api.openai.com/v1/chat/completions")
+          .setValue(this.plugin.settings.financeAiEndpoint)
+          .onChange(async (value) => {
+            this.plugin.settings.financeAiEndpoint = value.trim();
+            this.plugin.settings.financeAdviceCache = null;
+            await this.plugin.saveSettings(false);
+          }));
+
+      new Setting(this.containerEl)
+        .setName("AI 模型")
+        .setDesc("填写接口服务商提供的模型名称。")
+        .addText((text) => text
+          .setPlaceholder("例如服务商提供的模型 ID")
+          .setValue(this.plugin.settings.financeAiModel)
+          .onChange(async (value) => {
+            this.plugin.settings.financeAiModel = value.trim();
+            if (/^mimo-/i.test(this.plugin.settings.financeAiModel)) {
+              try {
+                if (new URL(this.plugin.settings.financeAiEndpoint).hostname === "api.openai.com") {
+                  this.plugin.settings.financeAiEndpoint = MIMO_CHAT_ENDPOINT;
+                }
+              } catch {
+                if (this.plugin.settings.financeAiEndpoint === OPENAI_CHAT_ENDPOINT) this.plugin.settings.financeAiEndpoint = MIMO_CHAT_ENDPOINT;
+              }
+            }
+            this.plugin.settings.financeAdviceCache = null;
+            await this.plugin.saveSettings(false);
+          }));
+
+      new Setting(this.containerEl)
+        .setName("AI API Key")
+        .setDesc("仅保存在本地 data.json，不会上传 GitHub；本机免密接口可以留空。")
+        .addText((text) => {
+          text
+            .setPlaceholder("sk-…")
+            .setValue(this.plugin.settings.financeAiApiKey)
+            .onChange(async (value) => {
+              this.plugin.settings.financeAiApiKey = value.trim();
+              await this.plugin.saveSettings(false);
+            });
+          text.inputEl.type = "password";
+          text.inputEl.setAttribute("autocomplete", "off");
+          return text;
+        });
+    }
 
     new Setting(this.containerEl)
       .setName("每日预算")
@@ -173,7 +276,10 @@ export class LedgerSettingTab extends PluginSettingTab {
   }
 
   private budgetValue(): string {
-    const cents = this.plugin.settings.dailyBudgetCents;
+    return this.moneyValue(this.plugin.settings.dailyBudgetCents);
+  }
+
+  private moneyValue(cents: number): string {
     if (!Number.isFinite(cents) || cents <= 0) return "";
     return (cents / 100).toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
   }

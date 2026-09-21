@@ -1,5 +1,6 @@
 import { ItemView, MarkdownView, Menu, Notice, Platform, TFile, WorkspaceLeaf, requestUrl, setIcon } from "obsidian";
 import type LedgerStatisticsPlugin from "./main";
+import { financeSnapshotFingerprint, requestFinanceAdvice } from "./ai";
 import {
   AccountingScope,
   CategorySummary,
@@ -8,11 +9,13 @@ import {
   LedgerRecord,
   addDays,
   barkPushUrl,
+  buildFinanceAdvisorSnapshot,
   budgetScopedRecords,
   categorySummaries,
   compareValue,
   diagnosticsFor,
   filteredRecords,
+  flattenRecords,
   formatCents,
   isValidIsoDate,
   monthRange,
@@ -22,7 +25,7 @@ import {
   weekRange
 } from "./core";
 import { DefaultDatePreset, LedgerViewId } from "./settings";
-import { createButton, renderDonut, renderDumbbell, renderEmpty, renderHorizontalBars, renderLiquidBudget, renderStarredExpenses, renderTrendChart } from "./ui";
+import { createButton, FinanceAdviceViewState, renderDonut, renderDumbbell, renderEmpty, renderFinanceAdvisor, renderHorizontalBars, renderLiquidBudget, renderStarredExpenses, renderTrendChart } from "./ui";
 
 export const LEDGER_VIEW_TYPE = "ledger-statistics-view";
 
@@ -111,6 +114,9 @@ export class LedgerStatisticsView extends ItemView {
   private customPrevious: DateRange;
   private showDiagnostics = false;
   private budgetNotificationInFlight = false;
+  private financeAdviceLoading = false;
+  private financeAdviceError = "";
+  private financeAdviceAttemptedDate = "";
   private filtersExpanded = !Platform.isMobile;
   private drillContext: DrillContext | null = null;
   private pullEligible = false;
@@ -368,6 +374,37 @@ export class LedgerStatisticsView extends ItemView {
     }), includeStarred, this.plugin.settings.starredRecordIds);
     const currentCycleCents = currentCycleRecords.reduce((sum, record) => sum + record.cents, 0);
     this.maybeNotifyBudget(today, todayCents, this.plugin.settings.dailyBudgetCents, budgetCategory, includeStarred);
+    const financeSnapshot = buildFinanceAdvisorSnapshot(
+      flattenRecords(files),
+      new Date(),
+      this.plugin.settings.salaryCents,
+      this.plugin.settings.excludedCategories
+    );
+    const cached = this.plugin.settings.financeAdviceCache?.date === financeSnapshot.currentRange.end
+      ? this.plugin.settings.financeAdviceCache.advice
+      : null;
+    const configured = this.plugin.settings.financeAiEnabled
+      && Boolean(this.plugin.settings.financeAiEndpoint.trim())
+      && Boolean(this.plugin.settings.financeAiModel.trim());
+    let financeState: FinanceAdviceViewState;
+    if (!this.plugin.settings.financeAiEnabled) {
+      financeState = { status: "local", advice: null, message: "AI 判断未启用，当前显示本地候选结果。", canRefresh: false };
+    } else if (!configured) {
+      financeState = { status: "unconfigured", advice: null, message: "请先在设置中填写 AI 接口和模型。", canRefresh: false };
+    } else if (this.financeAdviceLoading) {
+      financeState = { status: "loading", advice: cached, message: "正在判断最值得关注的变化，最长等待 60 秒…", canRefresh: true };
+    } else if (cached) {
+      financeState = { status: "ready", advice: cached, message: "今日结果已缓存；账目变化后可手动重新判断。", canRefresh: true };
+    } else if (this.financeAdviceError) {
+      financeState = { status: "error", advice: null, message: `${this.financeAdviceError}，已回退为本地判断。`, canRefresh: true };
+    } else {
+      financeState = { status: "local", advice: null, message: "点击“刷新判断”生成首次结果；以后每天自动更新一次。", canRefresh: true };
+    }
+    renderFinanceAdvisor(parent, financeSnapshot, financeState, () => void this.loadFinanceAdvice(financeSnapshot, true));
+    if (configured && financeSnapshot.salaryCents > 0 && this.plugin.settings.financeAdviceCache && !cached && !this.financeAdviceLoading && this.financeAdviceAttemptedDate !== financeSnapshot.currentRange.end) {
+      this.financeAdviceAttemptedDate = financeSnapshot.currentRange.end;
+      window.setTimeout(() => void this.loadFinanceAdvice(financeSnapshot, false), 0);
+    }
     renderLiquidBudget(parent, todayCents, this.plugin.settings.dailyBudgetCents, today.replace(/-/g, "."), currentCycleCents, budgetCategory, includeStarred);
     const metrics = parent.createDiv({ cls: "ledger-metrics" });
     this.metric(metrics, "所选期间总额", formatCents(stats.cents), `${stats.count} 笔`, () => this.goDetails());
@@ -382,6 +419,38 @@ export class LedgerStatisticsView extends ItemView {
       renderTrendChart(grid, trendPoints(records, this.rangeTrendUnit()), "line", (point) => this.drillRange({ start: point.start, end: point.end }));
     }
     renderStarredExpenses(parent, this.starredRecords(), (record) => void this.openRecord(record));
+  }
+
+  private async loadFinanceAdvice(snapshot: ReturnType<typeof buildFinanceAdvisorSnapshot>, manual: boolean): Promise<void> {
+    if (this.financeAdviceLoading) return;
+    if (snapshot.salaryCents <= 0) {
+      if (manual) new Notice("请先在插件设置中填写每个工资周期到账工资");
+      return;
+    }
+    this.financeAdviceLoading = true;
+    this.financeAdviceError = "";
+    this.render();
+    try {
+      const advice = await requestFinanceAdvice({
+        endpoint: this.plugin.settings.financeAiEndpoint,
+        apiKey: this.plugin.settings.financeAiApiKey,
+        model: this.plugin.settings.financeAiModel
+      }, snapshot);
+      this.plugin.settings.financeAdviceCache = {
+        date: snapshot.currentRange.end,
+        fingerprint: financeSnapshotFingerprint(snapshot),
+        advice,
+        updatedAt: new Date().toISOString()
+      };
+      await this.plugin.saveSettings(false, false);
+      if (manual) new Notice("财务判断已更新");
+    } catch (error) {
+      this.financeAdviceError = error instanceof Error ? error.message : "AI 请求失败";
+      if (manual) new Notice(this.financeAdviceError);
+    } finally {
+      this.financeAdviceLoading = false;
+      this.render();
+    }
   }
 
   private maybeNotifyBudget(today: string, spentCents: number, budgetCents: number, budgetCategory: string, includeStarred: boolean): void {

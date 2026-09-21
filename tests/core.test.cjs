@@ -9,6 +9,8 @@ const {
   compareValue,
   trendPoints,
   salaryDayRange,
+  salaryCycleFullRange,
+  buildFinanceAdvisorSnapshot,
   weekRange,
   budgetProgress,
   budgetScopedRecords,
@@ -204,6 +206,43 @@ test("salary day range can step back through complete previous cycles", () => {
   assert.deepEqual(salaryDayRange(new Date(2026, 8, 15, 12), 1), { start: "2026-08-15", end: "2026-09-14" });
   assert.deepEqual(salaryDayRange(new Date(2026, 8, 14, 12), 1), { start: "2026-07-15", end: "2026-08-14" });
   assert.deepEqual(salaryDayRange(new Date(2026, 0, 3, 12), 1), { start: "2025-11-15", end: "2025-12-14" });
+});
+
+test("full salary cycle always ends on the next 14th", () => {
+  assert.deepEqual(salaryCycleFullRange(new Date(2026, 8, 21, 12)), { start: "2026-09-15", end: "2026-10-14" });
+  assert.deepEqual(salaryCycleFullRange(new Date(2026, 8, 14, 12)), { start: "2026-08-15", end: "2026-09-14" });
+  assert.deepEqual(salaryCycleFullRange(new Date(2026, 0, 3, 12), 2), { start: "2025-10-15", end: "2025-11-14" });
+});
+
+test("finance advisor subtracts all spending but analyzes consumption categories against two cycles", () => {
+  const records = [
+    parseLedgerFile("记账/20260915日记账.md", note("2026-09-15", "- 12:00｜餐饮｜￥80.00\n- 18:00｜债务/还款｜￥500.00", "580.00")),
+    parseLedgerFile("记账/20260916日记账.md", note("2026-09-16", "- 12:00｜餐饮｜￥70.00", "70.00")),
+    parseLedgerFile("记账/20260918日记账.md", note("2026-09-18", "- 12:00｜餐饮｜￥60.00", "60.00")),
+    parseLedgerFile("记账/20260920日记账.md", note("2026-09-20", "- 12:00｜餐饮｜￥60.00", "60.00")),
+    parseLedgerFile("记账/20260815日记账.md", note("2026-08-15", "- 12:00｜餐饮｜￥30.00\n- 18:00｜购物｜￥100.00", "130.00")),
+    parseLedgerFile("记账/20260820日记账.md", note("2026-08-20", "- 12:00｜餐饮｜￥20.00", "20.00")),
+    parseLedgerFile("记账/20260910日记账.md", note("2026-09-10", "- 12:00｜餐饮｜￥50.00", "50.00")),
+    parseLedgerFile("记账/20260715日记账.md", note("2026-07-15", "- 12:00｜餐饮｜￥40.00\n- 18:00｜购物｜￥80.00", "120.00")),
+    parseLedgerFile("记账/20260720日记账.md", note("2026-07-20", "- 12:00｜餐饮｜￥20.00", "20.00")),
+    parseLedgerFile("记账/20260810日记账.md", note("2026-08-10", "- 12:00｜餐饮｜￥40.00", "40.00"))
+  ].flatMap((file) => file.records);
+  const result = buildFinanceAdvisorSnapshot(records, new Date(2026, 8, 21, 12), 100_000, ["债务/还款"]);
+
+  assert.equal(result.currentSpentCents, 77_000);
+  assert.equal(result.remainingSalaryCents, 23_000);
+  assert.equal(result.elapsedDays, 7);
+  assert.equal(result.totalDays, 30);
+  assert.equal(result.categories.some((item) => item.category === "债务/还款"), false);
+  const dining = result.categories.find((item) => item.category === "餐饮");
+  assert.ok(dining);
+  assert.equal(dining.currentCents, 27_000);
+  assert.equal(dining.baselineProgressCents, 5_500);
+  assert.equal(dining.baselineCycleCents, 10_000);
+  assert.ok(result.events.some((event) => event.id === "spending-spike:餐饮"));
+  assert.ok(result.events.some((event) => event.id === "frequency-spike:餐饮"));
+  assert.ok(result.events.some((event) => event.id === "stable"));
+  assert.equal(result.events.some((event) => event.id.includes("记账/")), false);
 });
 
 test("current salary cycle can include all categories and stops at today", () => {

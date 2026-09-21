@@ -1,5 +1,13 @@
 import { setIcon } from "obsidian";
-import { BudgetProgress, CategorySummary, LedgerRecord, TrendPoint, budgetProgress, formatCents } from "./core";
+import { BudgetProgress, CategorySummary, FinanceAdvisorSnapshot, LedgerRecord, TrendPoint, budgetProgress, formatCents } from "./core";
+import type { FinanceAdvice } from "./ai";
+
+export interface FinanceAdviceViewState {
+  status: "local" | "loading" | "ready" | "error" | "unconfigured";
+  advice: FinanceAdvice | null;
+  message: string;
+  canRefresh: boolean;
+}
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 // Lieflat Charts "Wire": grayscale carries the data; orange marks one focal point.
@@ -510,6 +518,78 @@ export function renderDumbbell(parent: HTMLElement, data: DumbbellDatum[], curre
 
 export function renderEmpty(parent: HTMLElement, message: string): void {
   parent.createDiv({ cls: "ledger-empty", text: message });
+}
+
+export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvisorSnapshot, state: FinanceAdviceViewState, onRefresh: () => void): void {
+  const card = parent.createDiv({ cls: "ledger-advisor-card ledger-reveal" });
+  const heading = card.createDiv({ cls: "ledger-advisor-heading" });
+  const copy = heading.createDiv({ cls: "ledger-advisor-heading-copy" });
+  copy.createDiv({ cls: "ledger-advisor-badge", text: "AI FINANCE BRIEF · SALARY CYCLE" });
+  copy.createEl("h3", { text: "财务观察" });
+  copy.createDiv({ cls: "ledger-advisor-period", text: `${snapshot.currentRange.start.replace(/-/g, ".")} — ${snapshot.currentRange.end.replace(/-/g, ".")}` });
+
+  if (state.canRefresh) {
+    const refresh = heading.createEl("button", { cls: "ledger-advisor-refresh", attr: { type: "button", "aria-label": "重新生成财务判断" } });
+    setIcon(refresh, state.status === "loading" ? "loader-circle" : "refresh-cw");
+    refresh.createSpan({ text: state.status === "loading" ? "分析中" : "刷新判断" });
+    refresh.disabled = state.status === "loading";
+    refresh.addEventListener("click", onRefresh);
+  }
+
+  if (snapshot.salaryCents <= 0) {
+    card.addClass("is-empty");
+    const empty = card.createDiv({ cls: "ledger-advisor-empty" });
+    empty.createEl("strong", { text: state.canRefresh ? "AI 已配置，还差工资金额" : "填写工资后启用财务观察" });
+    empty.createSpan({ text: "请在插件设置中填写“每个工资周期到账工资”。余额、周期预测和 AI 判断都依赖这项数据。" });
+    if (state.message) empty.createDiv({ cls: `ledger-advisor-ai-status is-${state.status}`, text: state.message });
+    card.createDiv({ cls: "ledger-advisor-source", text: "SALARY CYCLE · TWO-CYCLE BASELINE · LOCAL LEDGER" });
+    return;
+  }
+
+  const remaining = heading.createDiv({ cls: `ledger-advisor-remaining${snapshot.remainingSalaryCents < 0 ? " is-negative" : ""}` });
+  remaining.createSpan({ text: snapshot.remainingSalaryCents < 0 ? "已超出工资" : "目前还剩" });
+  remaining.createEl("strong", { text: formatCents(Math.abs(snapshot.remainingSalaryCents)) });
+
+  const summary = card.createDiv({ cls: "ledger-advisor-summary" });
+  const spent = summary.createDiv({ cls: "ledger-advisor-summary-item" });
+  spent.createSpan({ text: "本次自工资日支出" });
+  spent.createEl("strong", { text: formatCents(snapshot.currentSpentCents) });
+  const average = summary.createDiv({ cls: "ledger-advisor-summary-item" });
+  average.createSpan({ text: "前两个完整周期平均" });
+  average.createEl("strong", { text: formatCents(snapshot.historicalAverageSpentCents) });
+  const forecast = summary.createDiv({ cls: "ledger-advisor-summary-item" });
+  forecast.createSpan({ text: "照当前速度周期末约" });
+  forecast.createEl("strong", { text: formatCents(snapshot.forecastCents) });
+
+  const event = snapshot.events[0];
+  const observation = card.createDiv({ cls: `ledger-advisor-observation is-${event.type}${state.advice?.tone === "warning" ? " is-warning" : ""}` });
+  observation.createDiv({ cls: "ledger-advisor-observation-label", text: state.advice ? "AI 财务判断" : "本地候选判断" });
+  observation.createEl("h4", { text: state.advice?.headline ?? event.title });
+  observation.createEl("p", { text: state.advice?.summary ?? event.detail });
+  if (state.message) observation.createDiv({ cls: `ledger-advisor-ai-status is-${state.status}`, text: state.message });
+
+  const adviceCategories = new Map(state.advice?.categoryLines.map((line) => [line.category, line.text]) ?? []);
+  const references = state.advice && adviceCategories.size > 0
+    ? snapshot.categories.filter((item) => adviceCategories.has(item.category)).slice(0, 3)
+    : snapshot.categories
+      .filter((item) => item.baselineCycleCents > 0 || item.currentCents > 0)
+      .sort((a, b) => b.remainingReferenceCents - a.remainingReferenceCents || b.baselineCycleCents - a.baselineCycleCents)
+      .slice(0, 3);
+  if (references.length > 0) {
+    const section = card.createDiv({ cls: "ledger-advisor-categories" });
+    const sectionHeading = section.createDiv({ cls: "ledger-advisor-section-heading" });
+    sectionHeading.createSpan({ text: "分类参考余量" });
+    sectionHeading.createEl("small", { text: `已扫描 ${snapshot.categories.length} 个分类` });
+    const list = section.createDiv({ cls: "ledger-advisor-category-list" });
+    for (const item of references) {
+      const row = list.createDiv({ cls: "ledger-advisor-category" });
+      row.createSpan({ text: item.category });
+      const value = row.createDiv();
+      value.createEl("strong", { text: formatCents(item.remainingReferenceCents) });
+      value.createEl("small", { text: adviceCategories.get(item.category) ?? `过往周期均值 ${formatCents(item.baselineCycleCents)}` });
+    }
+  }
+  card.createDiv({ cls: "ledger-advisor-source", text: "CURRENT SALARY CYCLE · PREVIOUS 2 FULL CYCLES · ALL CATEGORIES SCANNED · LOCAL LEDGER" });
 }
 
 export function renderLiquidBudget(parent: HTMLElement, spentCents: number, budgetCents: number, dateLabel: string, currentCycleCents: number, budgetCategory: string, includeStarred: boolean): void {

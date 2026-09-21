@@ -81,6 +81,52 @@ export interface ComparisonValue {
   ratio: number | "new" | "none";
 }
 
+export type FinanceInsightType =
+  | "salary-pressure"
+  | "salary-pace"
+  | "spending-spike"
+  | "frequency-spike"
+  | "ticket-spike"
+  | "large-expense"
+  | "mix-shift"
+  | "stable";
+
+export interface FinanceCategorySnapshot {
+  category: string;
+  currentCents: number;
+  currentCount: number;
+  baselineProgressCents: number;
+  baselineProgressCount: number;
+  baselineCycleCents: number;
+  remainingReferenceCents: number;
+  currentShare: number;
+  baselineShare: number;
+}
+
+export interface FinanceInsightEvent {
+  id: string;
+  type: FinanceInsightType;
+  priority: number;
+  category?: string;
+  title: string;
+  detail: string;
+}
+
+export interface FinanceAdvisorSnapshot {
+  currentRange: DateRange;
+  fullCurrentRange: DateRange;
+  previousRanges: [DateRange, DateRange];
+  elapsedDays: number;
+  totalDays: number;
+  salaryCents: number;
+  currentSpentCents: number;
+  remainingSalaryCents: number;
+  historicalAverageSpentCents: number;
+  forecastCents: number;
+  categories: FinanceCategorySnapshot[];
+  events: FinanceInsightEvent[];
+}
+
 const FULL_WIDTH_MAP: Record<string, string> = {
   "０": "0", "１": "1", "２": "2", "３": "3", "４": "4",
   "５": "5", "６": "6", "７": "7", "８": "8", "９": "9",
@@ -369,6 +415,212 @@ export function salaryDayRange(date = new Date(), cycleOffset = 0): DateRange {
   return {
     start: isoFromDate(new Date(date.getFullYear(), startMonth, 15, 12)),
     end: cycleOffset === 0 ? today : isoFromDate(new Date(date.getFullYear(), startMonth + 1, 14, 12))
+  };
+}
+
+export function salaryCycleFullRange(date = new Date(), cycleOffset = 0): DateRange {
+  const currentStartMonth = date.getDate() <= 14 ? date.getMonth() - 1 : date.getMonth();
+  const startMonth = currentStartMonth - cycleOffset;
+  return {
+    start: isoFromDate(new Date(date.getFullYear(), startMonth, 15, 12)),
+    end: isoFromDate(new Date(date.getFullYear(), startMonth + 1, 14, 12))
+  };
+}
+
+function daysInclusive(range: DateRange): number {
+  const start = dateFromIso(range.start).getTime();
+  const end = dateFromIso(range.end).getTime();
+  return Math.max(0, Math.round((end - start) / 86_400_000) + 1);
+}
+
+function recordsInRange(records: LedgerRecord[], range: DateRange): LedgerRecord[] {
+  return records.filter((record) => record.date >= range.start && record.date <= range.end);
+}
+
+function average(values: number[]): number {
+  return values.length === 0 ? 0 : Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[middle] : Math.round((sorted[middle - 1] + sorted[middle]) / 2);
+}
+
+function categoryTotals(records: LedgerRecord[]): Map<string, { cents: number; count: number }> {
+  const totals = new Map<string, { cents: number; count: number }>();
+  for (const record of records) {
+    const value = totals.get(record.category) ?? { cents: 0, count: 0 };
+    value.cents += record.cents;
+    value.count += 1;
+    totals.set(record.category, value);
+  }
+  return totals;
+}
+
+export function buildFinanceAdvisorSnapshot(
+  records: LedgerRecord[],
+  date: Date,
+  salaryCents: number,
+  excludedCategories: string[]
+): FinanceAdvisorSnapshot {
+  const currentRange = salaryDayRange(date);
+  const fullCurrentRange = salaryCycleFullRange(date);
+  const previousRanges: [DateRange, DateRange] = [salaryCycleFullRange(date, 1), salaryCycleFullRange(date, 2)];
+  const elapsedDays = daysInclusive(currentRange);
+  const totalDays = daysInclusive(fullCurrentRange);
+  const currentAll = recordsInRange(records, currentRange);
+  const currentSpentCents = currentAll.reduce((sum, record) => sum + record.cents, 0);
+  const remainingSalaryCents = salaryCents - currentSpentCents;
+  const previousFull = previousRanges.map((range) => recordsInRange(records, range));
+  const historicalAverageSpentCents = average(previousFull.map((items) => items.reduce((sum, record) => sum + record.cents, 0)));
+  const forecastCents = elapsedDays === 0 ? currentSpentCents : Math.round(currentSpentCents / elapsedDays * totalDays);
+  const excluded = new Set(excludedCategories);
+  const consumption = (items: LedgerRecord[]): LedgerRecord[] => items.filter((record) => !excluded.has(record.category));
+  const currentConsumption = consumption(currentAll);
+  const previousProgress = previousRanges.map((range) => consumption(recordsInRange(records, {
+    start: range.start,
+    end: addDays(range.start, Math.min(elapsedDays, daysInclusive(range)) - 1)
+  })));
+  const currentTotals = categoryTotals(currentConsumption);
+  const previousProgressTotals = previousProgress.map(categoryTotals);
+  const previousFullTotals = previousFull.map((items) => categoryTotals(consumption(items)));
+  const categories = new Set<string>([
+    ...currentTotals.keys(),
+    ...previousProgressTotals.flatMap((totals) => [...totals.keys()]),
+    ...previousFullTotals.flatMap((totals) => [...totals.keys()])
+  ]);
+  const currentConsumptionTotal = currentConsumption.reduce((sum, record) => sum + record.cents, 0);
+  const baselineProgressTotal = average(previousProgress.map((items) => items.reduce((sum, record) => sum + record.cents, 0)));
+  const snapshots: FinanceCategorySnapshot[] = [...categories].map((category) => {
+    const current = currentTotals.get(category) ?? { cents: 0, count: 0 };
+    const baselineProgressCents = average(previousProgressTotals.map((totals) => totals.get(category)?.cents ?? 0));
+    const baselineProgressCount = average(previousProgressTotals.map((totals) => totals.get(category)?.count ?? 0));
+    const baselineCycleCents = average(previousFullTotals.map((totals) => totals.get(category)?.cents ?? 0));
+    return {
+      category,
+      currentCents: current.cents,
+      currentCount: current.count,
+      baselineProgressCents,
+      baselineProgressCount,
+      baselineCycleCents,
+      remainingReferenceCents: Math.max(0, baselineCycleCents - current.cents),
+      currentShare: currentConsumptionTotal === 0 ? 0 : current.cents / currentConsumptionTotal,
+      baselineShare: baselineProgressTotal === 0 ? 0 : baselineProgressCents / baselineProgressTotal
+    };
+  }).sort((a, b) => b.baselineCycleCents - a.baselineCycleCents || b.currentCents - a.currentCents);
+
+  const events: FinanceInsightEvent[] = [];
+  if (salaryCents > 0 && forecastCents > salaryCents) {
+    const excess = forecastCents - salaryCents;
+    events.push({
+      id: "salary-pressure",
+      type: "salary-pressure",
+      priority: 100 + Math.min(40, Math.round(excess / Math.max(1, salaryCents) * 100)),
+      title: "本周期支出速度偏快",
+      detail: `按当前速度，周期末支出可能比工资多 ${formatCents(excess)}。`
+    });
+  } else if (salaryCents > 0) {
+    events.push({
+      id: "salary-pace",
+      type: "salary-pace",
+      priority: 30,
+      title: "本周期仍在工资范围内",
+      detail: `按当前速度，周期末预计支出 ${formatCents(forecastCents)}。`
+    });
+  }
+
+  for (const item of snapshots) {
+    const amountDifference = item.currentCents - item.baselineProgressCents;
+    const amountThreshold = Math.max(5_000, Math.round(item.baselineProgressCents * 0.25));
+    if (amountDifference >= amountThreshold && (item.currentCount >= 2 || amountDifference >= 10_000)) {
+      events.push({
+        id: `spending-spike:${item.category}`,
+        type: "spending-spike",
+        priority: 70 + Math.min(25, Math.round(amountDifference / 5_000)),
+        category: item.category,
+        title: `${item.category}支出明显增加`,
+        detail: `比前两个周期同期平均多 ${formatCents(amountDifference)}。`
+      });
+    }
+    const countDifference = item.currentCount - item.baselineProgressCount;
+    const countThreshold = Math.max(2, Math.ceil(item.baselineProgressCount * 0.35));
+    if (countDifference >= countThreshold && amountDifference >= 5_000) {
+      events.push({
+        id: `frequency-spike:${item.category}`,
+        type: "frequency-spike",
+        priority: 66 + Math.min(20, countDifference * 3),
+        category: item.category,
+        title: `${item.category}消费更频繁`,
+        detail: `当前已有 ${item.currentCount} 笔，比同期平均多约 ${countDifference} 笔。`
+      });
+    }
+    const currentTicket = item.currentCount === 0 ? 0 : Math.round(item.currentCents / item.currentCount);
+    const baselineTicket = item.baselineProgressCount === 0 ? 0 : Math.round(item.baselineProgressCents / item.baselineProgressCount);
+    if (item.currentCount >= 2 && item.baselineProgressCount >= 2 && currentTicket - baselineTicket >= 2_000 && currentTicket >= baselineTicket * 1.3) {
+      events.push({
+        id: `ticket-spike:${item.category}`,
+        type: "ticket-spike",
+        priority: 62 + Math.min(18, Math.round((currentTicket - baselineTicket) / 2_000)),
+        category: item.category,
+        title: `${item.category}单次花费变高`,
+        detail: `当前笔均 ${formatCents(currentTicket)}，同期平均约 ${formatCents(baselineTicket)}。`
+      });
+    }
+    if (item.currentCents >= 5_000 && item.currentShare - item.baselineShare >= 0.12) {
+      events.push({
+        id: `mix-shift:${item.category}`,
+        type: "mix-shift",
+        priority: 58 + Math.min(18, Math.round((item.currentShare - item.baselineShare) * 100)),
+        category: item.category,
+        title: `支出重心转向${item.category}`,
+        detail: `当前占消费支出的 ${Math.round(item.currentShare * 100)}%，同期平均约 ${Math.round(item.baselineShare * 100)}%。`
+      });
+    }
+  }
+
+  const historicalByCategory = new Map<string, number[]>();
+  for (const items of previousFull) {
+    for (const record of consumption(items)) {
+      const amounts = historicalByCategory.get(record.category) ?? [];
+      amounts.push(record.cents);
+      historicalByCategory.set(record.category, amounts);
+    }
+  }
+  let largeExpenseIndex = 0;
+  for (const record of currentConsumption) {
+    const historicalMedian = median(historicalByCategory.get(record.category) ?? []);
+    const threshold = Math.max(10_000, Math.round(salaryCents * 0.05), historicalMedian * 3);
+    if (record.cents >= threshold) {
+      events.push({
+        id: `large-expense:${largeExpenseIndex}`,
+        type: "large-expense",
+        priority: 78 + Math.min(20, Math.round(record.cents / Math.max(1, threshold) * 5)),
+        category: record.category,
+        title: `出现一笔较大的${record.category}支出`,
+        detail: `单笔 ${formatCents(record.cents)}，明显高于该分类过往单笔水平。`
+      });
+      largeExpenseIndex += 1;
+    }
+  }
+
+  events.push({ id: "stable", type: "stable", priority: 10, title: "暂未发现明显变化", detail: "当前消费结构与前两个工资周期同期接近。" });
+  events.sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id, "zh-CN"));
+
+  return {
+    currentRange,
+    fullCurrentRange,
+    previousRanges,
+    elapsedDays,
+    totalDays,
+    salaryCents,
+    currentSpentCents,
+    remainingSalaryCents,
+    historicalAverageSpentCents,
+    forecastCents,
+    categories: snapshots,
+    events
   };
 }
 
