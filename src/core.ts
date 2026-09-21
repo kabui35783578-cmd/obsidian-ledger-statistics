@@ -1,3 +1,5 @@
+import { assessFixedExpenses, FixedExpense, FixedExpenseAssessment } from "./fixed-expenses";
+
 export type DiagnosticKind = "parse" | "date" | "total";
 
 export interface LedgerDiagnostic {
@@ -111,10 +113,11 @@ export interface FinanceInsightEvent {
   title: string;
   detail: string;
   evidence?: string[];
+  impactCents?: number;
 }
 
 export interface FinanceCoverageReport {
-  cycles: Array<{ range: DateRange; label: string; missingDates: string[]; problems: Array<{ path: string; date: string; reason: string }> }>;
+  cycles: Array<{ range: DateRange; label: string; missingDates: string[]; assumedZeroDates: string[]; problems: Array<{ path: string; date: string; reason: string }> }>;
   undated: Array<{ path: string; reason: string }>;
 }
 
@@ -134,6 +137,8 @@ export interface FinanceAdvisorSnapshot {
   forecastConfidence: "low" | "normal";
   categories: FinanceCategorySnapshot[];
   events: FinanceInsightEvent[];
+  repeatedEvents?: FinanceInsightEvent[];
+  fixedExpenses?: FixedExpenseAssessment;
 }
 
 const FULL_WIDTH_MAP: Record<string, string> = {
@@ -502,7 +507,7 @@ function categoryTotals(records: LedgerRecord[]): Map<string, { cents: number; c
   return totals;
 }
 
-export function financeCompleteDates(files: ParsedLedgerFile[]): string[] {
+export function financeCompleteDates(files: ParsedLedgerFile[], asOf?: Date): string[] {
   const valid = new Set<string>();
   const invalid = new Set<string>();
   for (const file of files) {
@@ -510,11 +515,19 @@ export function financeCompleteDates(files: ParsedLedgerFile[]): string[] {
     if (file.diagnostics.length > 0 || (file.records.length === 0 && file.frontmatterTotalCents !== 0)) invalid.add(file.date);
     else valid.add(file.date);
   }
+  if (asOf) {
+    const today = isoFromDate(asOf);
+    const knownDates = files.map((file) => file.date).filter((day): day is string => Boolean(day && day <= today)).sort();
+    const currentStart = salaryDayRange(asOf).start;
+    // Missing days are zero after tracking began. Do not fabricate pre-tracking history.
+    const start = [salaryCycleFullRange(asOf, 2).start, knownDates[0] && knownDates[0] < currentStart ? knownDates[0] : currentStart].sort()[1];
+    for (let day = start; day <= today; day = addDays(day, 1)) valid.add(day);
+  }
   return [...valid].filter((date) => !invalid.has(date));
 }
 
 export function financeCoverageReport(files: ParsedLedgerFile[], date: Date): FinanceCoverageReport {
-  const complete = new Set(financeCompleteDates(files));
+  const complete = new Set(financeCompleteDates(files, date));
   const byDate = new Map<string, ParsedLedgerFile[]>();
   for (const file of files) {
     if (file.date) byDate.set(file.date, [...(byDate.get(file.date) ?? []), file]);
@@ -522,17 +535,21 @@ export function financeCoverageReport(files: ParsedLedgerFile[], date: Date): Fi
   return {
     cycles: [salaryDayRange(date), salaryCycleFullRange(date, 1), salaryCycleFullRange(date, 2)].map((range, index) => {
       const missingDates: string[] = [];
+      const assumedZeroDates: string[] = [];
       const problems: Array<{ path: string; date: string; reason: string }> = [];
       for (let day = range.start; day <= range.end; day = addDays(day, 1)) {
-        if (complete.has(day)) continue;
         const entries = byDate.get(day);
+        if (complete.has(day)) {
+          if (!entries) assumedZeroDates.push(day);
+          continue;
+        }
         if (!entries) missingDates.push(day);
         else for (const file of entries) {
           const reason = file.diagnostics.map((item) => item.reason).join("；") || (file.records.length === 0 && file.frontmatterTotalCents !== 0 ? "空白账本，未明确记录零消费" : "");
           if (reason) problems.push({ path: file.path, date: day, reason });
         }
       }
-      return { range, label: index === 0 ? "当前周期" : `前第 ${index} 个周期`, missingDates, problems };
+      return { range, label: index === 0 ? "当前周期" : `前第 ${index} 个周期`, missingDates, assumedZeroDates, problems };
     }),
     undated: files.filter((file) => !file.date).map((file) => ({ path: file.path, reason: file.diagnostics.map((d) => d.reason).join("；") || "日期无法识别" }))
   };
@@ -543,7 +560,8 @@ export function buildFinanceAdvisorSnapshot(
   date: Date,
   salaryCents: number,
   excludedCategories: string[],
-  completeDates: string[] = [...new Set(records.map((record) => record.date))]
+  completeDates: string[] = [...new Set(records.map((record) => record.date))],
+  fixedExpenses: FixedExpense[] = []
 ): FinanceAdvisorSnapshot {
   const currentRange = salaryDayRange(date);
   const fullCurrentRange = salaryCycleFullRange(date);
@@ -565,11 +583,13 @@ export function buildFinanceAdvisorSnapshot(
   const historicalAverageSpentCents = average(previousFull.map((items) => items.reduce((sum, record) => sum + record.cents, 0)));
   const currentCoverage = Array.from({ length: elapsedDays }, (_, index) => addDays(currentRange.start, index))
     .every((day) => recordedDates.has(day));
-  const forecastAvailable = historyCycleCount > 0 && currentCoverage;
+  const fixed = assessFixedExpenses(fixedExpenses, records, currentRange, usableRanges.map((full) => ({ full, remainingStart: addDays(full.start, elapsedDays) })));
+  const forecastAvailable = historyCycleCount > 0 && currentCoverage && fixed.available;
   const forecastCents = currentSpentCents + (elapsedDays >= totalDays ? 0 : average(usableRanges.map((range) =>
     recordsInRange(records, { start: addDays(range.start, elapsedDays), end: range.end })
-      .reduce((sum, record) => sum + record.cents, 0))));
+      .reduce((sum, record) => sum + record.cents, 0))) - fixed.historicalDeductionCents) + fixed.unpaidCents;
   const forecastConfidence = historyCycleCount < 2 || elapsedDays < 7 ? "low" : "normal";
+  const forecastMethod = fixed.items.length ? "按已花金额加历史剩余阶段支出，并按已确认固定支出调整" : "按已花金额加历史剩余阶段支出";
   const excluded = new Set(excludedCategories);
   const consumption = (items: LedgerRecord[]): LedgerRecord[] => items.filter((record) => !excluded.has(record.category));
   const currentConsumption = consumption(currentAll);
@@ -613,7 +633,7 @@ export function buildFinanceAdvisorSnapshot(
       type: "salary-pressure",
       priority: forecastConfidence === "low" ? 35 : 100 + Math.min(40, Math.round(excess / Math.max(1, salaryCents) * 100)),
       title: forecastConfidence === "low" ? "周期末支出需继续观察" : "周期末支出可能超过工资",
-      detail: `按已花金额加历史剩余阶段支出参考，周期末可能比工资多 ${formatCents(excess)}。${forecastConfidence === "low" ? "目前置信度较低，仅供参考。" : ""}`
+        detail: `${forecastMethod}参考，周期末可能比工资多 ${formatCents(excess)}。${forecastConfidence === "low" ? "目前置信度较低，仅供参考。" : ""}`
     });
   } else if (forecastAvailable && salaryCents > 0) {
     events.push({
@@ -621,7 +641,7 @@ export function buildFinanceAdvisorSnapshot(
       type: "salary-pace",
       priority: 30,
       title: "周期末支出参考",
-      detail: `按已花金额加历史剩余阶段支出，周期末参考 ${formatCents(forecastCents)}。${forecastConfidence === "low" ? "目前置信度较低。" : ""}`
+      detail: `${forecastMethod}，周期末参考 ${formatCents(forecastCents)}。${forecastConfidence === "low" ? "目前置信度较低。" : ""}`
     });
   }
 
@@ -683,14 +703,14 @@ export function buildFinanceAdvisorSnapshot(
       historicalByCategory.set(record.category, amounts);
     }
   }
-  let largeExpenseIndex = 0;
   for (const record of currentConsumption) {
     if (historyCycleCount < 2 || !currentCoverage || (historicalByCategory.get(record.category)?.length ?? 0) < 3) continue;
     const historicalMedian = median(historicalByCategory.get(record.category) ?? []);
     const threshold = Math.max(10_000, Math.round(salaryCents * 0.05), historicalMedian * 3);
     if (record.cents >= threshold) {
       events.push({
-        id: `large-expense:${largeExpenseIndex}`,
+        id: `large-expense:${stableTextHash(record.id)}`,
+        impactCents: record.cents,
         type: "large-expense",
         priority: 78 + Math.min(20, Math.round(record.cents / Math.max(1, threshold) * 5)),
         category: record.category,
@@ -698,18 +718,18 @@ export function buildFinanceAdvisorSnapshot(
         detail: `单笔 ${formatCents(record.cents)}，明显高于该分类过往单笔水平。`,
         evidence: [`交易日期：${record.date}`, `历史该分类单笔中位数：${formatCents(historicalMedian)}`, `本次触发门槛：${formatCents(threshold)}`]
       });
-      largeExpenseIndex += 1;
     }
   }
 
   events.push({ id: "stable", type: "stable", priority: 10,
-    title: historyCycleCount < 2 || !currentCoverage ? "参考数据不足" : "暂未发现明显变化",
+    title: !fixed.available ? "固定支出待确认" : historyCycleCount < 2 || !currentCoverage ? "参考数据不足" : "暂未发现明显变化",
     detail: historyCycleCount < 2 || !currentCoverage
-      ? `可用完整历史周期 ${historyCycleCount}/2；缺失或存在核对问题的账本不按零消费处理，暂不判断消费异常。`
-      : "暂未触发可靠的异常提醒。" });
+        ? `可用历史周期 ${historyCycleCount}/2；未记账日按零消费处理，但记账起始之前的历史或存在核对问题的账本不作完整参考，暂不判断消费异常。`
+      : !fixed.available ? "请核对固定支出的周期支付状态，确认后再显示周期末参考。" : "暂未触发可靠的异常提醒。" });
   events.sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id, "zh-CN"));
   for (const event of events) {
     const category = snapshots.find((item) => item.category === event.category);
+    event.impactCents ??= category?.currentCents ?? (event.type === "salary-pressure" ? Math.max(0, forecastCents - salaryCents) : currentSpentCents);
     event.evidence = [
       ...(event.evidence ?? []),
       `当前周期：${currentRange.start} — ${currentRange.end}（${elapsedDays} 天）`,
@@ -719,9 +739,13 @@ export function buildFinanceAdvisorSnapshot(
         `分类支出：${formatCents(category.currentCents)}；历史同期平均：${formatCents(category.baselineProgressCents)}`,
         `分类笔数：${category.currentCount}；历史同期平均：${category.baselineProgressCount}`
       ] : []),
-      ...(event.type.startsWith("salary-") ? [`已花：${formatCents(currentSpentCents)}；历史剩余阶段平均：${formatCents(forecastCents - currentSpentCents)}`, `周期末参考：${formatCents(forecastCents)}；工资：${formatCents(salaryCents)}`, `预测置信度：${forecastConfidence === "low" ? "低" : "一般"}，付款日期变化可能影响结果。`] : []),
+      ...(event.type.startsWith("salary-") ? [`已花：${formatCents(currentSpentCents)}；${fixed.items.length ? "固定支出调整后剩余支出参考" : "历史剩余阶段平均"}：${formatCents(forecastCents - currentSpentCents)}`, `周期末参考：${formatCents(forecastCents)}；工资：${formatCents(salaryCents)}`, `预测置信度：${forecastConfidence === "low" ? "低" : "一般"}，付款日期变化可能影响结果。`] : []),
       `触发说明：${event.detail}`
     ];
+    if (fixed.items.length && event.type.startsWith("salary-")) event.evidence.push(
+      `历史剩余阶段已扣除固定支出：${formatCents(fixed.historicalDeductionCents)}`,
+      `本周期确认尚未支付的固定支出：${formatCents(fixed.unpaidCents)}`
+    );
   }
 
   return {
@@ -739,8 +763,15 @@ export function buildFinanceAdvisorSnapshot(
     forecastAvailable,
     forecastConfidence,
     categories: snapshots,
-    events
+    events,
+    fixedExpenses: fixed
   };
+}
+
+export function stableTextHash(value: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index++) hash = Math.imul(hash ^ value.charCodeAt(index), 16777619);
+  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 function trendBucket(dateIso: string, granularity: "day" | "week" | "month"): { key: string; start: string; end: string; label: string } {

@@ -2,11 +2,18 @@ import { App, PluginSettingTab, Setting } from "obsidian";
 import type LedgerStatisticsPlugin from "./main";
 import { parseMoneyToCents } from "./core";
 import type { FinanceAdviceCache } from "./ai";
+import { testFinanceConnection } from "./ai";
+import { sharedRequestGate } from "./request-gate";
+import type { FixedExpense } from "./fixed-expenses";
+import type { SeenInsight } from "./insights";
+import { FixedExpenseModal, StarRepairModal } from "./management";
 
 export type LedgerViewId = "overview" | "category" | "trend" | "calendar" | "details" | "compare";
 export type DefaultDatePreset = "today" | "week" | "month" | "salary" | "year";
 
 export interface LedgerSettings {
+  fixedExpenses: FixedExpense[];
+  insightHistory: SeenInsight[];
   ledgerFolder: string;
   defaultView: LedgerViewId;
   defaultDatePreset: DefaultDatePreset;
@@ -26,6 +33,8 @@ export interface LedgerSettings {
 }
 
 export const DEFAULT_SETTINGS: LedgerSettings = {
+  fixedExpenses: [],
+  insightHistory: [],
   ledgerFolder: "记账",
   defaultView: "overview",
   defaultDatePreset: "month",
@@ -57,11 +66,14 @@ const OPENAI_CHAT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
 const MIMO_CHAT_ENDPOINT = "https://api.xiaomimimo.com/v1/chat/completions";
 
 export class LedgerSettingTab extends PluginSettingTab {
+  private connectionController?: AbortController;
+  hide(): void { this.connectionController?.abort(); }
   constructor(app: App, private plugin: LedgerStatisticsPlugin) {
     super(app, plugin);
   }
 
   display(): void {
+    this.connectionController?.abort();
     this.containerEl.empty();
     this.containerEl.createEl("h2", { text: "记账统计设置" });
 
@@ -115,7 +127,7 @@ export class LedgerSettingTab extends PluginSettingTab {
 
     new Setting(this.containerEl)
       .setName("每个工资周期到账工资")
-      .setDesc("用于洞察卡片。余额会用这笔工资减去本工资周期内的全部支出；数据仅保存在本地。")
+      .setDesc("工资日固定每月 15 日。余额＝工资减本周期全部支出，不代表银行实际余额；数据保存在本地。")
       .addText((text) => {
         text
           .setPlaceholder("例如 8000")
@@ -137,6 +149,13 @@ export class LedgerSettingTab extends PluginSettingTab {
         text.inputEl.setAttribute("inputmode", "decimal");
         return text;
       });
+
+    new Setting(this.containerEl).setName("固定支出")
+      .setDesc("手动确认本周期及前两个周期的支付记录，减少付款日期变化对预测的影响。")
+      .addButton((button) => button.setButtonText("管理固定支出").onClick(() => new FixedExpenseModal(this.plugin).open()));
+    new Setting(this.containerEl).setName("星标核对")
+      .setDesc("检查修改、删除或离线移动后无法匹配的星标。")
+      .addButton((button) => button.setButtonText("核对星标").onClick(() => new StarRepairModal(this.plugin).open()));
 
     new Setting(this.containerEl)
       .setName("启用 AI 财务判断")
@@ -192,12 +211,28 @@ export class LedgerSettingTab extends PluginSettingTab {
             .setValue(this.plugin.settings.financeAiApiKey)
             .onChange(async (value) => {
               this.plugin.settings.financeAiApiKey = value.trim();
+              this.plugin.settings.financeAdviceCache = null;
               await this.plugin.saveSettings(false);
             });
           text.inputEl.type = "password";
           text.inputEl.setAttribute("autocomplete", "off");
           return text;
         });
+      const test = new Setting(this.containerEl).setName("测试 AI 连接")
+        .setDesc("只发送简短测试消息，不发送账目；可能产生少量模型调用费用。");
+      test.descEl.setAttribute("aria-live", "polite");
+      test.addButton((button) => button.setButtonText("测试连接").onClick(async () => {
+        const controller = new AbortController(); this.connectionController = controller;
+        const config = { endpoint: this.plugin.settings.financeAiEndpoint, model: this.plugin.settings.financeAiModel, apiKey: this.plugin.settings.financeAiApiKey };
+        button.setDisabled(true).setButtonText("正在测试…");
+        test.setDesc("正在等待接口响应，最长等待 60 秒…");
+        try {
+          await testFinanceConnection(config, controller.signal, sharedRequestGate(`ai:${this.app.vault.getName()}`));
+          if (!controller.signal.aborted) test.setDesc(config.endpoint === this.plugin.settings.financeAiEndpoint && config.model === this.plugin.settings.financeAiModel && config.apiKey === this.plugin.settings.financeAiApiKey ? "连接成功：模型已返回有效内容。" : "配置已变化，请重新测试。");
+        } catch (error) {
+          if (!controller.signal.aborted) test.setDesc(error instanceof Error ? error.message : "连接失败，请检查网络与接口配置");
+        } finally { if (!controller.signal.aborted) button.setDisabled(false).setButtonText("测试连接"); }
+      }));
     }
 
     new Setting(this.containerEl)

@@ -1,6 +1,7 @@
 import { setIcon } from "obsidian";
 import { BudgetProgress, CategorySummary, FinanceAdvisorSnapshot, FinanceCoverageReport, LedgerRecord, TrendPoint, budgetProgress, formatCents } from "./core";
 import type { FinanceAdvice } from "./ai";
+import { eventAdvice } from "./insights";
 
 export interface FinanceAdviceViewState {
   status: "local" | "loading" | "ready" | "error" | "unconfigured";
@@ -520,7 +521,7 @@ export function renderEmpty(parent: HTMLElement, message: string): void {
   parent.createDiv({ cls: "ledger-empty", text: message });
 }
 
-export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvisorSnapshot, state: FinanceAdviceViewState, onRefresh: () => void, animate = true, coverage?: FinanceCoverageReport, onOpenFile?: (path: string) => void): void {
+export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvisorSnapshot, state: FinanceAdviceViewState, onRefresh: () => void, animate = true, coverage?: FinanceCoverageReport, onOpenFile?: (path: string) => void, onManageFixed?: () => void): void {
   const card = parent.createDiv({ cls: `ledger-advisor-card${animate ? " ledger-reveal" : ""}` });
   card.setAttribute("aria-busy", String(state.status === "loading"));
   const heading = card.createDiv({ cls: "ledger-advisor-heading" });
@@ -560,14 +561,14 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
   average.createEl("strong", { text: snapshot.historyCycleCount > 0 ? formatCents(snapshot.historicalAverageSpentCents) : "参考数据不足" });
   const forecast = summary.createDiv({ cls: "ledger-advisor-summary-item ledger-advisor-forecast" });
   forecast.createSpan({ text: `周期末支出参考${snapshot.forecastAvailable && snapshot.forecastConfidence === "low" ? " · 低置信度" : ""}` });
-  forecast.createEl("strong", { text: snapshot.forecastAvailable ? formatCents(snapshot.forecastCents) : "数据不足，暂不预测" });
-  forecast.createEl("small", { text: "已花金额＋历史剩余阶段平均支出" });
+  forecast.createEl("strong", { text: snapshot.forecastAvailable ? formatCents(snapshot.forecastCents) : snapshot.fixedExpenses?.available === false ? "固定支出待确认" : "数据不足，暂不预测" });
+  forecast.createEl("small", { text: snapshot.fixedExpenses?.items.length ? "已花＋历史剩余支出（剔除已确认固定项）＋本期未付固定项" : "已花金额＋历史剩余阶段平均支出" });
 
   const event = snapshot.events.find((item) => item.id === state.advice?.primaryEventId) ?? snapshot.events[0];
   const observation = card.createDiv({ cls: `ledger-advisor-observation is-${event.type}${state.advice?.tone === "warning" ? " is-warning" : ""}` });
   observation.createDiv({ cls: "ledger-advisor-observation-label", text: state.advice ? "AI 财务判断" : "本地候选判断" });
   observation.createEl("h4", { text: state.advice?.headline ?? event.title });
-  observation.createEl("p", { text: state.advice?.summary ?? event.detail });
+  observation.createEl("p", { text: state.advice?.summary ?? `${event.detail}${eventAdvice(event)}` });
   if (state.message) observation.createDiv({ cls: `ledger-advisor-ai-status is-${state.status}`, text: state.message });
 
   const evidence = card.createEl("details", { cls: "ledger-advisor-evidence" });
@@ -576,10 +577,33 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
   const evidenceList = evidence.createEl("ul");
   for (const line of event.evidence ?? [event.detail]) evidenceList.createEl("li", { text: line });
 
+  if (snapshot.repeatedEvents?.length) {
+    const repeated = card.createEl("details", { cls: "ledger-advisor-evidence" });
+    repeated.createEl("summary", { text: `已提醒事项 · ${snapshot.repeatedEvents.length}` });
+    repeated.createEl("p", { text: "同一周期内，金额影响增加至少 20% 且不少于 ¥50 时重新提醒；频次、客单价或占比继续明显增加也会重提醒。工资超支风险持续显示。" });
+    for (const item of snapshot.repeatedEvents) {
+      repeated.createEl("strong", { text: item.title });
+      repeated.createEl("p", { text: item.detail });
+    }
+  }
+  if (onManageFixed) {
+    const fixed = card.createEl("details", { cls: "ledger-advisor-evidence" });
+    fixed.createEl("summary", { text: `固定支出 · ${snapshot.fixedExpenses?.items.length ?? 0} 项${snapshot.fixedExpenses?.available === false ? "待核对" : ""}` });
+    fixed.createEl("p", { text: "工资日：每月 15 日。手动确认实际支付记录，不修改账目；未配置时继续按历史支出参考。" });
+    const statuses = { paid: "已付", unpaid: "未付", none: "无需支付", unconfirmed: "待确认" };
+    for (const item of snapshot.fixedExpenses?.items ?? []) {
+      fixed.createEl("p", { text: `${item.name} · ${statuses[item.status]} · ${formatCents(item.status === "paid" ? item.paidCents : item.amountCents)}` });
+      for (const issue of item.issues) fixed.createEl("small", { text: issue });
+    }
+    createButton(fixed, "管理固定支出").addEventListener("click", onManageFixed);
+  }
+
   if (coverage) {
     const issueCount = coverage.undated.length + coverage.cycles.reduce((sum, cycle) => sum + cycle.missingDates.length + cycle.problems.length, 0);
     const details = card.createEl("details", { cls: "ledger-advisor-coverage" });
-    details.createEl("summary", { text: issueCount ? `查看数据缺口 · ${issueCount} 项` : "查看数据完整性 · 记录齐全" });
+    const zeroDays = coverage.cycles.reduce((sum, cycle) => sum + cycle.assumedZeroDates.length, 0);
+    details.createEl("summary", { text: issueCount ? `查看统计口径 · ${issueCount} 项待核对` : zeroDays ? `查看统计口径 · ${zeroDays} 天未记账按零消费` : "查看统计口径 · 记录齐全" });
+    details.createEl("p", { text: "未记账日期按 ¥0 参与洞察；若有漏记，补记后会重新计算。解析或金额核对异常仍需处理，不会当成零消费。" });
     const problemLink = (path: string, reason: string) => {
       const row = details.createDiv({ cls: "ledger-advisor-data-issue" });
       const button = row.createEl("button", { text: path, attr: { type: "button" } });
@@ -588,8 +612,9 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
     };
     for (const cycle of coverage.cycles) {
       details.createEl("h4", { text: `${cycle.label}：${cycle.range.start} — ${cycle.range.end}` });
-      if (!cycle.missingDates.length && !cycle.problems.length) details.createEl("p", { text: "每天均有可用账本，包含明确记录的零消费日。" });
-      if (cycle.missingDates.length) details.createEl("p", { text: `缺少日期：${cycle.missingDates.join("、")}` });
+      if (!cycle.missingDates.length && !cycle.problems.length && !cycle.assumedZeroDates.length) details.createEl("p", { text: "每天均有可用账本，包含明确记录的零消费日。" });
+      if (cycle.assumedZeroDates.length) details.createEl("p", { text: `未记账，按零消费：${cycle.assumedZeroDates.join("、")}` });
+      if (cycle.missingDates.length) details.createEl("p", { text: `记账起始之前，未纳入历史参考：${cycle.missingDates.join("、")}` });
       for (const problem of cycle.problems) problemLink(problem.path, `${problem.date}：${problem.reason}`);
     }
     if (coverage.undated.length) {

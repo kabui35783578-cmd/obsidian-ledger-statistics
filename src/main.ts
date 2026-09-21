@@ -14,6 +14,8 @@ export default class LedgerStatisticsPlugin extends Plugin {
 
   async onload(): Promise<void> {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<LedgerSettings> | null);
+    this.settings.fixedExpenses = Array.isArray(this.settings.fixedExpenses) ? this.settings.fixedExpenses.filter((item) => item && typeof item.name === "string" && typeof item.id === "string" && item.payments && typeof item.payments === "object") : [];
+    this.settings.insightHistory = Array.isArray(this.settings.insightHistory) ? this.settings.insightHistory.filter((item) => item && typeof item.id === "string" && typeof item.cycle === "string" && typeof item.date === "string" && Number.isFinite(item.impact)) : [];
     this.budgetMonitor = new BudgetMonitor(() => this.settings, (url) => requestUrl({ url, method: "GET", throw: true }),
       () => this.saveSettings(false, false), (message) => new Notice(message), sharedRequestGate(`bark:${this.app.vault.getName()}`));
     this.repository = new LedgerRepository(this.app, this.settings.ledgerFolder, () => {
@@ -32,7 +34,12 @@ export default class LedgerStatisticsPlugin extends Plugin {
     }
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
       const renamed = renameStarredIds(this.settings.starredRecordIds, oldPath, file.path);
-      if (JSON.stringify(renamed) !== JSON.stringify(this.settings.starredRecordIds)) {
+      let fixedChanged = false;
+      for (const item of this.settings.fixedExpenses) for (const [cycle, id] of Object.entries(item.payments)) {
+        const next = renameStarredIds([id], oldPath, file.path)[0];
+        if (next !== id) { item.payments[cycle] = next; fixedChanged = true; }
+      }
+      if (fixedChanged || JSON.stringify(renamed) !== JSON.stringify(this.settings.starredRecordIds)) {
         this.settings.starredRecordIds = renamed;
         void this.saveSettings(false);
       }

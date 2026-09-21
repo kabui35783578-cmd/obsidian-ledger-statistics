@@ -128,7 +128,8 @@ test('coverage report identifies missing dates, bad files, zero days and undated
   const bad = core.parseLedgerFile('20260916.md', note(10, '2026-09-16').replace('total: 10', 'total: 11'));
   const unknown = core.parseLedgerFile('unknown.md', 'bad');
   const report = core.financeCoverageReport([good, bad, unknown], new Date(2026, 8, 17));
-  assert.deepEqual(report.cycles[0].missingDates, ['2026-09-17']);
+  assert.deepEqual(report.cycles[0].missingDates, []);
+  assert.deepEqual(report.cycles[0].assumedZeroDates, ['2026-09-17']);
   assert.equal(report.cycles[0].problems[0].path, '20260916.md');
   assert.equal(report.undated[0].path, 'unknown.md');
 });

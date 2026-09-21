@@ -10,7 +10,7 @@ await esbuild.build({
 });
 
 await esbuild.build({
-  entryPoints: ["src/ai.ts", "src/repository.ts", "src/request-gate.ts", "src/budget-monitor.ts", "src/view.ts"],
+  entryPoints: ["src/ai.ts", "src/repository.ts", "src/request-gate.ts", "src/budget-monitor.ts", "src/view.ts", "src/insights.ts", "src/fixed-expenses.ts"],
   bundle: true,
   platform: "node",
   format: "cjs",
@@ -28,6 +28,9 @@ await esbuild.build({
       export class ItemView {}
       export class MarkdownView {}
       export class Menu {}
+      export class Modal {}
+      export class FuzzySuggestModal {}
+      export class Setting {}
       export class Notice { constructor(message) { (globalThis.__ledgerTestNotices ??= []).push(message); } }
       export const Platform = { isMobile: false };
       export function setIcon() {}

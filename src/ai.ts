@@ -1,6 +1,7 @@
 import { requestUrl } from "obsidian";
 import { RequestGate, sharedRequestGate } from "./request-gate";
 import { FinanceAdvisorSnapshot, formatCents } from "./core";
+import { eventAdvice } from "./insights";
 
 export const FINANCE_AI_PROFILE = `你是一名克制、可靠的个人财务观察员。
 从程序给出的候选事件中，选择最值得用户关注的一项，并选择最多三个相关分类。
@@ -70,11 +71,7 @@ export function parseFinanceAdvice(raw: string, snapshot: FinanceAdvisorSnapshot
   const primaryEventId = compactText(value.primary_event_id, 160);
   const event = snapshot.events.find((item) => item.id === primaryEventId);
   if (!event) throw new Error("AI 选择了不存在的候选事件");
-  const actions: Record<string, string> = {
-    observe: "建议继续观察后续记录。",
-    review: "可以核对相关记录，确认是否存在补记或重复记账。",
-    plan: "可以结合后续已知支出，检查本周期的安排。"
-  };
+  const actions: Record<string, string> = Object.fromEntries(["observe", "review", "plan"].map((id) => [id, eventAdvice(event, id)]));
   const action = typeof value.action_id === "string" && Object.prototype.hasOwnProperty.call(actions, value.action_id) ? actions[value.action_id] : undefined;
   if (!action || !Array.isArray(value.category_names)) throw new Error("AI 返回的选择格式不正确");
   const categoryLines: FinanceAdviceCategoryLine[] = [];
@@ -95,7 +92,7 @@ export function parseFinanceAdvice(raw: string, snapshot: FinanceAdvisorSnapshot
 
 export function financeSnapshotFingerprint(snapshot: FinanceAdvisorSnapshot): string {
   const source = JSON.stringify({
-    schema: 3,
+    schema: 5,
     snapshot,
     date: snapshot.currentRange.end,
     salary: snapshot.salaryCents,
@@ -127,9 +124,9 @@ export function financeAiInput(snapshot: FinanceAdvisorSnapshot): string {
       available_complete_cycles: snapshot.historyCycleCount,
       historical_average: snapshot.historyCycleCount > 0 ? formatCents(snapshot.historicalAverageSpentCents) : null,
       forecast: snapshot.forecastAvailable ? formatCents(snapshot.forecastCents) : null,
-      forecast_method: "当前已花加历史周期同阶段之后的平均支出；不按日均放大固定支出",
+      forecast_method: snapshot.fixedExpenses?.items.length ? "当前已花＋历史剩余阶段平均（剔除关联固定项）＋本周期确认未付固定项" : "当前已花加历史周期同阶段之后的平均支出；不按日均放大固定支出",
       forecast_confidence: snapshot.forecastAvailable ? snapshot.forecastConfidence : "unavailable",
-      data_guidance: "历史少于两个完整周期时不得宣称相较两周期异常；低置信度预测仅作参考，不能当成确定超支。"
+      data_guidance: "记账起始后未记账日按零消费计算，补记后会重算；异常账本不当成零消费。历史少于两个可用完整周期时不得宣称相较两周期异常；低置信度预测仅作参考，不能当成确定超支。"
     },
     candidate_events: snapshot.events.map((event) => ({
       id: event.id,
@@ -162,7 +159,7 @@ function validateEndpoint(value: string): string {
   return url.toString();
 }
 
-export async function requestFinanceAdvice(config: FinanceAiConfig, snapshot: FinanceAdvisorSnapshot, signal?: AbortSignal, gate: RequestGate = sharedRequestGate("ai")): Promise<FinanceAdvice> {
+async function chatContent(config: FinanceAiConfig, messages: Array<{ role: string; content: string }>, maxTokens: number, signal: AbortSignal | undefined, gate: RequestGate): Promise<string> {
   const endpoint = validateEndpoint(config.endpoint);
   const model = config.model.trim();
   if (!model) throw new Error("请先填写 AI 模型名称");
@@ -174,21 +171,39 @@ export async function requestFinanceAdvice(config: FinanceAiConfig, snapshot: Fi
   if (config.apiKey.trim()) headers.Authorization = `Bearer ${config.apiKey.trim()}`;
   const requestBody: Record<string, unknown> = {
     model,
-    messages: [
-      { role: "system", content: FINANCE_AI_PROFILE },
-      { role: "user", content: financeAiInput(snapshot) }
-    ],
-    max_completion_tokens: 1_200
+    messages,
+    max_completion_tokens: maxTokens
   };
   if (/^mimo-/i.test(model) && endpointHost.endsWith("xiaomimimo.com")) {
     requestBody.thinking = { type: "disabled" };
   }
-  const response = await gate.run(() => requestUrl({
+  const response = await gate.run(async () => {
+    try { return await requestUrl({
     url: endpoint, method: "POST", headers, contentType: "application/json",
-    body: JSON.stringify(requestBody), throw: true
-  }), signal, FINANCE_AI_TIMEOUT_MS);
-  const responseBody = response.json as { choices?: Array<{ message?: { content?: unknown } }> } | null;
+    body: JSON.stringify(requestBody), throw: false
+    }); } catch { throw new Error("连接失败：请检查网络、接口地址与服务商可用性"); }
+  }, signal, FINANCE_AI_TIMEOUT_MS);
+  if (response.status >= 400) {
+    const status = response.status;
+    throw new Error(status === 401 || status === 403 ? "认证失败：请检查 API Key、账号权限与模型访问权限"
+      : status === 404 ? "接口或模型不存在：请检查完整接口地址和模型 ID"
+      : status === 429 ? "请求受限：请检查账户额度或稍后重试"
+      : status === 400 || status === 422 ? "请求不兼容：请检查模型 ID 及服务商是否支持 Chat Completions 参数"
+      : `AI 服务暂不可用（HTTP ${status}），请稍后重试`);
+  }
+  let responseBody: { choices?: Array<{ message?: { content?: unknown } }> } | null;
+  try { responseBody = response.json; } catch { throw new Error("AI 接口未返回有效 JSON，请检查接口地址是否为 Chat Completions"); }
   const content = jsonTextFromResponse(responseBody?.choices?.[0]?.message?.content);
   if (!content) throw new Error("AI 接口没有返回可用内容");
-  return parseFinanceAdvice(content, snapshot);
+  return content;
+}
+
+export async function requestFinanceAdvice(config: FinanceAiConfig, snapshot: FinanceAdvisorSnapshot, signal?: AbortSignal, gate: RequestGate = sharedRequestGate("ai")): Promise<FinanceAdvice> {
+  return parseFinanceAdvice(await chatContent(config, [
+    { role: "system", content: FINANCE_AI_PROFILE }, { role: "user", content: financeAiInput(snapshot) }
+  ], 1200, signal, gate), snapshot);
+}
+
+export async function testFinanceConnection(config: FinanceAiConfig, signal?: AbortSignal, gate: RequestGate = sharedRequestGate("ai")): Promise<void> {
+  await chatContent(config, [{ role: "user", content: "Connection test. Reply with OK only." }], 128, signal, gate);
 }

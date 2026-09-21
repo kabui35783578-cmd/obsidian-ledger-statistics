@@ -2,6 +2,8 @@ import { ItemView, MarkdownView, Menu, Notice, Platform, TFile, WorkspaceLeaf, s
 import { sharedRequestGate } from "./request-gate";
 import type LedgerStatisticsPlugin from "./main";
 import { financeSnapshotFingerprint, requestFinanceAdvice } from "./ai";
+import { markInsightSeen, prioritizeFreshInsights, unmatchedStarIds } from "./insights";
+import { FixedExpenseModal, StarRepairModal } from "./management";
 import {
   AccountingScope,
   CategorySummary,
@@ -218,6 +220,12 @@ export class LedgerStatisticsView extends ItemView {
     this.renderDrillBack(root);
     const content = root.createDiv({ cls: "ledger-content" });
     const files = [...this.plugin.repository.files.values()];
+    const orphanCount = unmatchedStarIds(this.plugin.settings.starredRecordIds, flattenRecords(files)).length;
+    if (orphanCount) {
+      const warning = content.createDiv({ cls: "ledger-star-warning" });
+      warning.createSpan({ text: `${orphanCount} 个星标无法匹配，可能影响星标筛选与预算口径。` });
+      createButton(warning, "核对星标").addEventListener("click", () => new StarRepairModal(this.plugin).open());
+    }
     if (files.length === 0) {
       renderEmpty(content, `“${this.plugin.settings.ledgerFolder}”中没有找到 Markdown 记账文件`);
     } else {
@@ -422,13 +430,15 @@ export class LedgerStatisticsView extends ItemView {
 
   private renderFinanceSection(parent: HTMLElement, animate = true): void {
     const files = [...this.plugin.repository.files.values()];
-    const financeSnapshot = buildFinanceAdvisorSnapshot(
+    const now = new Date();
+    const financeSnapshot = prioritizeFreshInsights(buildFinanceAdvisorSnapshot(
       flattenRecords(files),
-      new Date(),
+      now,
       this.plugin.settings.salaryCents,
       this.plugin.settings.excludedCategories,
-      financeCompleteDates(files)
-    );
+      financeCompleteDates(files, now),
+      this.plugin.settings.fixedExpenses ?? []
+    ), this.plugin.settings.insightHistory ?? []);
     const cached = this.plugin.settings.financeAdviceCache?.date === financeSnapshot.currentRange.end
       ? this.plugin.settings.financeAdviceCache.advice
       : null;
@@ -453,7 +463,20 @@ export class LedgerStatisticsView extends ItemView {
       financeState = { status: "local", advice: null, message: "点击“刷新判断”生成首次结果；以后每天自动更新一次。", canRefresh: true };
     }
     renderFinanceAdvisor(parent, financeSnapshot, financeState, () => void this.loadFinanceAdvice(financeSnapshot, true), animate,
-      financeCoverageReport(files, new Date()), (path) => void this.app.workspace.openLinkText(path, "", false));
+      financeCoverageReport(files, now), (path) => void this.app.workspace.openLinkText(path, "", false),
+      () => new FixedExpenseModal(this.plugin).open());
+    const ownerDocument = parent.ownerDocument;
+    const cardRect = parent.getBoundingClientRect();
+    const viewRect = this.contentEl.getBoundingClientRect();
+    const visible = !ownerDocument.hidden && !ownerDocument.querySelector(".modal-container") && cardRect.bottom > viewRect.top && cardRect.top < viewRect.bottom;
+    if (visible && !this.financeAdviceLoading && this.app.workspace.getActiveViewOfType(LedgerStatisticsView) === this && financeSnapshot.salaryCents > 0) {
+      const history = this.plugin.settings.insightHistory ?? [];
+      const next = markInsightSeen(history, financeSnapshot, financeState.advice?.primaryEventId ?? financeSnapshot.events[0].id);
+      if (next !== history) {
+        this.plugin.settings.insightHistory = next;
+        void this.plugin.saveSettings(false, false).catch(() => new Notice("提醒阅读状态保存失败"));
+      }
+    }
     if (configured && financeSnapshot.salaryCents > 0 && this.plugin.settings.financeAdviceCache && !cached && !this.financeAdviceLoading && this.financeAdviceAttemptedDate !== financeSnapshot.currentRange.end) {
       this.financeAdviceAttemptedDate = financeSnapshot.currentRange.end;
       this.financeAutoTimer = window.setTimeout(() => {

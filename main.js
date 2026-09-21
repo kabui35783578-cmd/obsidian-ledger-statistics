@@ -22,7 +22,50 @@ __export(main_exports, {
   default: () => LedgerStatisticsPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian6 = require("obsidian");
+var import_obsidian7 = require("obsidian");
+
+// src/fixed-expenses.ts
+function assessFixedExpenses(expenses, records, current, previousRemaining) {
+  var _a;
+  const active = expenses.filter((item) => item.name.trim() && Number.isSafeInteger(item.amountCents) && item.amountCents > 0);
+  const byId = new Map(records.map((record) => [record.id, record]));
+  const claimed = /* @__PURE__ */ new Map();
+  for (const item of active) for (const range of [current, ...previousRemaining.map((p) => p.full)]) {
+    const id = item.payments[range.start];
+    if (id == null ? void 0 : id.startsWith("ledger-v2:")) claimed.set(id, ((_a = claimed.get(id)) != null ? _a : 0) + 1);
+  }
+  const deductions = previousRemaining.map(() => 0);
+  let unpaidCents = 0;
+  const items = active.map((item) => {
+    var _a2, _b;
+    const issues = [];
+    const resolve = (range, label, historical) => {
+      var _a3;
+      const id = item.payments[range.start];
+      if (id === "none") return { status: "none" };
+      if (id === "unpaid" && !historical) return { status: "unpaid" };
+      const record = id ? byId.get(id) : void 0;
+      if (!record || record.date < range.start || record.date > range.end || ((_a3 = claimed.get(id)) != null ? _a3 : 0) > 1) {
+        issues.push(`${label}\uFF1A${id && id !== "unpaid" ? "\u5173\u8054\u8BB0\u5F55\u5DF2\u5931\u6548\u3001\u8D85\u51FA\u5468\u671F\u6216\u88AB\u91CD\u590D\u4F7F\u7528" : "\u652F\u4ED8\u72B6\u6001\u5F85\u786E\u8BA4"}`);
+        return { status: "unconfirmed" };
+      }
+      return { status: "paid", record };
+    };
+    const payment = resolve(current, "\u672C\u5468\u671F", false);
+    if (payment.status === "unpaid") unpaidCents += item.amountCents;
+    previousRemaining.forEach((range, index) => {
+      const historical = resolve(range.full, range.full.start, true);
+      if (historical.record && historical.record.date >= range.remainingStart) deductions[index] += historical.record.cents;
+    });
+    return { id: item.id, name: item.name, amountCents: item.amountCents, paidCents: (_b = (_a2 = payment.record) == null ? void 0 : _a2.cents) != null ? _b : 0, status: payment.status, issues };
+  });
+  return {
+    items,
+    available: items.every((item) => item.issues.length === 0),
+    unpaidCents,
+    historicalDeductionCents: deductions.length ? Math.round(deductions.reduce((sum, n) => sum + n, 0) / deductions.length) : 0
+  };
+}
 
 // src/core.ts
 var FULL_WIDTH_MAP = {
@@ -378,7 +421,7 @@ function categoryTotals(records) {
   }
   return totals;
 }
-function financeCompleteDates(files) {
+function financeCompleteDates(files, asOf) {
   const valid = /* @__PURE__ */ new Set();
   const invalid = /* @__PURE__ */ new Set();
   for (const file of files) {
@@ -386,11 +429,18 @@ function financeCompleteDates(files) {
     if (file.diagnostics.length > 0 || file.records.length === 0 && file.frontmatterTotalCents !== 0) invalid.add(file.date);
     else valid.add(file.date);
   }
+  if (asOf) {
+    const today = isoFromDate(asOf);
+    const knownDates = files.map((file) => file.date).filter((day) => Boolean(day && day <= today)).sort();
+    const currentStart = salaryDayRange(asOf).start;
+    const start = [salaryCycleFullRange(asOf, 2).start, knownDates[0] && knownDates[0] < currentStart ? knownDates[0] : currentStart].sort()[1];
+    for (let day = start; day <= today; day = addDays(day, 1)) valid.add(day);
+  }
   return [...valid].filter((date) => !invalid.has(date));
 }
 function financeCoverageReport(files, date) {
   var _a;
-  const complete = new Set(financeCompleteDates(files));
+  const complete = new Set(financeCompleteDates(files, date));
   const byDate = /* @__PURE__ */ new Map();
   for (const file of files) {
     if (file.date) byDate.set(file.date, [...(_a = byDate.get(file.date)) != null ? _a : [], file]);
@@ -398,23 +448,27 @@ function financeCoverageReport(files, date) {
   return {
     cycles: [salaryDayRange(date), salaryCycleFullRange(date, 1), salaryCycleFullRange(date, 2)].map((range, index) => {
       const missingDates = [];
+      const assumedZeroDates = [];
       const problems = [];
       for (let day = range.start; day <= range.end; day = addDays(day, 1)) {
-        if (complete.has(day)) continue;
         const entries = byDate.get(day);
+        if (complete.has(day)) {
+          if (!entries) assumedZeroDates.push(day);
+          continue;
+        }
         if (!entries) missingDates.push(day);
         else for (const file of entries) {
           const reason = file.diagnostics.map((item) => item.reason).join("\uFF1B") || (file.records.length === 0 && file.frontmatterTotalCents !== 0 ? "\u7A7A\u767D\u8D26\u672C\uFF0C\u672A\u660E\u786E\u8BB0\u5F55\u96F6\u6D88\u8D39" : "");
           if (reason) problems.push({ path: file.path, date: day, reason });
         }
       }
-      return { range, label: index === 0 ? "\u5F53\u524D\u5468\u671F" : `\u524D\u7B2C ${index} \u4E2A\u5468\u671F`, missingDates, problems };
+      return { range, label: index === 0 ? "\u5F53\u524D\u5468\u671F" : `\u524D\u7B2C ${index} \u4E2A\u5468\u671F`, missingDates, assumedZeroDates, problems };
     }),
     undated: files.filter((file) => !file.date).map((file) => ({ path: file.path, reason: file.diagnostics.map((d) => d.reason).join("\uFF1B") || "\u65E5\u671F\u65E0\u6CD5\u8BC6\u522B" }))
   };
 }
-function buildFinanceAdvisorSnapshot(records, date, salaryCents, excludedCategories, completeDates = [...new Set(records.map((record) => record.date))]) {
-  var _a, _b, _c, _d, _e;
+function buildFinanceAdvisorSnapshot(records, date, salaryCents, excludedCategories, completeDates = [...new Set(records.map((record) => record.date))], fixedExpenses = []) {
+  var _a, _b, _c, _d, _e, _f, _g;
   const currentRange = salaryDayRange(date);
   const fullCurrentRange = salaryCycleFullRange(date);
   const previousRanges = [salaryCycleFullRange(date, 1), salaryCycleFullRange(date, 2)];
@@ -434,9 +488,11 @@ function buildFinanceAdvisorSnapshot(records, date, salaryCents, excludedCategor
   const previousFull = usableRanges.map((range) => recordsInRange(records, range));
   const historicalAverageSpentCents = average(previousFull.map((items) => items.reduce((sum, record) => sum + record.cents, 0)));
   const currentCoverage = Array.from({ length: elapsedDays }, (_, index) => addDays(currentRange.start, index)).every((day) => recordedDates.has(day));
-  const forecastAvailable = historyCycleCount > 0 && currentCoverage;
-  const forecastCents = currentSpentCents + (elapsedDays >= totalDays ? 0 : average(usableRanges.map((range) => recordsInRange(records, { start: addDays(range.start, elapsedDays), end: range.end }).reduce((sum, record) => sum + record.cents, 0))));
+  const fixed = assessFixedExpenses(fixedExpenses, records, currentRange, usableRanges.map((full) => ({ full, remainingStart: addDays(full.start, elapsedDays) })));
+  const forecastAvailable = historyCycleCount > 0 && currentCoverage && fixed.available;
+  const forecastCents = currentSpentCents + (elapsedDays >= totalDays ? 0 : average(usableRanges.map((range) => recordsInRange(records, { start: addDays(range.start, elapsedDays), end: range.end }).reduce((sum, record) => sum + record.cents, 0))) - fixed.historicalDeductionCents) + fixed.unpaidCents;
   const forecastConfidence = historyCycleCount < 2 || elapsedDays < 7 ? "low" : "normal";
+  const forecastMethod = fixed.items.length ? "\u6309\u5DF2\u82B1\u91D1\u989D\u52A0\u5386\u53F2\u5269\u4F59\u9636\u6BB5\u652F\u51FA\uFF0C\u5E76\u6309\u5DF2\u786E\u8BA4\u56FA\u5B9A\u652F\u51FA\u8C03\u6574" : "\u6309\u5DF2\u82B1\u91D1\u989D\u52A0\u5386\u53F2\u5269\u4F59\u9636\u6BB5\u652F\u51FA";
   const excluded = new Set(excludedCategories);
   const consumption = (items) => items.filter((record) => !excluded.has(record.category));
   const currentConsumption = consumption(currentAll);
@@ -489,7 +545,7 @@ function buildFinanceAdvisorSnapshot(records, date, salaryCents, excludedCategor
       type: "salary-pressure",
       priority: forecastConfidence === "low" ? 35 : 100 + Math.min(40, Math.round(excess / Math.max(1, salaryCents) * 100)),
       title: forecastConfidence === "low" ? "\u5468\u671F\u672B\u652F\u51FA\u9700\u7EE7\u7EED\u89C2\u5BDF" : "\u5468\u671F\u672B\u652F\u51FA\u53EF\u80FD\u8D85\u8FC7\u5DE5\u8D44",
-      detail: `\u6309\u5DF2\u82B1\u91D1\u989D\u52A0\u5386\u53F2\u5269\u4F59\u9636\u6BB5\u652F\u51FA\u53C2\u8003\uFF0C\u5468\u671F\u672B\u53EF\u80FD\u6BD4\u5DE5\u8D44\u591A ${formatCents(excess)}\u3002${forecastConfidence === "low" ? "\u76EE\u524D\u7F6E\u4FE1\u5EA6\u8F83\u4F4E\uFF0C\u4EC5\u4F9B\u53C2\u8003\u3002" : ""}`
+      detail: `${forecastMethod}\u53C2\u8003\uFF0C\u5468\u671F\u672B\u53EF\u80FD\u6BD4\u5DE5\u8D44\u591A ${formatCents(excess)}\u3002${forecastConfidence === "low" ? "\u76EE\u524D\u7F6E\u4FE1\u5EA6\u8F83\u4F4E\uFF0C\u4EC5\u4F9B\u53C2\u8003\u3002" : ""}`
     });
   } else if (forecastAvailable && salaryCents > 0) {
     events.push({
@@ -497,7 +553,7 @@ function buildFinanceAdvisorSnapshot(records, date, salaryCents, excludedCategor
       type: "salary-pace",
       priority: 30,
       title: "\u5468\u671F\u672B\u652F\u51FA\u53C2\u8003",
-      detail: `\u6309\u5DF2\u82B1\u91D1\u989D\u52A0\u5386\u53F2\u5269\u4F59\u9636\u6BB5\u652F\u51FA\uFF0C\u5468\u671F\u672B\u53C2\u8003 ${formatCents(forecastCents)}\u3002${forecastConfidence === "low" ? "\u76EE\u524D\u7F6E\u4FE1\u5EA6\u8F83\u4F4E\u3002" : ""}`
+      detail: `${forecastMethod}\uFF0C\u5468\u671F\u672B\u53C2\u8003 ${formatCents(forecastCents)}\u3002${forecastConfidence === "low" ? "\u76EE\u524D\u7F6E\u4FE1\u5EA6\u8F83\u4F4E\u3002" : ""}`
     });
   }
   for (const item of snapshots) {
@@ -557,14 +613,14 @@ function buildFinanceAdvisorSnapshot(records, date, salaryCents, excludedCategor
       historicalByCategory.set(record.category, amounts);
     }
   }
-  let largeExpenseIndex = 0;
   for (const record of currentConsumption) {
     if (historyCycleCount < 2 || !currentCoverage || ((_c = (_b = historicalByCategory.get(record.category)) == null ? void 0 : _b.length) != null ? _c : 0) < 3) continue;
     const historicalMedian = median((_d = historicalByCategory.get(record.category)) != null ? _d : []);
     const threshold = Math.max(1e4, Math.round(salaryCents * 0.05), historicalMedian * 3);
     if (record.cents >= threshold) {
       events.push({
-        id: `large-expense:${largeExpenseIndex}`,
+        id: `large-expense:${stableTextHash(record.id)}`,
+        impactCents: record.cents,
         type: "large-expense",
         priority: 78 + Math.min(20, Math.round(record.cents / Math.max(1, threshold) * 5)),
         category: record.category,
@@ -572,21 +628,21 @@ function buildFinanceAdvisorSnapshot(records, date, salaryCents, excludedCategor
         detail: `\u5355\u7B14 ${formatCents(record.cents)}\uFF0C\u660E\u663E\u9AD8\u4E8E\u8BE5\u5206\u7C7B\u8FC7\u5F80\u5355\u7B14\u6C34\u5E73\u3002`,
         evidence: [`\u4EA4\u6613\u65E5\u671F\uFF1A${record.date}`, `\u5386\u53F2\u8BE5\u5206\u7C7B\u5355\u7B14\u4E2D\u4F4D\u6570\uFF1A${formatCents(historicalMedian)}`, `\u672C\u6B21\u89E6\u53D1\u95E8\u69DB\uFF1A${formatCents(threshold)}`]
       });
-      largeExpenseIndex += 1;
     }
   }
   events.push({
     id: "stable",
     type: "stable",
     priority: 10,
-    title: historyCycleCount < 2 || !currentCoverage ? "\u53C2\u8003\u6570\u636E\u4E0D\u8DB3" : "\u6682\u672A\u53D1\u73B0\u660E\u663E\u53D8\u5316",
-    detail: historyCycleCount < 2 || !currentCoverage ? `\u53EF\u7528\u5B8C\u6574\u5386\u53F2\u5468\u671F ${historyCycleCount}/2\uFF1B\u7F3A\u5931\u6216\u5B58\u5728\u6838\u5BF9\u95EE\u9898\u7684\u8D26\u672C\u4E0D\u6309\u96F6\u6D88\u8D39\u5904\u7406\uFF0C\u6682\u4E0D\u5224\u65AD\u6D88\u8D39\u5F02\u5E38\u3002` : "\u6682\u672A\u89E6\u53D1\u53EF\u9760\u7684\u5F02\u5E38\u63D0\u9192\u3002"
+    title: !fixed.available ? "\u56FA\u5B9A\u652F\u51FA\u5F85\u786E\u8BA4" : historyCycleCount < 2 || !currentCoverage ? "\u53C2\u8003\u6570\u636E\u4E0D\u8DB3" : "\u6682\u672A\u53D1\u73B0\u660E\u663E\u53D8\u5316",
+    detail: historyCycleCount < 2 || !currentCoverage ? `\u53EF\u7528\u5386\u53F2\u5468\u671F ${historyCycleCount}/2\uFF1B\u672A\u8BB0\u8D26\u65E5\u6309\u96F6\u6D88\u8D39\u5904\u7406\uFF0C\u4F46\u8BB0\u8D26\u8D77\u59CB\u4E4B\u524D\u7684\u5386\u53F2\u6216\u5B58\u5728\u6838\u5BF9\u95EE\u9898\u7684\u8D26\u672C\u4E0D\u4F5C\u5B8C\u6574\u53C2\u8003\uFF0C\u6682\u4E0D\u5224\u65AD\u6D88\u8D39\u5F02\u5E38\u3002` : !fixed.available ? "\u8BF7\u6838\u5BF9\u56FA\u5B9A\u652F\u51FA\u7684\u5468\u671F\u652F\u4ED8\u72B6\u6001\uFF0C\u786E\u8BA4\u540E\u518D\u663E\u793A\u5468\u671F\u672B\u53C2\u8003\u3002" : "\u6682\u672A\u89E6\u53D1\u53EF\u9760\u7684\u5F02\u5E38\u63D0\u9192\u3002"
   });
   events.sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id, "zh-CN"));
   for (const event of events) {
     const category = snapshots.find((item) => item.category === event.category);
+    (_f = event.impactCents) != null ? _f : event.impactCents = (_e = category == null ? void 0 : category.currentCents) != null ? _e : event.type === "salary-pressure" ? Math.max(0, forecastCents - salaryCents) : currentSpentCents;
     event.evidence = [
-      ...(_e = event.evidence) != null ? _e : [],
+      ...(_g = event.evidence) != null ? _g : [],
       `\u5F53\u524D\u5468\u671F\uFF1A${currentRange.start} \u2014 ${currentRange.end}\uFF08${elapsedDays} \u5929\uFF09`,
       `\u53EF\u7528\u5386\u53F2\u5468\u671F\uFF1A${historyCycleCount}/2`,
       ...usableRanges.map((range) => `\u5386\u53F2\u7A97\u53E3\uFF1A${range.start} \u2014 ${range.end}\uFF1B\u540C\u671F\u622A\u81F3 ${addDays(range.start, Math.min(elapsedDays, daysInclusive(range)) - 1)}`),
@@ -594,9 +650,13 @@ function buildFinanceAdvisorSnapshot(records, date, salaryCents, excludedCategor
         `\u5206\u7C7B\u652F\u51FA\uFF1A${formatCents(category.currentCents)}\uFF1B\u5386\u53F2\u540C\u671F\u5E73\u5747\uFF1A${formatCents(category.baselineProgressCents)}`,
         `\u5206\u7C7B\u7B14\u6570\uFF1A${category.currentCount}\uFF1B\u5386\u53F2\u540C\u671F\u5E73\u5747\uFF1A${category.baselineProgressCount}`
       ] : [],
-      ...event.type.startsWith("salary-") ? [`\u5DF2\u82B1\uFF1A${formatCents(currentSpentCents)}\uFF1B\u5386\u53F2\u5269\u4F59\u9636\u6BB5\u5E73\u5747\uFF1A${formatCents(forecastCents - currentSpentCents)}`, `\u5468\u671F\u672B\u53C2\u8003\uFF1A${formatCents(forecastCents)}\uFF1B\u5DE5\u8D44\uFF1A${formatCents(salaryCents)}`, `\u9884\u6D4B\u7F6E\u4FE1\u5EA6\uFF1A${forecastConfidence === "low" ? "\u4F4E" : "\u4E00\u822C"}\uFF0C\u4ED8\u6B3E\u65E5\u671F\u53D8\u5316\u53EF\u80FD\u5F71\u54CD\u7ED3\u679C\u3002`] : [],
+      ...event.type.startsWith("salary-") ? [`\u5DF2\u82B1\uFF1A${formatCents(currentSpentCents)}\uFF1B${fixed.items.length ? "\u56FA\u5B9A\u652F\u51FA\u8C03\u6574\u540E\u5269\u4F59\u652F\u51FA\u53C2\u8003" : "\u5386\u53F2\u5269\u4F59\u9636\u6BB5\u5E73\u5747"}\uFF1A${formatCents(forecastCents - currentSpentCents)}`, `\u5468\u671F\u672B\u53C2\u8003\uFF1A${formatCents(forecastCents)}\uFF1B\u5DE5\u8D44\uFF1A${formatCents(salaryCents)}`, `\u9884\u6D4B\u7F6E\u4FE1\u5EA6\uFF1A${forecastConfidence === "low" ? "\u4F4E" : "\u4E00\u822C"}\uFF0C\u4ED8\u6B3E\u65E5\u671F\u53D8\u5316\u53EF\u80FD\u5F71\u54CD\u7ED3\u679C\u3002`] : [],
       `\u89E6\u53D1\u8BF4\u660E\uFF1A${event.detail}`
     ];
+    if (fixed.items.length && event.type.startsWith("salary-")) event.evidence.push(
+      `\u5386\u53F2\u5269\u4F59\u9636\u6BB5\u5DF2\u6263\u9664\u56FA\u5B9A\u652F\u51FA\uFF1A${formatCents(fixed.historicalDeductionCents)}`,
+      `\u672C\u5468\u671F\u786E\u8BA4\u5C1A\u672A\u652F\u4ED8\u7684\u56FA\u5B9A\u652F\u51FA\uFF1A${formatCents(fixed.unpaidCents)}`
+    );
   }
   return {
     currentRange,
@@ -613,8 +673,14 @@ function buildFinanceAdvisorSnapshot(records, date, salaryCents, excludedCategor
     forecastAvailable,
     forecastConfidence,
     categories: snapshots,
-    events
+    events,
+    fixedExpenses: fixed
   };
+}
+function stableTextHash(value) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index++) hash = Math.imul(hash ^ value.charCodeAt(index), 16777619);
+  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 function trendBucket(dateIso, granularity) {
   if (granularity === "day") return { key: dateIso, start: dateIso, end: dateIso, label: dateIso.slice(5) };
@@ -871,180 +937,81 @@ var LedgerRepository = class {
 };
 
 // src/settings.ts
-var import_obsidian2 = require("obsidian");
-var DEFAULT_SETTINGS = {
-  ledgerFolder: "\u8BB0\u8D26",
-  defaultView: "overview",
-  defaultDatePreset: "month",
-  excludedCategories: ["\u503A\u52A1/\u8FD8\u6B3E"],
-  salaryCents: 0,
-  financeAiEnabled: false,
-  financeAiEndpoint: "https://api.openai.com/v1/chat/completions",
-  financeAiModel: "",
-  financeAiApiKey: "",
-  financeAdviceCache: null,
-  dailyBudgetCents: 0,
-  budgetCategory: "",
-  includeStarredInBudget: true,
-  starredRecordIds: [],
-  barkUrl: "",
-  lastBudgetNotificationDate: ""
-};
-var VIEW_NAMES = {
-  overview: "\u603B\u89C8",
-  category: "\u5206\u7C7B",
-  trend: "\u8D8B\u52BF",
-  calendar: "\u65E5\u5386",
-  details: "\u660E\u7EC6",
-  compare: "\u5BF9\u6BD4"
-};
-var OPENAI_CHAT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
-var MIMO_CHAT_ENDPOINT = "https://api.xiaomimimo.com/v1/chat/completions";
-var LedgerSettingTab = class extends import_obsidian2.PluginSettingTab {
-  constructor(app, plugin) {
-    super(app, plugin);
-    this.plugin = plugin;
-  }
-  display() {
-    this.containerEl.empty();
-    this.containerEl.createEl("h2", { text: "\u8BB0\u8D26\u7EDF\u8BA1\u8BBE\u7F6E" });
-    new import_obsidian2.Setting(this.containerEl).setName("\u8BB0\u8D26\u6587\u4EF6\u5939").setDesc("\u4ED3\u5E93\u6839\u76EE\u5F55\u4E0B\u7684\u76F8\u5BF9\u8DEF\u5F84\u3002\u63D2\u4EF6\u53EA\u8BFB\u53D6\u5176\u4E2D\u7684 Markdown \u6587\u4EF6\u3002").addText((text) => text.setPlaceholder("\u8BB0\u8D26").setValue(this.plugin.settings.ledgerFolder).onChange(async (value) => {
-      this.plugin.settings.ledgerFolder = value.trim().replace(/^\/+|\/+$/g, "") || "\u8BB0\u8D26";
-      await this.plugin.saveSettings(true);
-    }));
-    new import_obsidian2.Setting(this.containerEl).setName("\u9ED8\u8BA4\u89C6\u56FE").setDesc("\u9996\u6B21\u6253\u5F00\u7EDF\u8BA1\u9762\u677F\u65F6\u663E\u793A\u7684\u9875\u9762\u3002").addDropdown((dropdown) => {
-      for (const [id, name] of Object.entries(VIEW_NAMES)) dropdown.addOption(id, name);
-      dropdown.setValue(this.plugin.settings.defaultView).onChange(async (value) => {
-        this.plugin.settings.defaultView = value;
-        await this.plugin.saveSettings(false);
-      });
-    });
-    new import_obsidian2.Setting(this.containerEl).setName("\u9ED8\u8BA4\u65F6\u95F4\u7B5B\u9009").setDesc("\u4E0B\u6B21\u91CD\u65B0\u6253\u5F00\u7EDF\u8BA1\u9762\u677F\u65F6\u4F7F\u7528\u7684\u65F6\u95F4\u8303\u56F4\u3002\u5F53\u524D\u5468\u4E0E\u5F53\u524D\u5DE5\u8D44\u5468\u671F\u5747\u622A\u6B62\u4ECA\u5929\u3002").addDropdown((dropdown) => dropdown.addOption("today", "\u4ECA\u5929").addOption("week", "\u672C\u5468").addOption("month", "\u672C\u6708").addOption("salary", "\u5DE5\u8D44\u65E5").addOption("year", "\u4ECA\u5E74").setValue(this.plugin.settings.defaultDatePreset).onChange(async (value) => {
-      this.plugin.settings.defaultDatePreset = value;
-      await this.plugin.saveSettings(false);
-    }));
-    new import_obsidian2.Setting(this.containerEl).setName("\u6D88\u8D39\u53E3\u5F84\u6392\u9664\u5206\u7C7B").setDesc("\u4EE5\u4E2D\u6587\u9017\u53F7\u6216\u82F1\u6587\u9017\u53F7\u5206\u9694\u3002\u2018\u5168\u90E8\u652F\u51FA\u2019\u53E3\u5F84\u4E0D\u4F1A\u6392\u9664\u8FD9\u4E9B\u5206\u7C7B\u3002").addTextArea((text) => text.setPlaceholder("\u503A\u52A1/\u8FD8\u6B3E").setValue(this.plugin.settings.excludedCategories.join("\uFF0C")).onChange(async (value) => {
-      this.plugin.settings.excludedCategories = [...new Set(value.split(/[,，]/).map((item) => item.trim()).filter(Boolean))];
-      await this.plugin.saveSettings(false);
-    }));
-    new import_obsidian2.Setting(this.containerEl).setName("\u6BCF\u4E2A\u5DE5\u8D44\u5468\u671F\u5230\u8D26\u5DE5\u8D44").setDesc("\u7528\u4E8E\u6D1E\u5BDF\u5361\u7247\u3002\u4F59\u989D\u4F1A\u7528\u8FD9\u7B14\u5DE5\u8D44\u51CF\u53BB\u672C\u5DE5\u8D44\u5468\u671F\u5185\u7684\u5168\u90E8\u652F\u51FA\uFF1B\u6570\u636E\u4EC5\u4FDD\u5B58\u5728\u672C\u5730\u3002").addText((text) => {
-      text.setPlaceholder("\u4F8B\u5982 8000").setValue(this.moneyValue(this.plugin.settings.salaryCents)).onChange(async (value) => {
-        const trimmed = value.trim();
-        if (!trimmed) {
-          this.plugin.settings.salaryCents = 0;
-          this.plugin.settings.financeAdviceCache = null;
-          await this.plugin.saveSettings(false);
-          return;
-        }
-        const cents = parseMoneyToCents(trimmed);
-        if (cents === null || cents < 0) return;
-        this.plugin.settings.salaryCents = cents;
-        this.plugin.settings.financeAdviceCache = null;
-        await this.plugin.saveSettings(false);
-      });
-      text.inputEl.setAttribute("inputmode", "decimal");
-      return text;
-    });
-    new import_obsidian2.Setting(this.containerEl).setName("\u542F\u7528 AI \u8D22\u52A1\u5224\u65AD").setDesc("\u53EA\u53D1\u9001\u7A0B\u5E8F\u751F\u6210\u7684\u6C47\u603B\u3001\u5019\u9009\u4E8B\u4EF6\u548C\u5206\u7C7B\u53C2\u8003\u503C\uFF0C\u4E0D\u53D1\u9001\u8D26\u672C\u6587\u4EF6\u3001\u8DEF\u5F84\u6216\u6D88\u8D39\u5907\u6CE8\u3002\u6BCF\u5929\u81EA\u52A8\u8BF7\u6C42\u6700\u591A\u4E00\u6B21\uFF0C\u4E5F\u53EF\u5728\u5361\u7247\u4E2D\u624B\u52A8\u5237\u65B0\u3002").addToggle((toggle) => toggle.setValue(this.plugin.settings.financeAiEnabled).onChange(async (value) => {
-      this.plugin.settings.financeAiEnabled = value;
-      await this.plugin.saveSettings(false);
-      this.display();
-    }));
-    if (this.plugin.settings.financeAiEnabled) {
-      new import_obsidian2.Setting(this.containerEl).setName("AI \u63A5\u53E3\u5730\u5740").setDesc("\u517C\u5BB9 OpenAI Chat Completions \u7684\u5B8C\u6574\u63A5\u53E3\u5730\u5740\uFF1B\u975E\u672C\u673A\u5730\u5740\u5FC5\u987B\u4F7F\u7528 HTTPS\u3002").addText((text) => text.setPlaceholder("https://api.openai.com/v1/chat/completions").setValue(this.plugin.settings.financeAiEndpoint).onChange(async (value) => {
-        this.plugin.settings.financeAiEndpoint = value.trim();
-        this.plugin.settings.financeAdviceCache = null;
-        await this.plugin.saveSettings(false);
-      }));
-      new import_obsidian2.Setting(this.containerEl).setName("AI \u6A21\u578B").setDesc("\u586B\u5199\u63A5\u53E3\u670D\u52A1\u5546\u63D0\u4F9B\u7684\u6A21\u578B\u540D\u79F0\u3002").addText((text) => text.setPlaceholder("\u4F8B\u5982\u670D\u52A1\u5546\u63D0\u4F9B\u7684\u6A21\u578B ID").setValue(this.plugin.settings.financeAiModel).onChange(async (value) => {
-        this.plugin.settings.financeAiModel = value.trim();
-        if (/^mimo-/i.test(this.plugin.settings.financeAiModel)) {
-          try {
-            if (new URL(this.plugin.settings.financeAiEndpoint).hostname === "api.openai.com") {
-              this.plugin.settings.financeAiEndpoint = MIMO_CHAT_ENDPOINT;
-            }
-          } catch (e) {
-            if (this.plugin.settings.financeAiEndpoint === OPENAI_CHAT_ENDPOINT) this.plugin.settings.financeAiEndpoint = MIMO_CHAT_ENDPOINT;
-          }
-        }
-        this.plugin.settings.financeAdviceCache = null;
-        await this.plugin.saveSettings(false);
-      }));
-      new import_obsidian2.Setting(this.containerEl).setName("AI API Key").setDesc("\u4EC5\u4FDD\u5B58\u5728\u672C\u5730 data.json\uFF0C\u4E0D\u4F1A\u4E0A\u4F20 GitHub\uFF1B\u672C\u673A\u514D\u5BC6\u63A5\u53E3\u53EF\u4EE5\u7559\u7A7A\u3002").addText((text) => {
-        text.setPlaceholder("sk-\u2026").setValue(this.plugin.settings.financeAiApiKey).onChange(async (value) => {
-          this.plugin.settings.financeAiApiKey = value.trim();
-          await this.plugin.saveSettings(false);
-        });
-        text.inputEl.type = "password";
-        text.inputEl.setAttribute("autocomplete", "off");
-        return text;
-      });
-    }
-    new import_obsidian2.Setting(this.containerEl).setName("\u6BCF\u65E5\u9884\u7B97").setDesc("\u603B\u89C8\u4E2D\u7684\u4ECA\u65E5\u9884\u7B97\u6309\u4E0B\u65B9\u9884\u7B97\u5206\u7C7B\u7EDF\u8BA1\u3002\u7559\u7A7A\u53EF\u5173\u95ED\uFF0C\u6700\u591A\u4FDD\u7559\u4E24\u4F4D\u5C0F\u6570\u3002").addText((text) => {
-      text.setPlaceholder("\u4F8B\u5982 100").setValue(this.budgetValue()).onChange(async (value) => {
-        const trimmed = value.trim();
-        if (!trimmed) {
-          this.plugin.settings.dailyBudgetCents = 0;
-          await this.plugin.saveSettings(false);
-          return;
-        }
-        const cents = parseMoneyToCents(trimmed);
-        if (cents === null || cents < 0) return;
-        this.plugin.settings.dailyBudgetCents = cents;
-        await this.plugin.saveSettings(false);
-      });
-      text.inputEl.setAttribute("inputmode", "decimal");
-      return text;
-    });
-    new import_obsidian2.Setting(this.containerEl).setName("\u9884\u7B97\u5206\u7C7B").setDesc("\u9ED8\u8BA4\u7EDF\u8BA1\u5168\u90E8\u5206\u7C7B\uFF1B\u9009\u62E9\u540E\uFF0C\u4ECA\u65E5\u9884\u7B97\u3001\u5F53\u524D\u652F\u51FA\u548C Bark \u63D0\u9192\u53EA\u7EDF\u8BA1\u8BE5\u5206\u7C7B\u3002").addDropdown((dropdown) => {
-      dropdown.addOption("", "\u5168\u90E8\u5206\u7C7B");
-      const categories = this.budgetCategories();
-      for (const category of categories) dropdown.addOption(category, category);
-      const current = this.plugin.settings.budgetCategory;
-      if (current && !categories.includes(current)) dropdown.addOption(current, `${current}\uFF08\u5F53\u524D\u65E0\u8BB0\u5F55\uFF09`);
-      dropdown.setValue(current).onChange(async (value) => {
-        this.plugin.settings.budgetCategory = value;
-        this.plugin.settings.lastBudgetNotificationDate = "";
-        await this.plugin.saveSettings(false);
-      });
-    });
-    new import_obsidian2.Setting(this.containerEl).setName("\u4ECA\u65E5\u9884\u7B97\u661F\u6807\u53E3\u5F84").setDesc("\u63A7\u5236\u4ECA\u65E5\u5DF2\u82B1\u3001\u5F53\u524D\u5DE5\u8D44\u5468\u671F\u652F\u51FA\u548C Bark \u63D0\u9192\u662F\u5426\u7EDF\u8BA1\u5DF2\u6807\u661F\u8BB0\u5F55\u3002").addDropdown((dropdown) => dropdown.addOption("include", "\u5305\u542B\u661F\u6807\u652F\u51FA").addOption("exclude", "\u4E0D\u5305\u542B\u661F\u6807\u652F\u51FA").setValue(this.plugin.settings.includeStarredInBudget ? "include" : "exclude").onChange(async (value) => {
-      this.plugin.settings.includeStarredInBudget = value === "include";
-      this.plugin.settings.lastBudgetNotificationDate = "";
-      await this.plugin.saveSettings(false);
-    }));
-    new import_obsidian2.Setting(this.containerEl).setName("Bark \u63A8\u9001\u5730\u5740").setDesc("\u7C98\u8D34 Bark \u5730\u5740\uFF0C\u4F8B\u5982 https://api.day.app/\u4F60\u7684Key\uFF1B\u8FBE\u5230\u6216\u8D85\u8FC7\u4ECA\u65E5\u9884\u7B97\u65F6\u6BCF\u5929\u63D0\u9192\u4E00\u6B21\u3002\u5730\u5740\u53EA\u4FDD\u5B58\u5728\u672C\u5730\uFF0C\u4E0D\u4F1A\u4E0A\u4F20 GitHub\u3002").addText((text) => {
-      text.setPlaceholder("https://api.day.app/\u4F60\u7684Key").setValue(this.plugin.settings.barkUrl).onChange(async (value) => {
-        this.plugin.settings.barkUrl = value.trim();
-        this.plugin.settings.lastBudgetNotificationDate = "";
-        await this.plugin.saveSettings(false);
-      });
-      text.inputEl.type = "password";
-      text.inputEl.setAttribute("autocomplete", "off");
-      return text;
-    });
-    this.containerEl.createEl("p", {
-      cls: "setting-item-description",
-      text: "\u63D2\u4EF6\u4E0D\u4F1A\u4FEE\u6539\u8D26\u76EE\u3002\u6B63\u6587\u9010\u7B14\u8BB0\u5F55\u662F\u7EDF\u8BA1\u6765\u6E90\uFF0Cfrontmatter total \u4EC5\u7528\u4E8E\u6838\u5BF9\u3002"
-    });
-  }
-  budgetValue() {
-    return this.moneyValue(this.plugin.settings.dailyBudgetCents);
-  }
-  moneyValue(cents) {
-    if (!Number.isFinite(cents) || cents <= 0) return "";
-    return (cents / 100).toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
-  }
-  budgetCategories() {
-    return [...new Set([...this.plugin.repository.files.values()].flatMap((file) => file.records.map((record) => record.category)))].sort((a, b) => a.localeCompare(b, "zh-CN"));
-  }
-};
-
-// src/view.ts
-var import_obsidian5 = require("obsidian");
+var import_obsidian4 = require("obsidian");
 
 // src/ai.ts
-var import_obsidian3 = require("obsidian");
+var import_obsidian2 = require("obsidian");
+
+// src/insights.ts
+function signalMetric(snapshot, event) {
+  const category = snapshot.categories.find((item) => item.category === event.category);
+  if (!category) return void 0;
+  if (event.type === "frequency-spike") return category.currentCount;
+  if (event.type === "ticket-spike") return category.currentCents / Math.max(1, category.currentCount);
+  if (event.type === "mix-shift") return category.currentShare;
+  return void 0;
+}
+function prioritizeFreshInsights(snapshot, history) {
+  const repeated = [];
+  const events = snapshot.events.filter((event) => {
+    var _a;
+    if (event.type === "stable") return true;
+    const previous = history.find((seen) => seen.cycle === snapshot.currentRange.start && seen.id === event.id);
+    const worsened = previous && ((_a = event.impactCents) != null ? _a : 0) - previous.impact >= Math.max(5e3, Math.abs(previous.impact) * 0.2);
+    const metric = signalMetric(snapshot, event);
+    const minimum = event.type === "frequency-spike" ? 3 : event.type === "mix-shift" ? 0.1 : 1e3;
+    const metricWorsened = metric !== void 0 && (previous == null ? void 0 : previous.metric) !== void 0 && metric - previous.metric >= Math.max(minimum, previous.metric * 0.2);
+    if (!previous || previous.date === snapshot.currentRange.end || worsened || metricWorsened || event.type === "salary-pressure") return true;
+    repeated.push(event);
+    return false;
+  });
+  if (repeated.length && !events.some((event) => event.type !== "stable")) {
+    return { ...snapshot, repeatedEvents: repeated, events: events.map((event) => event.title === "\u6682\u672A\u53D1\u73B0\u660E\u663E\u53D8\u5316" ? { ...event, title: "\u6682\u65E0\u65B0\u7684\u660E\u663E\u53D8\u5316", detail: "\u4E4B\u524D\u63D0\u9192\u8FC7\u7684\u4E8B\u9879\u4ECD\u53EF\u5728\u4E0B\u65B9\u67E5\u770B\uFF1B\u6682\u672A\u53D1\u73B0\u503C\u5F97\u91CD\u590D\u63D0\u9192\u7684\u65B0\u53D8\u5316\u3002" } : event) };
+  }
+  return { ...snapshot, events, repeatedEvents: repeated };
+}
+function markInsightSeen(history, snapshot, id) {
+  var _a, _b, _c, _d;
+  const event = snapshot.events.find((item) => item.id === id);
+  if (!event || event.type === "stable") return history;
+  const old = history.find((item) => item.cycle === snapshot.currentRange.start && item.id === id);
+  const metric = signalMetric(snapshot, event);
+  if ((old == null ? void 0 : old.date) === snapshot.currentRange.end && old.impact >= ((_a = event.impactCents) != null ? _a : 0) && (metric === void 0 || ((_b = old.metric) != null ? _b : -Infinity) >= metric)) return history;
+  return [
+    ...history.filter((item) => !(item.cycle === snapshot.currentRange.start && item.id === id)),
+    {
+      cycle: snapshot.currentRange.start,
+      id,
+      date: snapshot.currentRange.end,
+      impact: Math.max((_c = event.impactCents) != null ? _c : 0, (old == null ? void 0 : old.date) === snapshot.currentRange.end ? old.impact : 0),
+      metric: metric === void 0 ? void 0 : Math.max(metric, (old == null ? void 0 : old.date) === snapshot.currentRange.end ? (_d = old.metric) != null ? _d : metric : metric)
+    }
+  ].slice(-200);
+}
+function eventAdvice(event, action = "observe") {
+  var _a;
+  const advice = {
+    "frequency-spike": ["\u7559\u610F\u63A5\u4E0B\u6765\u662F\u5426\u4ECD\u9891\u7E41\u8D2D\u4E70\uFF0C\u800C\u4E0D\u53EA\u770B\u6BCF\u7B14\u91D1\u989D\u3002", "\u6838\u5BF9\u662F\u5426\u4E3A\u5206\u5355\u6216\u8865\u8BB0\uFF0C\u518D\u5224\u65AD\u8D2D\u4E70\u6B21\u6570\u662F\u5426\u771F\u7684\u589E\u52A0\u3002", "\u53EF\u5148\u68C0\u67E5\u91CD\u590D\u8D2D\u4E70\u7684\u5B89\u6392\uFF0C\u51CF\u5C11\u4E0D\u5FC5\u8981\u7684\u989D\u5916\u6B21\u6570\u3002"],
+    "ticket-spike": ["\u7559\u610F\u662F\u5355\u4EF7\u4E0A\u6DA8\u8FD8\u662F\u4E00\u6B21\u8D2D\u4E70\u66F4\u591A\u3002", "\u5BF9\u6BD4\u76F8\u8FD1\u5546\u54C1\u6216\u670D\u52A1\u7684\u5355\u4EF7\u4E0E\u6570\u91CF\uFF0C\u907F\u514D\u628A\u56E4\u8D27\u8BEF\u5224\u6210\u6DA8\u4EF7\u3002", "\u5B89\u6392\u4E0B\u4E00\u6B21\u8D2D\u4E70\u524D\uFF0C\u5148\u786E\u8BA4\u672C\u6B21\u589E\u52A0\u7684\u662F\u6570\u91CF\u8FD8\u662F\u5355\u4EF7\u3002"],
+    "spending-spike": ["\u7EE7\u7EED\u533A\u5206\u4E00\u6B21\u6027\u652F\u51FA\u548C\u6301\u7EED\u589E\u52A0\u7684\u65E5\u5E38\u652F\u51FA\u3002", "\u6838\u5BF9\u8FD9\u4E00\u5206\u7C7B\u7684\u5927\u989D\u8BB0\u5F55\uFF0C\u786E\u8BA4\u662F\u5426\u5C5E\u4E8E\u4E00\u6B21\u6027\u4E8B\u9879\u3002", "\u5148\u5217\u51FA\u8BE5\u5206\u7C7B\u5269\u4F59\u7684\u5FC5\u8981\u652F\u51FA\uFF0C\u518D\u5B89\u6392\u53EF\u5EF6\u540E\u7684\u6D88\u8D39\u3002"],
+    "mix-shift": ["\u5360\u6BD4\u53D8\u5316\u4E0D\u4E00\u5B9A\u662F\u8D85\u652F\uFF0C\u4E5F\u53EF\u80FD\u662F\u5176\u4ED6\u5206\u7C7B\u51CF\u5C11\u3002", "\u540C\u65F6\u6838\u5BF9\u8BE5\u5206\u7C7B\u7684\u91D1\u989D\u548C\u603B\u6D88\u8D39\uFF0C\u907F\u514D\u53EA\u770B\u5360\u6BD4\u3002", "\u5148\u786E\u8BA4\u652F\u51FA\u7ED3\u6784\u53D8\u5316\u662F\u5426\u7B26\u5408\u672C\u5468\u671F\u7684\u5B9E\u9645\u5B89\u6392\u3002"],
+    "large-expense": ["\u7559\u610F\u8FD9\u7B14\u652F\u51FA\u662F\u5426\u4F1A\u5728\u672C\u5468\u671F\u518D\u6B21\u53D1\u751F\u3002", "\u6838\u5BF9\u91D1\u989D\u53CA\u662F\u5426\u91CD\u590D\u8BB0\u8D26\uFF0C\u518D\u786E\u8BA4\u662F\u4E00\u6B21\u6027\u8FD8\u662F\u56FA\u5B9A\u652F\u51FA\u3002", "\u82E5\u5C5E\u4E8E\u56FA\u5B9A\u652F\u51FA\uFF0C\u53EF\u5728\u56FA\u5B9A\u652F\u51FA\u4E2D\u5173\u8054\u8FD9\u7B14\u8BB0\u5F55\uFF0C\u907F\u514D\u9884\u6D4B\u91CD\u590D\u8BA1\u5165\u3002"],
+    "salary-pressure": ["\u8FD9\u53EA\u662F\u53C2\u8003\uFF1B\u8BF7\u4F18\u5148\u6838\u5BF9\u5C1A\u672A\u652F\u4ED8\u7684\u5FC5\u8981\u652F\u51FA\u3002", "\u5148\u68C0\u67E5\u56FA\u5B9A\u652F\u51FA\u662F\u5426\u5DF2\u4ED8\uFF0C\u4EE5\u53CA\u5386\u53F2\u4ED8\u6B3E\u65E5\u671F\u662F\u5426\u504F\u79FB\u3002", "\u5148\u9884\u7559\u5C1A\u672A\u652F\u4ED8\u7684\u5FC5\u8981\u652F\u51FA\uFF0C\u518D\u5224\u65AD\u54EA\u4E9B\u975E\u5FC5\u8981\u6D88\u8D39\u53EF\u4EE5\u63A8\u8FDF\u3002"],
+    "salary-pace": ["\u53C2\u8003\u503C\u4E0D\u662F\u6D88\u8D39\u989D\u5EA6\uFF0C\u4ECD\u9700\u8003\u8651\u5C1A\u672A\u53D1\u751F\u7684\u5FC5\u8981\u652F\u51FA\u3002", "\u6838\u5BF9\u672C\u5468\u671F\u4E0E\u5386\u53F2\u5468\u671F\u7684\u56FA\u5B9A\u652F\u51FA\u652F\u4ED8\u65F6\u95F4\u662F\u5426\u4E00\u81F4\u3002", "\u628A\u672A\u4ED8\u56FA\u5B9A\u652F\u51FA\u786E\u8BA4\u540E\uFF0C\u518D\u8BC4\u4F30\u5269\u4F59\u5B89\u6392\u3002"],
+    "stable": ["\u53EF\u5C55\u5F00\u5224\u65AD\u4F9D\u636E\u548C\u6570\u636E\u5B8C\u6574\u6027\u7EE7\u7EED\u6838\u5BF9\u3002", "\u4F18\u5148\u6838\u5BF9\u7F3A\u5931\u65E5\u671F\u3001\u8D26\u76EE\u5DEE\u5F02\u4E0E\u5F85\u786E\u8BA4\u56FA\u5B9A\u652F\u51FA\u3002", "\u6570\u636E\u9F50\u5168\u540E\u518D\u51B3\u5B9A\u662F\u5426\u9700\u8981\u8C03\u6574\u6D88\u8D39\u5B89\u6392\u3002"]
+  };
+  return ((_a = advice[event.type]) != null ? _a : advice.stable)[action === "review" ? 1 : action === "plan" ? 2 : 0];
+}
+function unmatchedStarIds(ids, records) {
+  const known = new Set(records.map((record) => record.id));
+  return [...new Set(ids.filter((id) => !known.has(id)))];
+}
+function relinkStar(ids, oldId, newId, records) {
+  if (!ids.includes(oldId) || !records.some((record) => record.id === newId)) throw new Error("\u8BB0\u5F55\u5DF2\u53D8\u5316\uFF0C\u8BF7\u91CD\u65B0\u6838\u5BF9");
+  return [...new Set(ids.map((id) => id === oldId ? newId : id))];
+}
+
+// src/ai.ts
 var FINANCE_AI_PROFILE = `\u4F60\u662F\u4E00\u540D\u514B\u5236\u3001\u53EF\u9760\u7684\u4E2A\u4EBA\u8D22\u52A1\u89C2\u5BDF\u5458\u3002
 \u4ECE\u7A0B\u5E8F\u7ED9\u51FA\u7684\u5019\u9009\u4E8B\u4EF6\u4E2D\uFF0C\u9009\u62E9\u6700\u503C\u5F97\u7528\u6237\u5173\u6CE8\u7684\u4E00\u9879\uFF0C\u5E76\u9009\u62E9\u6700\u591A\u4E09\u4E2A\u76F8\u5173\u5206\u7C7B\u3002
 \u4F18\u5148\u8003\u8651\u91D1\u989D\u5F71\u54CD\u3001\u6837\u672C\u53EF\u9760\u6027\u3001\u53D8\u5316\u7A0B\u5EA6\u548C\u4E0B\u4E00\u6B65\u51B3\u7B56\u4EF7\u503C\uFF1B\u4E0D\u8981\u56FA\u5B9A\u5173\u6CE8\u9910\u996E\u6216\u8D2D\u7269\u3002
@@ -1080,11 +1047,7 @@ function parseFinanceAdvice(raw, snapshot) {
   const primaryEventId = compactText(value.primary_event_id, 160);
   const event = snapshot.events.find((item) => item.id === primaryEventId);
   if (!event) throw new Error("AI \u9009\u62E9\u4E86\u4E0D\u5B58\u5728\u7684\u5019\u9009\u4E8B\u4EF6");
-  const actions = {
-    observe: "\u5EFA\u8BAE\u7EE7\u7EED\u89C2\u5BDF\u540E\u7EED\u8BB0\u5F55\u3002",
-    review: "\u53EF\u4EE5\u6838\u5BF9\u76F8\u5173\u8BB0\u5F55\uFF0C\u786E\u8BA4\u662F\u5426\u5B58\u5728\u8865\u8BB0\u6216\u91CD\u590D\u8BB0\u8D26\u3002",
-    plan: "\u53EF\u4EE5\u7ED3\u5408\u540E\u7EED\u5DF2\u77E5\u652F\u51FA\uFF0C\u68C0\u67E5\u672C\u5468\u671F\u7684\u5B89\u6392\u3002"
-  };
+  const actions = Object.fromEntries(["observe", "review", "plan"].map((id) => [id, eventAdvice(event, id)]));
   const action = typeof value.action_id === "string" && Object.prototype.hasOwnProperty.call(actions, value.action_id) ? actions[value.action_id] : void 0;
   if (!action || !Array.isArray(value.category_names)) throw new Error("AI \u8FD4\u56DE\u7684\u9009\u62E9\u683C\u5F0F\u4E0D\u6B63\u786E");
   const categoryLines = [];
@@ -1106,7 +1069,7 @@ function parseFinanceAdvice(raw, snapshot) {
 }
 function financeSnapshotFingerprint(snapshot) {
   const source = JSON.stringify({
-    schema: 3,
+    schema: 5,
     snapshot,
     date: snapshot.currentRange.end,
     salary: snapshot.salaryCents,
@@ -1123,6 +1086,7 @@ function financeSnapshotFingerprint(snapshot) {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 function financeAiInput(snapshot) {
+  var _a;
   return JSON.stringify({
     period: {
       start: snapshot.currentRange.start,
@@ -1137,17 +1101,17 @@ function financeAiInput(snapshot) {
       available_complete_cycles: snapshot.historyCycleCount,
       historical_average: snapshot.historyCycleCount > 0 ? formatCents(snapshot.historicalAverageSpentCents) : null,
       forecast: snapshot.forecastAvailable ? formatCents(snapshot.forecastCents) : null,
-      forecast_method: "\u5F53\u524D\u5DF2\u82B1\u52A0\u5386\u53F2\u5468\u671F\u540C\u9636\u6BB5\u4E4B\u540E\u7684\u5E73\u5747\u652F\u51FA\uFF1B\u4E0D\u6309\u65E5\u5747\u653E\u5927\u56FA\u5B9A\u652F\u51FA",
+      forecast_method: ((_a = snapshot.fixedExpenses) == null ? void 0 : _a.items.length) ? "\u5F53\u524D\u5DF2\u82B1\uFF0B\u5386\u53F2\u5269\u4F59\u9636\u6BB5\u5E73\u5747\uFF08\u5254\u9664\u5173\u8054\u56FA\u5B9A\u9879\uFF09\uFF0B\u672C\u5468\u671F\u786E\u8BA4\u672A\u4ED8\u56FA\u5B9A\u9879" : "\u5F53\u524D\u5DF2\u82B1\u52A0\u5386\u53F2\u5468\u671F\u540C\u9636\u6BB5\u4E4B\u540E\u7684\u5E73\u5747\u652F\u51FA\uFF1B\u4E0D\u6309\u65E5\u5747\u653E\u5927\u56FA\u5B9A\u652F\u51FA",
       forecast_confidence: snapshot.forecastAvailable ? snapshot.forecastConfidence : "unavailable",
-      data_guidance: "\u5386\u53F2\u5C11\u4E8E\u4E24\u4E2A\u5B8C\u6574\u5468\u671F\u65F6\u4E0D\u5F97\u5BA3\u79F0\u76F8\u8F83\u4E24\u5468\u671F\u5F02\u5E38\uFF1B\u4F4E\u7F6E\u4FE1\u5EA6\u9884\u6D4B\u4EC5\u4F5C\u53C2\u8003\uFF0C\u4E0D\u80FD\u5F53\u6210\u786E\u5B9A\u8D85\u652F\u3002"
+      data_guidance: "\u8BB0\u8D26\u8D77\u59CB\u540E\u672A\u8BB0\u8D26\u65E5\u6309\u96F6\u6D88\u8D39\u8BA1\u7B97\uFF0C\u8865\u8BB0\u540E\u4F1A\u91CD\u7B97\uFF1B\u5F02\u5E38\u8D26\u672C\u4E0D\u5F53\u6210\u96F6\u6D88\u8D39\u3002\u5386\u53F2\u5C11\u4E8E\u4E24\u4E2A\u53EF\u7528\u5B8C\u6574\u5468\u671F\u65F6\u4E0D\u5F97\u5BA3\u79F0\u76F8\u8F83\u4E24\u5468\u671F\u5F02\u5E38\uFF1B\u4F4E\u7F6E\u4FE1\u5EA6\u9884\u6D4B\u4EC5\u4F5C\u53C2\u8003\uFF0C\u4E0D\u80FD\u5F53\u6210\u786E\u5B9A\u8D85\u652F\u3002"
     },
     candidate_events: snapshot.events.map((event) => {
-      var _a;
+      var _a2;
       return {
         id: event.id,
         type: event.type,
         priority: event.priority,
-        category: (_a = event.category) != null ? _a : null,
+        category: (_a2 = event.category) != null ? _a2 : null,
         title: event.title,
         detail: event.detail
       };
@@ -1173,7 +1137,7 @@ function validateEndpoint(value) {
   if (trimmedPath === "/v1") url.pathname = `${trimmedPath}/chat/completions`;
   return url.toString();
 }
-async function requestFinanceAdvice(config, snapshot, signal, gate = sharedRequestGate("ai")) {
+async function chatContent(config, messages, maxTokens, signal, gate) {
   var _a, _b, _c;
   const endpoint = validateEndpoint(config.endpoint);
   const model = config.model.trim();
@@ -1186,31 +1150,403 @@ async function requestFinanceAdvice(config, snapshot, signal, gate = sharedReque
   if (config.apiKey.trim()) headers.Authorization = `Bearer ${config.apiKey.trim()}`;
   const requestBody = {
     model,
-    messages: [
-      { role: "system", content: FINANCE_AI_PROFILE },
-      { role: "user", content: financeAiInput(snapshot) }
-    ],
-    max_completion_tokens: 1200
+    messages,
+    max_completion_tokens: maxTokens
   };
   if (/^mimo-/i.test(model) && endpointHost.endsWith("xiaomimimo.com")) {
     requestBody.thinking = { type: "disabled" };
   }
-  const response = await gate.run(() => (0, import_obsidian3.requestUrl)({
-    url: endpoint,
-    method: "POST",
-    headers,
-    contentType: "application/json",
-    body: JSON.stringify(requestBody),
-    throw: true
-  }), signal, FINANCE_AI_TIMEOUT_MS);
-  const responseBody = response.json;
+  const response = await gate.run(async () => {
+    try {
+      return await (0, import_obsidian2.requestUrl)({
+        url: endpoint,
+        method: "POST",
+        headers,
+        contentType: "application/json",
+        body: JSON.stringify(requestBody),
+        throw: false
+      });
+    } catch (e) {
+      throw new Error("\u8FDE\u63A5\u5931\u8D25\uFF1A\u8BF7\u68C0\u67E5\u7F51\u7EDC\u3001\u63A5\u53E3\u5730\u5740\u4E0E\u670D\u52A1\u5546\u53EF\u7528\u6027");
+    }
+  }, signal, FINANCE_AI_TIMEOUT_MS);
+  if (response.status >= 400) {
+    const status = response.status;
+    throw new Error(status === 401 || status === 403 ? "\u8BA4\u8BC1\u5931\u8D25\uFF1A\u8BF7\u68C0\u67E5 API Key\u3001\u8D26\u53F7\u6743\u9650\u4E0E\u6A21\u578B\u8BBF\u95EE\u6743\u9650" : status === 404 ? "\u63A5\u53E3\u6216\u6A21\u578B\u4E0D\u5B58\u5728\uFF1A\u8BF7\u68C0\u67E5\u5B8C\u6574\u63A5\u53E3\u5730\u5740\u548C\u6A21\u578B ID" : status === 429 ? "\u8BF7\u6C42\u53D7\u9650\uFF1A\u8BF7\u68C0\u67E5\u8D26\u6237\u989D\u5EA6\u6216\u7A0D\u540E\u91CD\u8BD5" : status === 400 || status === 422 ? "\u8BF7\u6C42\u4E0D\u517C\u5BB9\uFF1A\u8BF7\u68C0\u67E5\u6A21\u578B ID \u53CA\u670D\u52A1\u5546\u662F\u5426\u652F\u6301 Chat Completions \u53C2\u6570" : `AI \u670D\u52A1\u6682\u4E0D\u53EF\u7528\uFF08HTTP ${status}\uFF09\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5`);
+  }
+  let responseBody;
+  try {
+    responseBody = response.json;
+  } catch (e) {
+    throw new Error("AI \u63A5\u53E3\u672A\u8FD4\u56DE\u6709\u6548 JSON\uFF0C\u8BF7\u68C0\u67E5\u63A5\u53E3\u5730\u5740\u662F\u5426\u4E3A Chat Completions");
+  }
   const content = jsonTextFromResponse((_c = (_b = (_a = responseBody == null ? void 0 : responseBody.choices) == null ? void 0 : _a[0]) == null ? void 0 : _b.message) == null ? void 0 : _c.content);
   if (!content) throw new Error("AI \u63A5\u53E3\u6CA1\u6709\u8FD4\u56DE\u53EF\u7528\u5185\u5BB9");
-  return parseFinanceAdvice(content, snapshot);
+  return content;
+}
+async function requestFinanceAdvice(config, snapshot, signal, gate = sharedRequestGate("ai")) {
+  return parseFinanceAdvice(await chatContent(config, [
+    { role: "system", content: FINANCE_AI_PROFILE },
+    { role: "user", content: financeAiInput(snapshot) }
+  ], 1200, signal, gate), snapshot);
+}
+async function testFinanceConnection(config, signal, gate = sharedRequestGate("ai")) {
+  await chatContent(config, [{ role: "user", content: "Connection test. Reply with OK only." }], 128, signal, gate);
 }
 
+// src/management.ts
+var import_obsidian3 = require("obsidian");
+var RecordPicker = class extends import_obsidian3.FuzzySuggestModal {
+  constructor(plugin, choose, range) {
+    super(plugin.app);
+    this.plugin = plugin;
+    this.choose = choose;
+    this.range = range;
+    this.setPlaceholder("\u641C\u7D22\u65E5\u671F\u3001\u5206\u7C7B\u3001\u91D1\u989D\u6216\u5907\u6CE8");
+  }
+  getItems() {
+    return flattenRecords(this.plugin.repository.files.values()).filter((r) => !this.range || r.date >= this.range.start && r.date <= this.range.end);
+  }
+  getItemText(r) {
+    return `${r.date} ${r.time} \xB7 ${r.category} ${formatCents(r.cents)} \xB7 ${r.note}`;
+  }
+  onChooseItem(r) {
+    this.choose(r);
+  }
+};
+var FixedExpenseModal = class extends import_obsidian3.Modal {
+  constructor(plugin) {
+    super(plugin.app);
+    this.plugin = plugin;
+  }
+  onOpen() {
+    this.render();
+  }
+  async save() {
+    this.plugin.settings.financeAdviceCache = null;
+    await this.plugin.saveSettings(false);
+  }
+  render() {
+    const root = this.contentEl;
+    root.empty();
+    root.addClass("ledger-management");
+    root.createEl("h2", { text: "\u56FA\u5B9A\u652F\u51FA\u786E\u8BA4" });
+    root.createEl("p", { text: "\u5DE5\u8D44\u65E5\u56FA\u5B9A\u4E3A\u6BCF\u6708 15 \u65E5\u3002\u5173\u8054\u5B9E\u9645\u8D26\u76EE\u53EA\u7528\u4E8E\u4FEE\u6B63\u5468\u671F\u672B\u53C2\u8003\uFF0C\u4E0D\u65B0\u589E\u3001\u4FEE\u6539\u6216\u6263\u51CF\u8D26\u76EE\u3002\u6BCF\u7B14\u8D26\u76EE\u53EA\u80FD\u5173\u8054\u4E00\u4E2A\u9879\u76EE\uFF1B\u5206\u671F\u4ED8\u6B3E\u8BF7\u62C6\u6210\u591A\u4E2A\u9879\u76EE\u3002" });
+    const records = flattenRecords(this.plugin.repository.files.values());
+    const ranges = [salaryDayRange(/* @__PURE__ */ new Date()), salaryCycleFullRange(/* @__PURE__ */ new Date(), 1), salaryCycleFullRange(/* @__PURE__ */ new Date(), 2)];
+    for (const item of this.plugin.settings.fixedExpenses) {
+      const box = root.createEl("details", { cls: "ledger-management-item" });
+      box.open = true;
+      box.createEl("summary", { text: item.name || "\u65B0\u56FA\u5B9A\u652F\u51FA" });
+      new import_obsidian3.Setting(box).setName("\u540D\u79F0").addText((text) => text.setValue(item.name).setPlaceholder("\u4F8B\u5982\u623F\u79DF").onChange(async (value) => {
+        item.name = value.trim();
+        await this.save();
+      }));
+      new import_obsidian3.Setting(box).setName("\u672C\u5468\u671F\u9884\u8BA1\u91D1\u989D\uFF08\u5143\uFF09").setDesc("\u672A\u652F\u4ED8\u65F6\u4F7F\u7528\uFF1B\u5DF2\u652F\u4ED8\u65F6\u4EE5\u5173\u8054\u8D26\u76EE\u4E3A\u51C6\u3002\u540D\u79F0\u6216\u91D1\u989D\u672A\u586B\u5199\u7684\u9879\u76EE\u6682\u4E0D\u53C2\u4E0E\u9884\u6D4B\u3002").addText((text) => {
+        text.setPlaceholder("\u4F8B\u5982 1500").setValue(item.amountCents ? String(item.amountCents / 100) : "").onChange(async (value) => {
+          const cents = value.trim() ? parseMoneyToCents(value) : 0;
+          text.inputEl.setAttribute("aria-invalid", String(cents === null || cents < 0));
+          if (cents === null || cents < 0) return;
+          item.amountCents = cents;
+          await this.save();
+        });
+        text.inputEl.inputMode = "decimal";
+      });
+      ranges.forEach((range, index) => {
+        var _a;
+        const id = (_a = item.payments[range.start]) != null ? _a : "";
+        const linked = records.find((record) => record.id === id);
+        const title = index === 0 ? "\u672C\u5468\u671F" : `\u524D ${index} \u4E2A\u5468\u671F`;
+        const setting = new import_obsidian3.Setting(box).setName(`${title} \xB7 ${range.start}`).setDesc(linked ? `${linked.date} \xB7 ${linked.category} \xB7 ${formatCents(linked.cents)}` : id.startsWith("ledger-v2:") ? "\u5173\u8054\u8D26\u76EE\u5931\u6548\uFF0C\u8BF7\u91CD\u65B0\u9009\u62E9" : "\u8BF7\u9009\u62E9\u652F\u4ED8\u72B6\u6001\uFF1B\u5386\u53F2\u8BB0\u5F55\u4EC5\u7528\u4E8E\u4ECE\u5386\u53F2\u9884\u6D4B\u4E2D\u6392\u9664\u5DF2\u786E\u8BA4\u56FA\u5B9A\u652F\u51FA\u3002");
+        setting.addDropdown((dropdown) => {
+          dropdown.addOption("", "\u5F85\u786E\u8BA4");
+          if (index === 0) dropdown.addOption("unpaid", "\u5C1A\u672A\u652F\u4ED8");
+          dropdown.addOption("none", "\u6B64\u5468\u671F\u65E0\u9700\u652F\u4ED8").addOption("link", "\u5173\u8054\u5DF2\u652F\u4ED8\u8D26\u76EE\u2026");
+          dropdown.setValue(id && id !== "unpaid" && id !== "none" ? "link" : id);
+          dropdown.onChange(async (value) => {
+            if (value === "link") {
+              new RecordPicker(this.plugin, (record) => {
+                const duplicate = this.plugin.settings.fixedExpenses.some((other) => other.id !== item.id && Object.values(other.payments).includes(record.id));
+                if (duplicate) {
+                  new import_obsidian3.Notice("\u8FD9\u7B14\u8D26\u76EE\u5DF2\u5173\u8054\u5176\u4ED6\u56FA\u5B9A\u652F\u51FA\uFF0C\u8BF7\u52FF\u91CD\u590D\u5173\u8054");
+                  return;
+                }
+                item.payments[range.start] = record.id;
+                void this.save().then(() => this.render());
+              }, range).open();
+              dropdown.setValue(id && id !== "unpaid" && id !== "none" ? "link" : id);
+            } else {
+              if (value) item.payments[range.start] = value;
+              else delete item.payments[range.start];
+              await this.save();
+              this.render();
+            }
+          });
+        });
+        if (linked || id.startsWith("ledger-v2:")) setting.addButton((button) => button.setButtonText("\u91CD\u65B0\u5173\u8054").onClick(() => {
+          new RecordPicker(this.plugin, (record) => {
+            item.payments[range.start] = record.id;
+            void this.save().then(() => this.render());
+          }, range).open();
+        }));
+      });
+      new import_obsidian3.Setting(box).setName("\u79FB\u9664\u6B64\u89C4\u5219").setDesc("\u4E0D\u5220\u9664\u539F\u59CB\u8D26\u76EE\u3002").addButton((button) => button.setButtonText("\u79FB\u9664").onClick(async () => {
+        this.plugin.settings.fixedExpenses = this.plugin.settings.fixedExpenses.filter((other) => other.id !== item.id);
+        await this.save();
+        this.render();
+      }));
+    }
+    new import_obsidian3.Setting(root).addButton((button) => button.setButtonText("\u6DFB\u52A0\u56FA\u5B9A\u652F\u51FA").setCta().onClick(async () => {
+      this.plugin.settings.fixedExpenses = [...this.plugin.settings.fixedExpenses, { id: crypto.randomUUID(), name: "", amountCents: 0, payments: {} }];
+      await this.save();
+      this.render();
+    }));
+  }
+};
+var StarRepairModal = class extends import_obsidian3.Modal {
+  constructor(plugin) {
+    super(plugin.app);
+    this.plugin = plugin;
+  }
+  onOpen() {
+    this.render();
+  }
+  render() {
+    this.contentEl.empty();
+    this.contentEl.addClass("ledger-management");
+    this.contentEl.createEl("h2", { text: "\u6838\u5BF9\u5931\u6548\u661F\u6807" });
+    this.contentEl.createEl("p", { text: "\u8D26\u76EE\u4FEE\u6539\u3001\u5220\u9664\u6216\u79BB\u7EBF\u79FB\u52A8\u540E\uFF0C\u65E7\u661F\u6807\u53EF\u80FD\u65E0\u6CD5\u5339\u914D\u3002\u8BF7\u624B\u52A8\u91CD\u65B0\u5173\u8054\u6216\u79FB\u9664\u661F\u6807\uFF1B\u539F\u59CB\u8D26\u76EE\u4E0D\u4F1A\u88AB\u4FEE\u6539\u3002" });
+    const records = flattenRecords(this.plugin.repository.files.values());
+    const missing = unmatchedStarIds(this.plugin.settings.starredRecordIds, records);
+    if (!missing.length) this.contentEl.createEl("p", { text: "\u6240\u6709\u661F\u6807\u5747\u53EF\u5339\u914D\u3002" });
+    for (const id of missing) {
+      let label = id;
+      try {
+        const values = JSON.parse(id.slice(10));
+        label = `${values[1]} \xB7 ${values[3]} \xB7 ${formatCents(values[4])} \xB7 ${values[0]}`;
+      } catch (e) {
+      }
+      new import_obsidian3.Setting(this.contentEl).setName(label).addButton((button) => button.setButtonText("\u91CD\u65B0\u5173\u8054").onClick(() => {
+        new RecordPicker(this.plugin, (record) => {
+          try {
+            this.plugin.settings.starredRecordIds = relinkStar(this.plugin.settings.starredRecordIds, id, record.id, flattenRecords(this.plugin.repository.files.values()));
+          } catch (error) {
+            new import_obsidian3.Notice(error.message);
+            return;
+          }
+          void this.plugin.saveSettings(false).then(() => this.render());
+        }).open();
+      })).addButton((button) => button.setButtonText("\u79FB\u9664\u661F\u6807").onClick(async () => {
+        this.plugin.settings.starredRecordIds = this.plugin.settings.starredRecordIds.filter((value) => value !== id);
+        await this.plugin.saveSettings(false);
+        this.render();
+      }));
+    }
+  }
+};
+
+// src/settings.ts
+var DEFAULT_SETTINGS = {
+  fixedExpenses: [],
+  insightHistory: [],
+  ledgerFolder: "\u8BB0\u8D26",
+  defaultView: "overview",
+  defaultDatePreset: "month",
+  excludedCategories: ["\u503A\u52A1/\u8FD8\u6B3E"],
+  salaryCents: 0,
+  financeAiEnabled: false,
+  financeAiEndpoint: "https://api.openai.com/v1/chat/completions",
+  financeAiModel: "",
+  financeAiApiKey: "",
+  financeAdviceCache: null,
+  dailyBudgetCents: 0,
+  budgetCategory: "",
+  includeStarredInBudget: true,
+  starredRecordIds: [],
+  barkUrl: "",
+  lastBudgetNotificationDate: ""
+};
+var VIEW_NAMES = {
+  overview: "\u603B\u89C8",
+  category: "\u5206\u7C7B",
+  trend: "\u8D8B\u52BF",
+  calendar: "\u65E5\u5386",
+  details: "\u660E\u7EC6",
+  compare: "\u5BF9\u6BD4"
+};
+var OPENAI_CHAT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
+var MIMO_CHAT_ENDPOINT = "https://api.xiaomimimo.com/v1/chat/completions";
+var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
+  constructor(app, plugin) {
+    super(app, plugin);
+    this.plugin = plugin;
+  }
+  hide() {
+    var _a;
+    (_a = this.connectionController) == null ? void 0 : _a.abort();
+  }
+  display() {
+    var _a;
+    (_a = this.connectionController) == null ? void 0 : _a.abort();
+    this.containerEl.empty();
+    this.containerEl.createEl("h2", { text: "\u8BB0\u8D26\u7EDF\u8BA1\u8BBE\u7F6E" });
+    new import_obsidian4.Setting(this.containerEl).setName("\u8BB0\u8D26\u6587\u4EF6\u5939").setDesc("\u4ED3\u5E93\u6839\u76EE\u5F55\u4E0B\u7684\u76F8\u5BF9\u8DEF\u5F84\u3002\u63D2\u4EF6\u53EA\u8BFB\u53D6\u5176\u4E2D\u7684 Markdown \u6587\u4EF6\u3002").addText((text) => text.setPlaceholder("\u8BB0\u8D26").setValue(this.plugin.settings.ledgerFolder).onChange(async (value) => {
+      this.plugin.settings.ledgerFolder = value.trim().replace(/^\/+|\/+$/g, "") || "\u8BB0\u8D26";
+      await this.plugin.saveSettings(true);
+    }));
+    new import_obsidian4.Setting(this.containerEl).setName("\u9ED8\u8BA4\u89C6\u56FE").setDesc("\u9996\u6B21\u6253\u5F00\u7EDF\u8BA1\u9762\u677F\u65F6\u663E\u793A\u7684\u9875\u9762\u3002").addDropdown((dropdown) => {
+      for (const [id, name] of Object.entries(VIEW_NAMES)) dropdown.addOption(id, name);
+      dropdown.setValue(this.plugin.settings.defaultView).onChange(async (value) => {
+        this.plugin.settings.defaultView = value;
+        await this.plugin.saveSettings(false);
+      });
+    });
+    new import_obsidian4.Setting(this.containerEl).setName("\u9ED8\u8BA4\u65F6\u95F4\u7B5B\u9009").setDesc("\u4E0B\u6B21\u91CD\u65B0\u6253\u5F00\u7EDF\u8BA1\u9762\u677F\u65F6\u4F7F\u7528\u7684\u65F6\u95F4\u8303\u56F4\u3002\u5F53\u524D\u5468\u4E0E\u5F53\u524D\u5DE5\u8D44\u5468\u671F\u5747\u622A\u6B62\u4ECA\u5929\u3002").addDropdown((dropdown) => dropdown.addOption("today", "\u4ECA\u5929").addOption("week", "\u672C\u5468").addOption("month", "\u672C\u6708").addOption("salary", "\u5DE5\u8D44\u65E5").addOption("year", "\u4ECA\u5E74").setValue(this.plugin.settings.defaultDatePreset).onChange(async (value) => {
+      this.plugin.settings.defaultDatePreset = value;
+      await this.plugin.saveSettings(false);
+    }));
+    new import_obsidian4.Setting(this.containerEl).setName("\u6D88\u8D39\u53E3\u5F84\u6392\u9664\u5206\u7C7B").setDesc("\u4EE5\u4E2D\u6587\u9017\u53F7\u6216\u82F1\u6587\u9017\u53F7\u5206\u9694\u3002\u2018\u5168\u90E8\u652F\u51FA\u2019\u53E3\u5F84\u4E0D\u4F1A\u6392\u9664\u8FD9\u4E9B\u5206\u7C7B\u3002").addTextArea((text) => text.setPlaceholder("\u503A\u52A1/\u8FD8\u6B3E").setValue(this.plugin.settings.excludedCategories.join("\uFF0C")).onChange(async (value) => {
+      this.plugin.settings.excludedCategories = [...new Set(value.split(/[,，]/).map((item) => item.trim()).filter(Boolean))];
+      await this.plugin.saveSettings(false);
+    }));
+    new import_obsidian4.Setting(this.containerEl).setName("\u6BCF\u4E2A\u5DE5\u8D44\u5468\u671F\u5230\u8D26\u5DE5\u8D44").setDesc("\u5DE5\u8D44\u65E5\u56FA\u5B9A\u6BCF\u6708 15 \u65E5\u3002\u4F59\u989D\uFF1D\u5DE5\u8D44\u51CF\u672C\u5468\u671F\u5168\u90E8\u652F\u51FA\uFF0C\u4E0D\u4EE3\u8868\u94F6\u884C\u5B9E\u9645\u4F59\u989D\uFF1B\u6570\u636E\u4FDD\u5B58\u5728\u672C\u5730\u3002").addText((text) => {
+      text.setPlaceholder("\u4F8B\u5982 8000").setValue(this.moneyValue(this.plugin.settings.salaryCents)).onChange(async (value) => {
+        const trimmed = value.trim();
+        if (!trimmed) {
+          this.plugin.settings.salaryCents = 0;
+          this.plugin.settings.financeAdviceCache = null;
+          await this.plugin.saveSettings(false);
+          return;
+        }
+        const cents = parseMoneyToCents(trimmed);
+        if (cents === null || cents < 0) return;
+        this.plugin.settings.salaryCents = cents;
+        this.plugin.settings.financeAdviceCache = null;
+        await this.plugin.saveSettings(false);
+      });
+      text.inputEl.setAttribute("inputmode", "decimal");
+      return text;
+    });
+    new import_obsidian4.Setting(this.containerEl).setName("\u56FA\u5B9A\u652F\u51FA").setDesc("\u624B\u52A8\u786E\u8BA4\u672C\u5468\u671F\u53CA\u524D\u4E24\u4E2A\u5468\u671F\u7684\u652F\u4ED8\u8BB0\u5F55\uFF0C\u51CF\u5C11\u4ED8\u6B3E\u65E5\u671F\u53D8\u5316\u5BF9\u9884\u6D4B\u7684\u5F71\u54CD\u3002").addButton((button) => button.setButtonText("\u7BA1\u7406\u56FA\u5B9A\u652F\u51FA").onClick(() => new FixedExpenseModal(this.plugin).open()));
+    new import_obsidian4.Setting(this.containerEl).setName("\u661F\u6807\u6838\u5BF9").setDesc("\u68C0\u67E5\u4FEE\u6539\u3001\u5220\u9664\u6216\u79BB\u7EBF\u79FB\u52A8\u540E\u65E0\u6CD5\u5339\u914D\u7684\u661F\u6807\u3002").addButton((button) => button.setButtonText("\u6838\u5BF9\u661F\u6807").onClick(() => new StarRepairModal(this.plugin).open()));
+    new import_obsidian4.Setting(this.containerEl).setName("\u542F\u7528 AI \u8D22\u52A1\u5224\u65AD").setDesc("\u53EA\u53D1\u9001\u7A0B\u5E8F\u751F\u6210\u7684\u6C47\u603B\u3001\u5019\u9009\u4E8B\u4EF6\u548C\u5206\u7C7B\u53C2\u8003\u503C\uFF0C\u4E0D\u53D1\u9001\u8D26\u672C\u6587\u4EF6\u3001\u8DEF\u5F84\u6216\u6D88\u8D39\u5907\u6CE8\u3002\u6BCF\u5929\u81EA\u52A8\u8BF7\u6C42\u6700\u591A\u4E00\u6B21\uFF0C\u4E5F\u53EF\u5728\u5361\u7247\u4E2D\u624B\u52A8\u5237\u65B0\u3002").addToggle((toggle) => toggle.setValue(this.plugin.settings.financeAiEnabled).onChange(async (value) => {
+      this.plugin.settings.financeAiEnabled = value;
+      await this.plugin.saveSettings(false);
+      this.display();
+    }));
+    if (this.plugin.settings.financeAiEnabled) {
+      new import_obsidian4.Setting(this.containerEl).setName("AI \u63A5\u53E3\u5730\u5740").setDesc("\u517C\u5BB9 OpenAI Chat Completions \u7684\u5B8C\u6574\u63A5\u53E3\u5730\u5740\uFF1B\u975E\u672C\u673A\u5730\u5740\u5FC5\u987B\u4F7F\u7528 HTTPS\u3002").addText((text) => text.setPlaceholder("https://api.openai.com/v1/chat/completions").setValue(this.plugin.settings.financeAiEndpoint).onChange(async (value) => {
+        this.plugin.settings.financeAiEndpoint = value.trim();
+        this.plugin.settings.financeAdviceCache = null;
+        await this.plugin.saveSettings(false);
+      }));
+      new import_obsidian4.Setting(this.containerEl).setName("AI \u6A21\u578B").setDesc("\u586B\u5199\u63A5\u53E3\u670D\u52A1\u5546\u63D0\u4F9B\u7684\u6A21\u578B\u540D\u79F0\u3002").addText((text) => text.setPlaceholder("\u4F8B\u5982\u670D\u52A1\u5546\u63D0\u4F9B\u7684\u6A21\u578B ID").setValue(this.plugin.settings.financeAiModel).onChange(async (value) => {
+        this.plugin.settings.financeAiModel = value.trim();
+        if (/^mimo-/i.test(this.plugin.settings.financeAiModel)) {
+          try {
+            if (new URL(this.plugin.settings.financeAiEndpoint).hostname === "api.openai.com") {
+              this.plugin.settings.financeAiEndpoint = MIMO_CHAT_ENDPOINT;
+            }
+          } catch (e) {
+            if (this.plugin.settings.financeAiEndpoint === OPENAI_CHAT_ENDPOINT) this.plugin.settings.financeAiEndpoint = MIMO_CHAT_ENDPOINT;
+          }
+        }
+        this.plugin.settings.financeAdviceCache = null;
+        await this.plugin.saveSettings(false);
+      }));
+      new import_obsidian4.Setting(this.containerEl).setName("AI API Key").setDesc("\u4EC5\u4FDD\u5B58\u5728\u672C\u5730 data.json\uFF0C\u4E0D\u4F1A\u4E0A\u4F20 GitHub\uFF1B\u672C\u673A\u514D\u5BC6\u63A5\u53E3\u53EF\u4EE5\u7559\u7A7A\u3002").addText((text) => {
+        text.setPlaceholder("sk-\u2026").setValue(this.plugin.settings.financeAiApiKey).onChange(async (value) => {
+          this.plugin.settings.financeAiApiKey = value.trim();
+          this.plugin.settings.financeAdviceCache = null;
+          await this.plugin.saveSettings(false);
+        });
+        text.inputEl.type = "password";
+        text.inputEl.setAttribute("autocomplete", "off");
+        return text;
+      });
+      const test = new import_obsidian4.Setting(this.containerEl).setName("\u6D4B\u8BD5 AI \u8FDE\u63A5").setDesc("\u53EA\u53D1\u9001\u7B80\u77ED\u6D4B\u8BD5\u6D88\u606F\uFF0C\u4E0D\u53D1\u9001\u8D26\u76EE\uFF1B\u53EF\u80FD\u4EA7\u751F\u5C11\u91CF\u6A21\u578B\u8C03\u7528\u8D39\u7528\u3002");
+      test.descEl.setAttribute("aria-live", "polite");
+      test.addButton((button) => button.setButtonText("\u6D4B\u8BD5\u8FDE\u63A5").onClick(async () => {
+        const controller = new AbortController();
+        this.connectionController = controller;
+        const config = { endpoint: this.plugin.settings.financeAiEndpoint, model: this.plugin.settings.financeAiModel, apiKey: this.plugin.settings.financeAiApiKey };
+        button.setDisabled(true).setButtonText("\u6B63\u5728\u6D4B\u8BD5\u2026");
+        test.setDesc("\u6B63\u5728\u7B49\u5F85\u63A5\u53E3\u54CD\u5E94\uFF0C\u6700\u957F\u7B49\u5F85 60 \u79D2\u2026");
+        try {
+          await testFinanceConnection(config, controller.signal, sharedRequestGate(`ai:${this.app.vault.getName()}`));
+          if (!controller.signal.aborted) test.setDesc(config.endpoint === this.plugin.settings.financeAiEndpoint && config.model === this.plugin.settings.financeAiModel && config.apiKey === this.plugin.settings.financeAiApiKey ? "\u8FDE\u63A5\u6210\u529F\uFF1A\u6A21\u578B\u5DF2\u8FD4\u56DE\u6709\u6548\u5185\u5BB9\u3002" : "\u914D\u7F6E\u5DF2\u53D8\u5316\uFF0C\u8BF7\u91CD\u65B0\u6D4B\u8BD5\u3002");
+        } catch (error) {
+          if (!controller.signal.aborted) test.setDesc(error instanceof Error ? error.message : "\u8FDE\u63A5\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u7F51\u7EDC\u4E0E\u63A5\u53E3\u914D\u7F6E");
+        } finally {
+          if (!controller.signal.aborted) button.setDisabled(false).setButtonText("\u6D4B\u8BD5\u8FDE\u63A5");
+        }
+      }));
+    }
+    new import_obsidian4.Setting(this.containerEl).setName("\u6BCF\u65E5\u9884\u7B97").setDesc("\u603B\u89C8\u4E2D\u7684\u4ECA\u65E5\u9884\u7B97\u6309\u4E0B\u65B9\u9884\u7B97\u5206\u7C7B\u7EDF\u8BA1\u3002\u7559\u7A7A\u53EF\u5173\u95ED\uFF0C\u6700\u591A\u4FDD\u7559\u4E24\u4F4D\u5C0F\u6570\u3002").addText((text) => {
+      text.setPlaceholder("\u4F8B\u5982 100").setValue(this.budgetValue()).onChange(async (value) => {
+        const trimmed = value.trim();
+        if (!trimmed) {
+          this.plugin.settings.dailyBudgetCents = 0;
+          await this.plugin.saveSettings(false);
+          return;
+        }
+        const cents = parseMoneyToCents(trimmed);
+        if (cents === null || cents < 0) return;
+        this.plugin.settings.dailyBudgetCents = cents;
+        await this.plugin.saveSettings(false);
+      });
+      text.inputEl.setAttribute("inputmode", "decimal");
+      return text;
+    });
+    new import_obsidian4.Setting(this.containerEl).setName("\u9884\u7B97\u5206\u7C7B").setDesc("\u9ED8\u8BA4\u7EDF\u8BA1\u5168\u90E8\u5206\u7C7B\uFF1B\u9009\u62E9\u540E\uFF0C\u4ECA\u65E5\u9884\u7B97\u3001\u5F53\u524D\u652F\u51FA\u548C Bark \u63D0\u9192\u53EA\u7EDF\u8BA1\u8BE5\u5206\u7C7B\u3002").addDropdown((dropdown) => {
+      dropdown.addOption("", "\u5168\u90E8\u5206\u7C7B");
+      const categories = this.budgetCategories();
+      for (const category of categories) dropdown.addOption(category, category);
+      const current = this.plugin.settings.budgetCategory;
+      if (current && !categories.includes(current)) dropdown.addOption(current, `${current}\uFF08\u5F53\u524D\u65E0\u8BB0\u5F55\uFF09`);
+      dropdown.setValue(current).onChange(async (value) => {
+        this.plugin.settings.budgetCategory = value;
+        this.plugin.settings.lastBudgetNotificationDate = "";
+        await this.plugin.saveSettings(false);
+      });
+    });
+    new import_obsidian4.Setting(this.containerEl).setName("\u4ECA\u65E5\u9884\u7B97\u661F\u6807\u53E3\u5F84").setDesc("\u63A7\u5236\u4ECA\u65E5\u5DF2\u82B1\u3001\u5F53\u524D\u5DE5\u8D44\u5468\u671F\u652F\u51FA\u548C Bark \u63D0\u9192\u662F\u5426\u7EDF\u8BA1\u5DF2\u6807\u661F\u8BB0\u5F55\u3002").addDropdown((dropdown) => dropdown.addOption("include", "\u5305\u542B\u661F\u6807\u652F\u51FA").addOption("exclude", "\u4E0D\u5305\u542B\u661F\u6807\u652F\u51FA").setValue(this.plugin.settings.includeStarredInBudget ? "include" : "exclude").onChange(async (value) => {
+      this.plugin.settings.includeStarredInBudget = value === "include";
+      this.plugin.settings.lastBudgetNotificationDate = "";
+      await this.plugin.saveSettings(false);
+    }));
+    new import_obsidian4.Setting(this.containerEl).setName("Bark \u63A8\u9001\u5730\u5740").setDesc("\u7C98\u8D34 Bark \u5730\u5740\uFF0C\u4F8B\u5982 https://api.day.app/\u4F60\u7684Key\uFF1B\u8FBE\u5230\u6216\u8D85\u8FC7\u4ECA\u65E5\u9884\u7B97\u65F6\u6BCF\u5929\u63D0\u9192\u4E00\u6B21\u3002\u5730\u5740\u53EA\u4FDD\u5B58\u5728\u672C\u5730\uFF0C\u4E0D\u4F1A\u4E0A\u4F20 GitHub\u3002").addText((text) => {
+      text.setPlaceholder("https://api.day.app/\u4F60\u7684Key").setValue(this.plugin.settings.barkUrl).onChange(async (value) => {
+        this.plugin.settings.barkUrl = value.trim();
+        this.plugin.settings.lastBudgetNotificationDate = "";
+        await this.plugin.saveSettings(false);
+      });
+      text.inputEl.type = "password";
+      text.inputEl.setAttribute("autocomplete", "off");
+      return text;
+    });
+    this.containerEl.createEl("p", {
+      cls: "setting-item-description",
+      text: "\u63D2\u4EF6\u4E0D\u4F1A\u4FEE\u6539\u8D26\u76EE\u3002\u6B63\u6587\u9010\u7B14\u8BB0\u5F55\u662F\u7EDF\u8BA1\u6765\u6E90\uFF0Cfrontmatter total \u4EC5\u7528\u4E8E\u6838\u5BF9\u3002"
+    });
+  }
+  budgetValue() {
+    return this.moneyValue(this.plugin.settings.dailyBudgetCents);
+  }
+  moneyValue(cents) {
+    if (!Number.isFinite(cents) || cents <= 0) return "";
+    return (cents / 100).toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+  }
+  budgetCategories() {
+    return [...new Set([...this.plugin.repository.files.values()].flatMap((file) => file.records.map((record) => record.category)))].sort((a, b) => a.localeCompare(b, "zh-CN"));
+  }
+};
+
+// src/view.ts
+var import_obsidian6 = require("obsidian");
+
 // src/ui.ts
-var import_obsidian4 = require("obsidian");
+var import_obsidian5 = require("obsidian");
 var SVG_NS = "http://www.w3.org/2000/svg";
 var INK = "#1F1E1C";
 var PAPER = "#F0F0EE";
@@ -1709,8 +2045,8 @@ function renderDumbbell(parent, data, currentLabel, previousLabel, onClick) {
 function renderEmpty(parent, message) {
   parent.createDiv({ cls: "ledger-empty", text: message });
 }
-function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true, coverage, onOpenFile) {
-  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j;
+function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true, coverage, onOpenFile, onManageFixed) {
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r;
   const card = parent.createDiv({ cls: `ledger-advisor-card${animate ? " ledger-reveal" : ""}` });
   card.setAttribute("aria-busy", String(state.status === "loading"));
   const heading = card.createDiv({ cls: "ledger-advisor-heading" });
@@ -1720,7 +2056,7 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
   copy.createDiv({ cls: "ledger-advisor-period", text: `${snapshot.currentRange.start.replace(/-/g, ".")} \u2014 ${snapshot.currentRange.end.replace(/-/g, ".")}` });
   if (state.canRefresh) {
     const refresh = heading.createEl("button", { cls: "ledger-advisor-refresh", attr: { type: "button", "aria-label": "\u91CD\u65B0\u751F\u6210\u8D22\u52A1\u5224\u65AD" } });
-    (0, import_obsidian4.setIcon)(refresh, state.status === "loading" ? "loader-circle" : "refresh-cw");
+    (0, import_obsidian5.setIcon)(refresh, state.status === "loading" ? "loader-circle" : "refresh-cw");
     refresh.createSpan({ text: state.status === "loading" ? "\u5206\u6790\u4E2D" : "\u5237\u65B0\u5224\u65AD" });
     refresh.disabled = state.status === "loading";
     refresh.addEventListener("click", onRefresh);
@@ -1746,26 +2082,48 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
   average2.createEl("strong", { text: snapshot.historyCycleCount > 0 ? formatCents(snapshot.historicalAverageSpentCents) : "\u53C2\u8003\u6570\u636E\u4E0D\u8DB3" });
   const forecast = summary.createDiv({ cls: "ledger-advisor-summary-item ledger-advisor-forecast" });
   forecast.createSpan({ text: `\u5468\u671F\u672B\u652F\u51FA\u53C2\u8003${snapshot.forecastAvailable && snapshot.forecastConfidence === "low" ? " \xB7 \u4F4E\u7F6E\u4FE1\u5EA6" : ""}` });
-  forecast.createEl("strong", { text: snapshot.forecastAvailable ? formatCents(snapshot.forecastCents) : "\u6570\u636E\u4E0D\u8DB3\uFF0C\u6682\u4E0D\u9884\u6D4B" });
-  forecast.createEl("small", { text: "\u5DF2\u82B1\u91D1\u989D\uFF0B\u5386\u53F2\u5269\u4F59\u9636\u6BB5\u5E73\u5747\u652F\u51FA" });
-  const event = (_a = snapshot.events.find((item) => {
+  forecast.createEl("strong", { text: snapshot.forecastAvailable ? formatCents(snapshot.forecastCents) : ((_a = snapshot.fixedExpenses) == null ? void 0 : _a.available) === false ? "\u56FA\u5B9A\u652F\u51FA\u5F85\u786E\u8BA4" : "\u6570\u636E\u4E0D\u8DB3\uFF0C\u6682\u4E0D\u9884\u6D4B" });
+  forecast.createEl("small", { text: ((_b = snapshot.fixedExpenses) == null ? void 0 : _b.items.length) ? "\u5DF2\u82B1\uFF0B\u5386\u53F2\u5269\u4F59\u652F\u51FA\uFF08\u5254\u9664\u5DF2\u786E\u8BA4\u56FA\u5B9A\u9879\uFF09\uFF0B\u672C\u671F\u672A\u4ED8\u56FA\u5B9A\u9879" : "\u5DF2\u82B1\u91D1\u989D\uFF0B\u5386\u53F2\u5269\u4F59\u9636\u6BB5\u5E73\u5747\u652F\u51FA" });
+  const event = (_c = snapshot.events.find((item) => {
     var _a2;
     return item.id === ((_a2 = state.advice) == null ? void 0 : _a2.primaryEventId);
-  })) != null ? _a : snapshot.events[0];
-  const observation = card.createDiv({ cls: `ledger-advisor-observation is-${event.type}${((_b = state.advice) == null ? void 0 : _b.tone) === "warning" ? " is-warning" : ""}` });
+  })) != null ? _c : snapshot.events[0];
+  const observation = card.createDiv({ cls: `ledger-advisor-observation is-${event.type}${((_d = state.advice) == null ? void 0 : _d.tone) === "warning" ? " is-warning" : ""}` });
   observation.createDiv({ cls: "ledger-advisor-observation-label", text: state.advice ? "AI \u8D22\u52A1\u5224\u65AD" : "\u672C\u5730\u5019\u9009\u5224\u65AD" });
-  observation.createEl("h4", { text: (_d = (_c = state.advice) == null ? void 0 : _c.headline) != null ? _d : event.title });
-  observation.createEl("p", { text: (_f = (_e = state.advice) == null ? void 0 : _e.summary) != null ? _f : event.detail });
+  observation.createEl("h4", { text: (_f = (_e = state.advice) == null ? void 0 : _e.headline) != null ? _f : event.title });
+  observation.createEl("p", { text: (_h = (_g = state.advice) == null ? void 0 : _g.summary) != null ? _h : `${event.detail}${eventAdvice(event)}` });
   if (state.message) observation.createDiv({ cls: `ledger-advisor-ai-status is-${state.status}`, text: state.message });
   const evidence = card.createEl("details", { cls: "ledger-advisor-evidence" });
   evidence.createEl("summary", { text: "\u67E5\u770B\u5224\u65AD\u4F9D\u636E" });
   evidence.createEl("strong", { text: event.title });
   const evidenceList = evidence.createEl("ul");
-  for (const line of (_g = event.evidence) != null ? _g : [event.detail]) evidenceList.createEl("li", { text: line });
+  for (const line of (_i = event.evidence) != null ? _i : [event.detail]) evidenceList.createEl("li", { text: line });
+  if ((_j = snapshot.repeatedEvents) == null ? void 0 : _j.length) {
+    const repeated = card.createEl("details", { cls: "ledger-advisor-evidence" });
+    repeated.createEl("summary", { text: `\u5DF2\u63D0\u9192\u4E8B\u9879 \xB7 ${snapshot.repeatedEvents.length}` });
+    repeated.createEl("p", { text: "\u540C\u4E00\u5468\u671F\u5185\uFF0C\u91D1\u989D\u5F71\u54CD\u589E\u52A0\u81F3\u5C11 20% \u4E14\u4E0D\u5C11\u4E8E \xA550 \u65F6\u91CD\u65B0\u63D0\u9192\uFF1B\u9891\u6B21\u3001\u5BA2\u5355\u4EF7\u6216\u5360\u6BD4\u7EE7\u7EED\u660E\u663E\u589E\u52A0\u4E5F\u4F1A\u91CD\u63D0\u9192\u3002\u5DE5\u8D44\u8D85\u652F\u98CE\u9669\u6301\u7EED\u663E\u793A\u3002" });
+    for (const item of snapshot.repeatedEvents) {
+      repeated.createEl("strong", { text: item.title });
+      repeated.createEl("p", { text: item.detail });
+    }
+  }
+  if (onManageFixed) {
+    const fixed = card.createEl("details", { cls: "ledger-advisor-evidence" });
+    fixed.createEl("summary", { text: `\u56FA\u5B9A\u652F\u51FA \xB7 ${(_l = (_k = snapshot.fixedExpenses) == null ? void 0 : _k.items.length) != null ? _l : 0} \u9879${((_m = snapshot.fixedExpenses) == null ? void 0 : _m.available) === false ? "\u5F85\u6838\u5BF9" : ""}` });
+    fixed.createEl("p", { text: "\u5DE5\u8D44\u65E5\uFF1A\u6BCF\u6708 15 \u65E5\u3002\u624B\u52A8\u786E\u8BA4\u5B9E\u9645\u652F\u4ED8\u8BB0\u5F55\uFF0C\u4E0D\u4FEE\u6539\u8D26\u76EE\uFF1B\u672A\u914D\u7F6E\u65F6\u7EE7\u7EED\u6309\u5386\u53F2\u652F\u51FA\u53C2\u8003\u3002" });
+    const statuses = { paid: "\u5DF2\u4ED8", unpaid: "\u672A\u4ED8", none: "\u65E0\u9700\u652F\u4ED8", unconfirmed: "\u5F85\u786E\u8BA4" };
+    for (const item of (_o = (_n = snapshot.fixedExpenses) == null ? void 0 : _n.items) != null ? _o : []) {
+      fixed.createEl("p", { text: `${item.name} \xB7 ${statuses[item.status]} \xB7 ${formatCents(item.status === "paid" ? item.paidCents : item.amountCents)}` });
+      for (const issue of item.issues) fixed.createEl("small", { text: issue });
+    }
+    createButton(fixed, "\u7BA1\u7406\u56FA\u5B9A\u652F\u51FA").addEventListener("click", onManageFixed);
+  }
   if (coverage) {
     const issueCount = coverage.undated.length + coverage.cycles.reduce((sum, cycle) => sum + cycle.missingDates.length + cycle.problems.length, 0);
     const details = card.createEl("details", { cls: "ledger-advisor-coverage" });
-    details.createEl("summary", { text: issueCount ? `\u67E5\u770B\u6570\u636E\u7F3A\u53E3 \xB7 ${issueCount} \u9879` : "\u67E5\u770B\u6570\u636E\u5B8C\u6574\u6027 \xB7 \u8BB0\u5F55\u9F50\u5168" });
+    const zeroDays = coverage.cycles.reduce((sum, cycle) => sum + cycle.assumedZeroDates.length, 0);
+    details.createEl("summary", { text: issueCount ? `\u67E5\u770B\u7EDF\u8BA1\u53E3\u5F84 \xB7 ${issueCount} \u9879\u5F85\u6838\u5BF9` : zeroDays ? `\u67E5\u770B\u7EDF\u8BA1\u53E3\u5F84 \xB7 ${zeroDays} \u5929\u672A\u8BB0\u8D26\u6309\u96F6\u6D88\u8D39` : "\u67E5\u770B\u7EDF\u8BA1\u53E3\u5F84 \xB7 \u8BB0\u5F55\u9F50\u5168" });
+    details.createEl("p", { text: "\u672A\u8BB0\u8D26\u65E5\u671F\u6309 \xA50 \u53C2\u4E0E\u6D1E\u5BDF\uFF1B\u82E5\u6709\u6F0F\u8BB0\uFF0C\u8865\u8BB0\u540E\u4F1A\u91CD\u65B0\u8BA1\u7B97\u3002\u89E3\u6790\u6216\u91D1\u989D\u6838\u5BF9\u5F02\u5E38\u4ECD\u9700\u5904\u7406\uFF0C\u4E0D\u4F1A\u5F53\u6210\u96F6\u6D88\u8D39\u3002" });
     const problemLink = (path, reason) => {
       const row = details.createDiv({ cls: "ledger-advisor-data-issue" });
       const button = row.createEl("button", { text: path, attr: { type: "button" } });
@@ -1774,8 +2132,9 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
     };
     for (const cycle of coverage.cycles) {
       details.createEl("h4", { text: `${cycle.label}\uFF1A${cycle.range.start} \u2014 ${cycle.range.end}` });
-      if (!cycle.missingDates.length && !cycle.problems.length) details.createEl("p", { text: "\u6BCF\u5929\u5747\u6709\u53EF\u7528\u8D26\u672C\uFF0C\u5305\u542B\u660E\u786E\u8BB0\u5F55\u7684\u96F6\u6D88\u8D39\u65E5\u3002" });
-      if (cycle.missingDates.length) details.createEl("p", { text: `\u7F3A\u5C11\u65E5\u671F\uFF1A${cycle.missingDates.join("\u3001")}` });
+      if (!cycle.missingDates.length && !cycle.problems.length && !cycle.assumedZeroDates.length) details.createEl("p", { text: "\u6BCF\u5929\u5747\u6709\u53EF\u7528\u8D26\u672C\uFF0C\u5305\u542B\u660E\u786E\u8BB0\u5F55\u7684\u96F6\u6D88\u8D39\u65E5\u3002" });
+      if (cycle.assumedZeroDates.length) details.createEl("p", { text: `\u672A\u8BB0\u8D26\uFF0C\u6309\u96F6\u6D88\u8D39\uFF1A${cycle.assumedZeroDates.join("\u3001")}` });
+      if (cycle.missingDates.length) details.createEl("p", { text: `\u8BB0\u8D26\u8D77\u59CB\u4E4B\u524D\uFF0C\u672A\u7EB3\u5165\u5386\u53F2\u53C2\u8003\uFF1A${cycle.missingDates.join("\u3001")}` });
       for (const problem of cycle.problems) problemLink(problem.path, `${problem.date}\uFF1A${problem.reason}`);
     }
     if (coverage.undated.length) {
@@ -1783,7 +2142,7 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
       for (const problem of coverage.undated) problemLink(problem.path, problem.reason);
     }
   }
-  const adviceCategories = new Map((_i = (_h = state.advice) == null ? void 0 : _h.categoryLines.map((line) => [line.category, line.text])) != null ? _i : []);
+  const adviceCategories = new Map((_q = (_p = state.advice) == null ? void 0 : _p.categoryLines.map((line) => [line.category, line.text])) != null ? _q : []);
   const references = state.advice && adviceCategories.size > 0 ? snapshot.categories.filter((item) => adviceCategories.has(item.category)).slice(0, 3) : snapshot.categories.filter((item) => item.baselineCycleCents > 0 || item.currentCents > 0).sort((a, b) => b.remainingReferenceCents - a.remainingReferenceCents || b.baselineCycleCents - a.baselineCycleCents).slice(0, 3);
   if (references.length > 0 && snapshot.historyCycleCount > 0) {
     const section = card.createDiv({ cls: "ledger-advisor-categories" });
@@ -1796,7 +2155,7 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
       row.createSpan({ text: item.category });
       const value = row.createDiv();
       value.createEl("strong", { text: formatCents(item.remainingReferenceCents) });
-      value.createEl("small", { text: (_j = adviceCategories.get(item.category)) != null ? _j : `\u8FC7\u5F80\u5468\u671F\u5747\u503C ${formatCents(item.baselineCycleCents)}` });
+      value.createEl("small", { text: (_r = adviceCategories.get(item.category)) != null ? _r : `\u8FC7\u5F80\u5468\u671F\u5747\u503C ${formatCents(item.baselineCycleCents)}` });
     }
   }
   card.createDiv({ cls: "ledger-advisor-source", text: "CURRENT SALARY CYCLE \xB7 PREVIOUS 2 FULL CYCLES \xB7 ALL CATEGORIES SCANNED \xB7 LOCAL LEDGER" });
@@ -1874,7 +2233,7 @@ function renderStarredExpenses(parent, records, onClick) {
         attr: { type: "button", "aria-label": `${record.category} ${formatCents(record.cents)}\uFF0C${record.date}` }
       });
       const icon = item.createSpan({ cls: "ledger-starred-item-icon" });
-      (0, import_obsidian4.setIcon)(icon, "star");
+      (0, import_obsidian5.setIcon)(icon, "star");
       const copy = item.createDiv({ cls: "ledger-starred-copy" });
       const top = copy.createDiv({ cls: "ledger-starred-item-top" });
       top.createEl("strong", { text: record.category });
@@ -1949,7 +2308,7 @@ function addDateInput(parent, label, value, onChange) {
   input.addEventListener("change", () => onChange(input.value));
   return wrapper;
 }
-var LedgerStatisticsView = class extends import_obsidian5.ItemView {
+var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian6.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -1968,7 +2327,7 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
     this.financeAdviceLoading = false;
     this.financeAdviceError = "";
     this.financeAdviceAttemptedDate = "";
-    this.filtersExpanded = !import_obsidian5.Platform.isMobile;
+    this.filtersExpanded = !import_obsidian6.Platform.isMobile;
     this.drillContext = null;
     this.pullEligible = false;
     this.pullDistance = 0;
@@ -2060,6 +2419,12 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
     this.renderDrillBack(root);
     const content = root.createDiv({ cls: "ledger-content" });
     const files = [...this.plugin.repository.files.values()];
+    const orphanCount = unmatchedStarIds(this.plugin.settings.starredRecordIds, flattenRecords(files)).length;
+    if (orphanCount) {
+      const warning = content.createDiv({ cls: "ledger-star-warning" });
+      warning.createSpan({ text: `${orphanCount} \u4E2A\u661F\u6807\u65E0\u6CD5\u5339\u914D\uFF0C\u53EF\u80FD\u5F71\u54CD\u661F\u6807\u7B5B\u9009\u4E0E\u9884\u7B97\u53E3\u5F84\u3002` });
+      createButton(warning, "\u6838\u5BF9\u661F\u6807").addEventListener("click", () => new StarRepairModal(this.plugin).open());
+    }
     if (files.length === 0) {
       renderEmpty(content, `\u201C${this.plugin.settings.ledgerFolder}\u201D\u4E2D\u6CA1\u6709\u627E\u5230 Markdown \u8BB0\u8D26\u6587\u4EF6`);
     } else {
@@ -2072,7 +2437,7 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
     }
     this.renderDiagnostics(root);
     const next = VIEW_NAMES2[VIEW_NAMES2.findIndex(([id]) => id === this.activeView) + 1];
-    if (import_obsidian5.Platform.isMobile && next) {
+    if (import_obsidian6.Platform.isMobile && next) {
       this.pullHint = root.createDiv({ cls: "ledger-pull-hint" });
       this.pullHint.setText(`\u7EE7\u7EED\u4E0A\u62C9\uFF0C\u67E5\u770B${next[1]}`);
     }
@@ -2094,7 +2459,7 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
       attr: { type: "button", "aria-expanded": String(this.filtersExpanded) }
     });
     const summaryIcon = summary.createSpan({ cls: "ledger-filter-summary-icon" });
-    (0, import_obsidian5.setIcon)(summaryIcon, "sliders-horizontal");
+    (0, import_obsidian6.setIcon)(summaryIcon, "sliders-horizontal");
     const summaryCopy = summary.createSpan({ cls: "ledger-filter-summary-copy" });
     summaryCopy.createEl("strong", { text: "\u7B5B\u9009\u6761\u4EF6" });
     const categoryLabel = (_b = this.filter.categories[0]) != null ? _b : "\u5168\u90E8\u5206\u7C7B";
@@ -2102,7 +2467,7 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
     const dateLabel = this.filter.range.start === this.filter.range.end ? this.filter.range.start.slice(5).replace("-", ".") : `${this.filter.range.start.slice(5).replace("-", ".")}\u2013${this.filter.range.end.slice(5).replace("-", ".")}`;
     summaryCopy.createSpan({ text: `${dateLabel} \xB7 ${scopeLabel} \xB7 ${categoryLabel}` });
     const summaryChevron = summary.createSpan({ cls: "ledger-filter-summary-chevron" });
-    (0, import_obsidian5.setIcon)(summaryChevron, "chevron-down");
+    (0, import_obsidian6.setIcon)(summaryChevron, "chevron-down");
     const filterContent = panel.createDiv({ cls: "ledger-filter-content" });
     filterContent.toggleAttribute("inert", !this.filtersExpanded);
     const toolbar = filterContent.createDiv({ cls: "ledger-toolbar" });
@@ -2117,7 +2482,7 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
       attr: { type: "button", title: `\u5207\u6362\u5230\u4E0A\u4E00\u4E2A${periodName}`, "aria-label": `\u5207\u6362\u5230\u4E0A\u4E00\u4E2A${periodName}` }
     });
     const previousPeriodIcon = previousPeriod.createSpan({ cls: "ledger-period-icon" });
-    (0, import_obsidian5.setIcon)(previousPeriodIcon, "chevron-left");
+    (0, import_obsidian6.setIcon)(previousPeriodIcon, "chevron-left");
     previousPeriod.disabled = this.preset === "custom";
     previousPeriod.addEventListener("click", () => this.shiftPeriod(1));
     const nextPeriod = timeControls.createEl("button", {
@@ -2125,7 +2490,7 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
       attr: { type: "button", title: `\u8FD4\u56DE\u4E0B\u4E00\u4E2A${periodName}`, "aria-label": `\u8FD4\u56DE\u4E0B\u4E00\u4E2A${periodName}` }
     });
     const nextPeriodIcon = nextPeriod.createSpan({ cls: "ledger-period-icon" });
-    (0, import_obsidian5.setIcon)(nextPeriodIcon, "chevron-right");
+    (0, import_obsidian6.setIcon)(nextPeriodIcon, "chevron-right");
     nextPeriod.disabled = this.preset === "custom";
     nextPeriod.addEventListener("click", () => this.shiftPeriod(-1));
     const dates = toolbar.createDiv({ cls: "ledger-date-range", attr: { "aria-label": "\u65E5\u671F\u8303\u56F4" } });
@@ -2160,14 +2525,14 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
     });
     const refresh = toolbar.createEl("button", { cls: "ledger-button ledger-refresh-button" });
     const refreshIcon = refresh.createSpan({ cls: "ledger-refresh-icon" });
-    (0, import_obsidian5.setIcon)(refreshIcon, "refresh-cw");
+    (0, import_obsidian6.setIcon)(refreshIcon, "refresh-cw");
     refresh.createSpan({ cls: "ledger-refresh-text", text: "\u5237\u65B0\u6570\u636E" });
     refresh.addEventListener("click", async () => {
       refresh.disabled = true;
       refresh.addClass("is-refreshing");
       try {
         await this.plugin.repository.rescan();
-        new import_obsidian5.Notice("\u8BB0\u8D26\u7EDF\u8BA1\u5DF2\u5237\u65B0");
+        new import_obsidian6.Notice("\u8BB0\u8D26\u7EDF\u8BA1\u5DF2\u5237\u65B0");
       } finally {
         refresh.disabled = false;
         refresh.removeClass("is-refreshing");
@@ -2212,7 +2577,7 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
     copy.createDiv({ cls: "ledger-drill-back-range", text: `\u539F\u7B5B\u9009\uFF1A${rangeLabel(this.drillContext.filter.range)}` });
     const back = createButton(banner, "\u8FD4\u56DE\u4E0A\u4E00\u7EA7");
     back.addClass("ledger-drill-back-button");
-    (0, import_obsidian5.setIcon)(back.createSpan({ cls: "ledger-drill-back-icon" }), "arrow-left");
+    (0, import_obsidian6.setIcon)(back.createSpan({ cls: "ledger-drill-back-icon" }), "arrow-left");
     back.addEventListener("click", () => this.restoreDrillContext());
   }
   renderOverview(parent) {
@@ -2257,18 +2622,20 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
     renderStarredExpenses(parent, this.starredRecords(), (record) => void this.openRecord(record));
   }
   renderFinanceSection(parent, animate = true) {
-    var _a, _b, _c;
+    var _a, _b, _c, _d, _e, _f, _g, _h;
     const files = [...this.plugin.repository.files.values()];
-    const financeSnapshot = buildFinanceAdvisorSnapshot(
+    const now = /* @__PURE__ */ new Date();
+    const financeSnapshot = prioritizeFreshInsights(buildFinanceAdvisorSnapshot(
       flattenRecords(files),
-      /* @__PURE__ */ new Date(),
+      now,
       this.plugin.settings.salaryCents,
       this.plugin.settings.excludedCategories,
-      financeCompleteDates(files)
-    );
-    const cached = ((_a = this.plugin.settings.financeAdviceCache) == null ? void 0 : _a.date) === financeSnapshot.currentRange.end ? this.plugin.settings.financeAdviceCache.advice : null;
-    const stale = Boolean(cached && ((_b = this.plugin.settings.financeAdviceCache) == null ? void 0 : _b.fingerprint) !== financeSnapshotFingerprint(financeSnapshot));
-    const updatedAt = (_c = this.plugin.settings.financeAdviceCache) == null ? void 0 : _c.updatedAt;
+      financeCompleteDates(files, now),
+      (_a = this.plugin.settings.fixedExpenses) != null ? _a : []
+    ), (_b = this.plugin.settings.insightHistory) != null ? _b : []);
+    const cached = ((_c = this.plugin.settings.financeAdviceCache) == null ? void 0 : _c.date) === financeSnapshot.currentRange.end ? this.plugin.settings.financeAdviceCache.advice : null;
+    const stale = Boolean(cached && ((_d = this.plugin.settings.financeAdviceCache) == null ? void 0 : _d.fingerprint) !== financeSnapshotFingerprint(financeSnapshot));
+    const updatedAt = (_e = this.plugin.settings.financeAdviceCache) == null ? void 0 : _e.updatedAt;
     const cacheTime = updatedAt && Number.isFinite(Date.parse(updatedAt)) ? new Date(updatedAt).toLocaleString() : "\u65F6\u95F4\u672A\u77E5";
     const configured = this.plugin.settings.financeAiEnabled && Boolean(this.plugin.settings.financeAiEndpoint.trim()) && Boolean(this.plugin.settings.financeAiModel.trim());
     let financeState;
@@ -2291,9 +2658,22 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
       financeState,
       () => void this.loadFinanceAdvice(financeSnapshot, true),
       animate,
-      financeCoverageReport(files, /* @__PURE__ */ new Date()),
-      (path) => void this.app.workspace.openLinkText(path, "", false)
+      financeCoverageReport(files, now),
+      (path) => void this.app.workspace.openLinkText(path, "", false),
+      () => new FixedExpenseModal(this.plugin).open()
     );
+    const ownerDocument = parent.ownerDocument;
+    const cardRect = parent.getBoundingClientRect();
+    const viewRect = this.contentEl.getBoundingClientRect();
+    const visible = !ownerDocument.hidden && !ownerDocument.querySelector(".modal-container") && cardRect.bottom > viewRect.top && cardRect.top < viewRect.bottom;
+    if (visible && !this.financeAdviceLoading && this.app.workspace.getActiveViewOfType(_LedgerStatisticsView) === this && financeSnapshot.salaryCents > 0) {
+      const history = (_f = this.plugin.settings.insightHistory) != null ? _f : [];
+      const next = markInsightSeen(history, financeSnapshot, (_h = (_g = financeState.advice) == null ? void 0 : _g.primaryEventId) != null ? _h : financeSnapshot.events[0].id);
+      if (next !== history) {
+        this.plugin.settings.insightHistory = next;
+        void this.plugin.saveSettings(false, false).catch(() => new import_obsidian6.Notice("\u63D0\u9192\u9605\u8BFB\u72B6\u6001\u4FDD\u5B58\u5931\u8D25"));
+      }
+    }
     if (configured && financeSnapshot.salaryCents > 0 && this.plugin.settings.financeAdviceCache && !cached && !this.financeAdviceLoading && this.financeAdviceAttemptedDate !== financeSnapshot.currentRange.end) {
       this.financeAdviceAttemptedDate = financeSnapshot.currentRange.end;
       this.financeAutoTimer = window.setTimeout(() => {
@@ -2316,7 +2696,7 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
   async loadFinanceAdvice(snapshot, manual) {
     if (this.financeAdviceLoading || this.closed || !this.plugin.settings.financeAiEnabled) return;
     if (snapshot.salaryCents <= 0) {
-      if (manual) new import_obsidian5.Notice("\u8BF7\u5148\u5728\u63D2\u4EF6\u8BBE\u7F6E\u4E2D\u586B\u5199\u6BCF\u4E2A\u5DE5\u8D44\u5468\u671F\u5230\u8D26\u5DE5\u8D44");
+      if (manual) new import_obsidian6.Notice("\u8BF7\u5148\u5728\u63D2\u4EF6\u8BBE\u7F6E\u4E2D\u586B\u5199\u6BCF\u4E2A\u5DE5\u8D44\u5468\u671F\u5230\u8D26\u5DE5\u8D44");
       return;
     }
     this.financeAdviceLoading = true;
@@ -2338,11 +2718,11 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
         updatedAt: (/* @__PURE__ */ new Date()).toISOString()
       };
       await this.plugin.saveSettings(false, false);
-      if (manual) new import_obsidian5.Notice("\u8D22\u52A1\u5224\u65AD\u5DF2\u66F4\u65B0");
+      if (manual) new import_obsidian6.Notice("\u8D22\u52A1\u5224\u65AD\u5DF2\u66F4\u65B0");
     } catch (error) {
       if (!controller.signal.aborted && !this.closed) {
         this.financeAdviceError = error instanceof Error ? error.message : "AI \u8BF7\u6C42\u5931\u8D25";
-        if (manual) new import_obsidian5.Notice(this.financeAdviceError);
+        if (manual) new import_obsidian6.Notice(this.financeAdviceError);
       }
     } finally {
       if (this.financeController === controller) this.financeController = null;
@@ -2473,7 +2853,7 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
         cls: `ledger-star-toggle${this.isStarred(record) ? " is-active" : ""}`,
         attr: { type: "button", "aria-label": this.isStarred(record) ? "\u53D6\u6D88\u661F\u6807" : "\u6807\u8BB0\u4E3A\u661F\u6807" }
       });
-      (0, import_obsidian5.setIcon)(starButton, "star");
+      (0, import_obsidian6.setIcon)(starButton, "star");
       starButton.addEventListener("click", (event) => {
         event.stopPropagation();
         void this.toggleStar(record);
@@ -2500,7 +2880,7 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
         cls: `ledger-star-toggle${this.isStarred(record) ? " is-active" : ""}`,
         attr: { type: "button", "aria-label": this.isStarred(record) ? "\u53D6\u6D88\u661F\u6807" : "\u6807\u8BB0\u4E3A\u661F\u6807" }
       });
-      (0, import_obsidian5.setIcon)(starButton, "star");
+      (0, import_obsidian6.setIcon)(starButton, "star");
       starButton.addEventListener("click", (event) => {
         event.stopPropagation();
         void this.toggleStar(record);
@@ -2710,7 +3090,7 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
   }
   handleAutoAdvanceTouchStart(event) {
     this.resetAutoAdvanceArm();
-    if (!import_obsidian5.Platform.isMobile || event.touches.length !== 1 || !this.pullHint) return;
+    if (!import_obsidian6.Platform.isMobile || event.touches.length !== 1 || !this.pullHint) return;
     const target = event.target;
     if (target instanceof Element && target.closest("button, input, select, textarea, a, svg, .ledger-mobile-trend-scroll, .ledger-tabs, .ledger-header, .ledger-toolbar, .ledger-filter-panel")) {
       this.pullEligible = false;
@@ -2803,7 +3183,7 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
     this.plugin.settings.starredRecordIds = [...starred];
     await this.plugin.saveSettings(false, false);
     this.updateStarState(record, !wasStarred);
-    new import_obsidian5.Notice(wasStarred ? "\u5DF2\u53D6\u6D88\u661F\u6807" : "\u5DF2\u6807\u8BB0\u4E3A\u661F\u6807");
+    new import_obsidian6.Notice(wasStarred ? "\u5DF2\u53D6\u6D88\u661F\u6807" : "\u5DF2\u6807\u8BB0\u4E3A\u661F\u6807");
   }
   updateStarState(record, starred) {
     const elements = Array.from(this.contentEl.querySelectorAll("[data-ledger-record-id]"));
@@ -2846,7 +3226,7 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
   }
   showRecordMenu(record, event) {
     const starred = this.isStarred(record);
-    const menu = new import_obsidian5.Menu();
+    const menu = new import_obsidian6.Menu();
     menu.addItem((item) => item.setTitle(starred ? "\u53D6\u6D88\u661F\u6807" : "\u6807\u8BB0\u4E3A\u661F\u6807").setIcon("star").onClick(() => void this.toggleStar(record)));
     menu.addItem((item) => item.setTitle("\u6253\u5F00\u6765\u6E90").setIcon("file-text").onClick(() => void this.openRecord(record)));
     if (event instanceof MouseEvent) menu.showAtMouseEvent(event);
@@ -2878,14 +3258,14 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
   }
   async openPath(path, line) {
     const file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof import_obsidian5.TFile)) {
-      new import_obsidian5.Notice(`\u627E\u4E0D\u5230\u6765\u6E90\u6587\u4EF6\uFF1A${path}`);
+    if (!(file instanceof import_obsidian6.TFile)) {
+      new import_obsidian6.Notice(`\u627E\u4E0D\u5230\u6765\u6E90\u6587\u4EF6\uFF1A${path}`);
       return;
     }
     await this.app.workspace.getLeaf("tab").openFile(file);
     if (line) {
       window.requestAnimationFrame(() => {
-        const view = this.app.workspace.getActiveViewOfType(import_obsidian5.MarkdownView);
+        const view = this.app.workspace.getActiveViewOfType(import_obsidian6.MarkdownView);
         if (view) {
           view.editor.setCursor({ line: Math.max(0, line - 1), ch: 0 });
           view.editor.scrollIntoView({ from: { line: Math.max(0, line - 2), ch: 0 }, to: { line, ch: 0 } }, true);
@@ -2896,7 +3276,7 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
 };
 
 // src/main.ts
-var LedgerStatisticsPlugin = class extends import_obsidian6.Plugin {
+var LedgerStatisticsPlugin = class extends import_obsidian7.Plugin {
   constructor() {
     super(...arguments);
     this.settings = DEFAULT_SETTINGS;
@@ -2904,11 +3284,13 @@ var LedgerStatisticsPlugin = class extends import_obsidian6.Plugin {
   }
   async onload() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    this.settings.fixedExpenses = Array.isArray(this.settings.fixedExpenses) ? this.settings.fixedExpenses.filter((item) => item && typeof item.name === "string" && typeof item.id === "string" && item.payments && typeof item.payments === "object") : [];
+    this.settings.insightHistory = Array.isArray(this.settings.insightHistory) ? this.settings.insightHistory.filter((item) => item && typeof item.id === "string" && typeof item.cycle === "string" && typeof item.date === "string" && Number.isFinite(item.impact)) : [];
     this.budgetMonitor = new BudgetMonitor(
       () => this.settings,
-      (url) => (0, import_obsidian6.requestUrl)({ url, method: "GET", throw: true }),
+      (url) => (0, import_obsidian7.requestUrl)({ url, method: "GET", throw: true }),
       () => this.saveSettings(false, false),
-      (message) => new import_obsidian6.Notice(message),
+      (message) => new import_obsidian7.Notice(message),
       sharedRequestGate(`bark:${this.app.vault.getName()}`)
     );
     this.repository = new LedgerRepository(this.app, this.settings.ledgerFolder, () => {
@@ -2927,7 +3309,15 @@ var LedgerStatisticsPlugin = class extends import_obsidian6.Plugin {
     }
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
       const renamed = renameStarredIds(this.settings.starredRecordIds, oldPath, file.path);
-      if (JSON.stringify(renamed) !== JSON.stringify(this.settings.starredRecordIds)) {
+      let fixedChanged = false;
+      for (const item of this.settings.fixedExpenses) for (const [cycle, id] of Object.entries(item.payments)) {
+        const next = renameStarredIds([id], oldPath, file.path)[0];
+        if (next !== id) {
+          item.payments[cycle] = next;
+          fixedChanged = true;
+        }
+      }
+      if (fixedChanged || JSON.stringify(renamed) !== JSON.stringify(this.settings.starredRecordIds)) {
         this.settings.starredRecordIds = renamed;
         void this.saveSettings(false);
       }
