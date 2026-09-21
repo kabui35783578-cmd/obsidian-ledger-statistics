@@ -561,12 +561,13 @@ var import_obsidian4 = require("obsidian");
 // src/ui.ts
 var import_obsidian3 = require("obsidian");
 var SVG_NS = "http://www.w3.org/2000/svg";
-var INK = "#1C1C1A";
-var PAPER = "#F0EFEB";
-var MUTED = "#8F8E88";
-var FAINT = "#C6C5BF";
-var GRID = "#DEDDD6";
-var LADDER = ["#1C1C1A", "#4A4944", "#6A6963", "#8F8E88", "#B0AFA9", "#C6C5BF", "#D8D7D1"];
+var INK = "#1F1E1C";
+var PAPER = "#F0F0EE";
+var MUTED = "#8F8E86";
+var FAINT = "#C0BFB7";
+var GRID = "#DBDAD3";
+var HERO = "#F5572F";
+var LADDER = ["#22211F", "#4A4945", "#6E6D66", "#8F8E86", "#AAA9A2", "#C0BFB7", "#DBDAD3"];
 var MONTH_ESTIMATE_DAYS = 31;
 function svgEl(tag, attrs = {}) {
   const element = document.createElementNS(SVG_NS, tag);
@@ -718,8 +719,8 @@ function renderHorizontalBars(parent, data, onClick) {
         y1: y + 9,
         x2: x,
         y2: y - 2 - deterministic(tick + 1, index + 2) * 7,
-        stroke: index === 0 ? INK : LADDER[Math.min(index, 4)],
-        "stroke-width": 1,
+        stroke: index === 0 ? HERO : LADDER[Math.min(index, 4)],
+        "stroke-width": index === 0 ? 1.8 : 1,
         class: "ledger-fade",
         style: `animation-delay:${index * 0.08 + tick * 0.012}s`
       }));
@@ -793,8 +794,8 @@ function renderDonut(parent, data, onClick) {
         y1: inner.y,
         x2: outer.x,
         y2: outer.y,
-        stroke: LADDER[Math.min(categoryIndex, LADDER.length - 1)],
-        "stroke-width": 1,
+        stroke: categoryIndex === 0 ? HERO : LADDER[Math.min(categoryIndex, LADDER.length - 1)],
+        "stroke-width": categoryIndex === 0 ? 1.8 : 1,
         class: "ledger-fade",
         style: `animation-delay:${tick * 0.012}s`
       }));
@@ -859,7 +860,7 @@ function renderMobileTrend(parent, points, isLine, onClick) {
     if (!isLine) svg.append(svgEl("line", { x1: x, y1: base, x2: x, y2: y, stroke: index === peakIndex ? INK : MUTED, "stroke-width": index === peakIndex ? 2.4 : 1.4, class: "ledger-fade" }));
     if (isLine) {
       const group = svgEl("g", { class: "ledger-trend-point" });
-      group.append(svgEl("circle", { cx: x, cy: y, r: index === peakIndex ? 4.5 : 3, fill: INK, class: "ledger-pop ledger-trend-dot" }));
+      group.append(svgEl("circle", { cx: x, cy: y, r: index === peakIndex ? 4.8 : 3, fill: index === peakIndex ? HERO : INK, class: "ledger-pop ledger-trend-dot" }));
       if (index === peakIndex) {
         const peak = svgEl("text", { x, y: Math.max(19, y - 11), "text-anchor": "middle", class: "ledger-mobile-value-label ledger-peak-label ledger-persistent-peak" });
         peak.textContent = formatCents(point.cents);
@@ -944,7 +945,7 @@ function renderTrendChart(parent, points, type, onClick) {
     }
     if (isLine) {
       const group = svgEl("g", { class: "ledger-trend-point" });
-      group.append(svgEl("circle", { cx: x, cy: y, r: peaks.includes(index) ? 4.2 : 2.2, fill: index % 7 >= 5 ? PAPER : INK, stroke: INK, "stroke-width": 1, class: "ledger-pop ledger-trend-dot" }));
+      group.append(svgEl("circle", { cx: x, cy: y, r: peaks.includes(index) ? 4.2 : 2.2, fill: peaks.includes(index) ? HERO : index % 7 >= 5 ? PAPER : INK, stroke: peaks.includes(index) ? HERO : INK, "stroke-width": 1, class: "ledger-pop ledger-trend-dot" }));
       if (index === peaks[0]) {
         const peak = svgEl("text", { x, y: Math.max(18, y - 12), "text-anchor": "middle", class: "ledger-value-label ledger-peak-label ledger-persistent-peak" });
         peak.textContent = formatCents(point.cents);

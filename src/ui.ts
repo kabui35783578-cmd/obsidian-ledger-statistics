@@ -2,12 +2,14 @@ import { setIcon } from "obsidian";
 import { BudgetProgress, CategorySummary, LedgerRecord, TrendPoint, budgetProgress, formatCents } from "./core";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-const INK = "#1C1C1A";
-const PAPER = "#F0EFEB";
-const MUTED = "#8F8E88";
-const FAINT = "#C6C5BF";
-const GRID = "#DEDDD6";
-const LADDER = ["#1C1C1A", "#4A4944", "#6A6963", "#8F8E88", "#B0AFA9", "#C6C5BF", "#D8D7D1"];
+// Lieflat Charts "Wire": grayscale carries the data; orange marks one focal point.
+const INK = "#1F1E1C";
+const PAPER = "#F0F0EE";
+const MUTED = "#8F8E86";
+const FAINT = "#C0BFB7";
+const GRID = "#DBDAD3";
+const HERO = "#F5572F";
+const LADDER = ["#22211F", "#4A4945", "#6E6D66", "#8F8E86", "#AAA9A2", "#C0BFB7", "#DBDAD3"];
 const MONTH_ESTIMATE_DAYS = 31;
 
 function svgEl<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}): SVGElementTagNameMap[K] {
@@ -174,7 +176,7 @@ export function renderHorizontalBars(parent: HTMLElement, data: CategorySummary[
       const x = x0 + (tick + 0.5) * px;
       group.append(svgEl("line", {
         x1: x, y1: y + 9, x2: x, y2: y - 2 - deterministic(tick + 1, index + 2) * 7,
-        stroke: index === 0 ? INK : LADDER[Math.min(index, 4)], "stroke-width": 1,
+        stroke: index === 0 ? HERO : LADDER[Math.min(index, 4)], "stroke-width": index === 0 ? 1.8 : 1,
         class: "ledger-fade", style: `animation-delay:${index * 0.08 + tick * 0.012}s`
       }));
       if (tick % 5 === 4) group.append(svgEl("circle", { cx: x, cy: y + 14, r: 1, fill: FAINT }));
@@ -241,7 +243,7 @@ export function renderDonut(parent: HTMLElement, data: CategorySummary[], onClic
       const outer = polar(170, 145, 70 + length, angle);
       group.append(svgEl("line", {
         x1: inner.x, y1: inner.y, x2: outer.x, y2: outer.y,
-        stroke: LADDER[Math.min(categoryIndex, LADDER.length - 1)], "stroke-width": 1,
+        stroke: categoryIndex === 0 ? HERO : LADDER[Math.min(categoryIndex, LADDER.length - 1)], "stroke-width": categoryIndex === 0 ? 1.8 : 1,
         class: "ledger-fade", style: `animation-delay:${tick * 0.012}s`
       }));
       if (tick % 10 === 0) {
@@ -307,7 +309,7 @@ function renderMobileTrend(parent: HTMLElement, points: TrendPoint[], isLine: bo
     if (!isLine) svg.append(svgEl("line", { x1: x, y1: base, x2: x, y2: y, stroke: index === peakIndex ? INK : MUTED, "stroke-width": index === peakIndex ? 2.4 : 1.4, class: "ledger-fade" }));
     if (isLine) {
       const group = svgEl("g", { class: "ledger-trend-point" });
-      group.append(svgEl("circle", { cx: x, cy: y, r: index === peakIndex ? 4.5 : 3, fill: INK, class: "ledger-pop ledger-trend-dot" }));
+      group.append(svgEl("circle", { cx: x, cy: y, r: index === peakIndex ? 4.8 : 3, fill: index === peakIndex ? HERO : INK, class: "ledger-pop ledger-trend-dot" }));
       if (index === peakIndex) {
         const peak = svgEl("text", { x, y: Math.max(19, y - 11), "text-anchor": "middle", class: "ledger-mobile-value-label ledger-peak-label ledger-persistent-peak" });
         peak.textContent = formatCents(point.cents);
@@ -389,7 +391,7 @@ export function renderTrendChart(parent: HTMLElement, points: TrendPoint[], type
     }
     if (isLine) {
       const group = svgEl("g", { class: "ledger-trend-point" });
-      group.append(svgEl("circle", { cx: x, cy: y, r: peaks.includes(index) ? 4.2 : 2.2, fill: index % 7 >= 5 ? PAPER : INK, stroke: INK, "stroke-width": 1, class: "ledger-pop ledger-trend-dot" }));
+      group.append(svgEl("circle", { cx: x, cy: y, r: peaks.includes(index) ? 4.2 : 2.2, fill: peaks.includes(index) ? HERO : index % 7 >= 5 ? PAPER : INK, stroke: peaks.includes(index) ? HERO : INK, "stroke-width": 1, class: "ledger-pop ledger-trend-dot" }));
       if (index === peaks[0]) {
         const peak = svgEl("text", { x, y: Math.max(18, y - 12), "text-anchor": "middle", class: "ledger-value-label ledger-peak-label ledger-persistent-peak" });
         peak.textContent = formatCents(point.cents);

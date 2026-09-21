@@ -1,28 +1,34 @@
 .ledger-statistics-view {
-  --mono-paper: #f0efeb;
-  --mono-ink: #1c1c1a;
-  --mono-2: #4a4944;
-  --mono-3: #6a6963;
-  --mono-muted: #8f8e88;
-  --mono-5: #b0afa9;
-  --mono-faint: #c6c5bf;
-  --mono-grid: #deddd6;
-  --mono-7: #d8d7d1;
+  --mono-paper: #f0f0ee;
+  --mono-ink: #1f1e1c;
+  --mono-2: #4a4945;
+  --mono-3: #6e6d66;
+  --mono-muted: #8f8e86;
+  --mono-5: #aaa9a2;
+  --mono-faint: #c0bfb7;
+  --mono-grid: #dbdad3;
+  --mono-7: color-mix(in srgb, var(--mono-ink) 5%, var(--mono-paper));
+  --ledger-panel: color-mix(in srgb, var(--mono-ink) 4.5%, var(--mono-paper));
+  --ledger-panel-strong: color-mix(in srgb, var(--mono-ink) 8%, var(--mono-paper));
+  --ledger-accent: #f5572f;
   color: var(--mono-ink);
   font-family: Inter, var(--font-interface), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
 .theme-dark .ledger-statistics-view {
-  --mono-paper: #1c1c1a;
-  --mono-ink: #f0efeb;
+  --mono-paper: #1f1e1c;
+  --mono-ink: #f0f0ee;
   --mono-2: #dcdad2;
   --mono-3: #c9c7bd;
   --mono-muted: #b3b0a4;
   --mono-5: #8f8e88;
   --mono-faint: #6a6963;
-  --mono-grid: #2e2d29;
-  --mono-7: #2a2925;
+  --mono-grid: #393834;
+  --mono-7: #292826;
+  --ledger-panel: #292826;
+  --ledger-panel-strong: #33322f;
+  --ledger-accent: #f5572f;
 }
 
 .ledger-statistics-view.view-content,
@@ -185,6 +191,8 @@
 .ledger-header {
   justify-content: space-between;
   margin-bottom: 22px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--mono-ink);
 }
 
 .ledger-header h2 {
@@ -214,9 +222,9 @@
 
 .ledger-scope-badge {
   padding: 8px 12px;
-  border: 0;
+  border: 1px solid color-mix(in srgb, var(--mono-ink) 24%, transparent);
   border-radius: 999px;
-  background: var(--mono-grid);
+  background: transparent;
   white-space: nowrap;
 }
 
@@ -232,7 +240,7 @@
   padding: 18px;
   border: 0;
   border-radius: 24px;
-  background: var(--mono-7);
+  background: var(--ledger-panel);
 }
 
 .ledger-section-controls {
@@ -404,11 +412,19 @@
 .ledger-tabs {
   margin: 16px 0 22px;
   overflow-x: auto;
-  padding-bottom: 4px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid color-mix(in srgb, var(--mono-ink) 28%, transparent);
 }
 
 .ledger-tabs .ledger-button {
   flex: 0 0 auto;
+  background: transparent;
+}
+
+.ledger-tabs .ledger-button.is-active {
+  background: var(--mono-ink);
+  color: var(--mono-paper);
+  box-shadow: none !important;
 }
 
 .ledger-drill-back {
@@ -525,14 +541,26 @@
   border: 0 !important;
   border-radius: 24px;
   box-shadow: none !important;
-  background: var(--mono-grid) !important;
+  background: var(--ledger-panel-strong) !important;
   color: var(--mono-ink);
   text-align: left;
 }
 
 .ledger-metric:first-child {
+  position: relative;
   background: var(--mono-ink) !important;
   color: var(--mono-paper) !important;
+}
+
+.ledger-metric:first-child::before {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ledger-accent);
+  content: "";
 }
 
 button.ledger-metric {
@@ -572,7 +600,7 @@ button.ledger-metric:active {
   margin-bottom: 24px;
   padding: 25px 28px 19px;
   border-radius: 24px;
-  background: var(--mono-grid);
+  background: var(--ledger-panel-strong);
   color: var(--mono-ink);
 }
 
@@ -632,7 +660,11 @@ button.ledger-metric:active {
 
 .ledger-budget-status.is-over strong,
 .ledger-budget-status.is-over span {
-  color: #a33f3f;
+  color: var(--mono-ink);
+}
+
+.ledger-budget-status.is-over {
+  border-left-color: var(--ledger-accent);
 }
 
 .ledger-budget-values {
@@ -696,24 +728,21 @@ button.ledger-metric:active {
 
 .ledger-budget-fill {
   position: absolute;
-  inset: 0 auto 0 0;
-  width: var(--budget-progress);
+  inset: -1px auto -1px -1px;
+  width: calc(var(--budget-progress) + 1px);
   min-width: 0;
   overflow: hidden;
-  border-radius: 11px;
+  border-radius: inherit;
   background: var(--mono-ink);
   animation: ledger-budget-fill 760ms cubic-bezier(0.2, 0.75, 0.25, 1.1) both;
 }
 
 .ledger-budget-fill::after {
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(115deg, transparent 0 22px, rgba(240, 239, 235, 0.13) 22px 25px, transparent 25px 46px);
-  content: "";
+  content: none;
 }
 
 .ledger-budget-fill.is-over {
-  background: #a33f3f;
+  background: var(--ledger-accent);
 }
 
 .ledger-budget-detail {
@@ -726,7 +755,7 @@ button.ledger-metric:active {
 }
 
 .ledger-budget-detail.is-over {
-  color: #a33f3f;
+  color: var(--mono-ink);
   font-weight: 700;
 }
 
@@ -753,7 +782,7 @@ button.ledger-metric:active {
 
 @keyframes ledger-budget-fill {
   from { width: 0; }
-  to { width: var(--budget-progress); }
+  to { width: calc(var(--budget-progress) + 1px); }
 }
 
 .ledger-overview-grid {
@@ -771,7 +800,7 @@ button.ledger-metric:active {
   border: 0;
   border-radius: 24px;
   box-shadow: none;
-  background: var(--mono-paper);
+  background: var(--ledger-panel);
 }
 
 .ledger-mono-card h3 {
@@ -817,7 +846,7 @@ button.ledger-metric:active {
 }
 
 .ledger-axis-label {
-  fill: #6a6963;
+  fill: var(--mono-3);
   font-size: 8px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -825,7 +854,7 @@ button.ledger-metric:active {
 
 .ledger-value-label,
 .ledger-donut-total {
-  fill: #1c1c1a;
+  fill: var(--mono-ink);
   font-size: 10.5px;
   font-weight: 800;
 }
@@ -836,45 +865,41 @@ button.ledger-metric:active {
 }
 
 .ledger-count-label {
-  fill: #8f8e88;
+  fill: var(--mono-muted);
   font-size: 8px;
   font-weight: 600;
 }
 
 .ledger-foot-label {
-  fill: #b0afa9;
+  fill: var(--mono-5);
   font-size: 7px;
   font-weight: 600;
   letter-spacing: 0.1em;
 }
 
-.theme-dark .ledger-statistics-view .ledger-axis-label { fill: #c9c7bd; }
-.theme-dark .ledger-statistics-view .ledger-value-label,
-.theme-dark .ledger-statistics-view .ledger-donut-total { fill: #f0efeb; }
-.theme-dark .ledger-statistics-view .ledger-count-label { fill: #b3b0a4; }
-.theme-dark .ledger-statistics-view .ledger-foot-label { fill: #8f8e88; }
-.theme-dark .ledger-statistics-view .ledger-peak-label { stroke: #1c1c1a; }
-.theme-dark .ledger-statistics-view svg [stroke="#1C1C1A"] { stroke: #f0efeb; }
-.theme-dark .ledger-statistics-view svg [fill="#1C1C1A"] { fill: #f0efeb; }
-.theme-dark .ledger-statistics-view svg [stroke="#F0EFEB"] { stroke: #1c1c1a; }
-.theme-dark .ledger-statistics-view svg [fill="#F0EFEB"] { fill: #1c1c1a; }
-.theme-dark .ledger-statistics-view svg [stroke="#DEDDD6"] { stroke: #2e2d29; }
-.theme-dark .ledger-statistics-view svg [stroke="#4A4944"] { stroke: #dcdad2; }
-.theme-dark .ledger-statistics-view svg [stroke="#6A6963"] { stroke: #c9c7bd; }
-.theme-dark .ledger-statistics-view svg [stroke="#8F8E88"] { stroke: #b3b0a4; }
-.theme-dark .ledger-statistics-view svg [stroke="#B0AFA9"] { stroke: #8f8e88; }
-.theme-dark .ledger-statistics-view svg [stroke="#C6C5BF"] { stroke: #6a6963; }
-.theme-dark .ledger-statistics-view svg [stroke="#D8D7D1"] { stroke: #4a4944; }
-.theme-dark .ledger-statistics-view svg [fill="#4A4944"] { fill: #dcdad2; }
-.theme-dark .ledger-statistics-view svg [fill="#6A6963"] { fill: #c9c7bd; }
-.theme-dark .ledger-statistics-view svg [fill="#8F8E88"] { fill: #b3b0a4; }
-.theme-dark .ledger-statistics-view svg [fill="#B0AFA9"] { fill: #8f8e88; }
-.theme-dark .ledger-statistics-view svg [fill="#C6C5BF"] { fill: #6a6963; }
-.theme-dark .ledger-statistics-view svg [fill="#D8D7D1"] { fill: #4a4944; }
+.theme-dark .ledger-statistics-view .ledger-peak-label { stroke: #1f1e1c; }
+.theme-dark .ledger-statistics-view svg [stroke="#1F1E1C"],
+.theme-dark .ledger-statistics-view svg [stroke="#22211F"] { stroke: #f0f0ee; }
+.theme-dark .ledger-statistics-view svg [fill="#1F1E1C"],
+.theme-dark .ledger-statistics-view svg [fill="#22211F"] { fill: #f0f0ee; }
+.theme-dark .ledger-statistics-view svg [stroke="#F0F0EE"] { stroke: #1f1e1c; }
+.theme-dark .ledger-statistics-view svg [fill="#F0F0EE"] { fill: #1f1e1c; }
+.theme-dark .ledger-statistics-view svg [stroke="#DBDAD3"] { stroke: #4a4945; }
+.theme-dark .ledger-statistics-view svg [fill="#DBDAD3"] { fill: #4a4945; }
+.theme-dark .ledger-statistics-view svg [stroke="#4A4945"] { stroke: #dbdad3; }
+.theme-dark .ledger-statistics-view svg [fill="#4A4945"] { fill: #dbdad3; }
+.theme-dark .ledger-statistics-view svg [stroke="#6E6D66"] { stroke: #c0bfb7; }
+.theme-dark .ledger-statistics-view svg [fill="#6E6D66"] { fill: #c0bfb7; }
+.theme-dark .ledger-statistics-view svg [stroke="#8F8E86"] { stroke: #aaa9a2; }
+.theme-dark .ledger-statistics-view svg [fill="#8F8E86"] { fill: #aaa9a2; }
+.theme-dark .ledger-statistics-view svg [stroke="#AAA9A2"] { stroke: #8f8e86; }
+.theme-dark .ledger-statistics-view svg [fill="#AAA9A2"] { fill: #8f8e86; }
+.theme-dark .ledger-statistics-view svg [stroke="#C0BFB7"] { stroke: #6e6d66; }
+.theme-dark .ledger-statistics-view svg [fill="#C0BFB7"] { fill: #6e6d66; }
 
 .ledger-peak-label {
   paint-order: stroke;
-  stroke: #f0efeb;
+  stroke: var(--mono-paper);
   stroke-width: 4px;
 }
 
@@ -1124,21 +1149,21 @@ button.ledger-metric:active {
   cursor: pointer;
 }
 
-.ledger-calendar-day.is-level-0 { background: #f0efeb; outline: 0.7px solid #deddd6; }
-.ledger-calendar-day.is-level-1 { background: #d8d7d1; }
-.ledger-calendar-day.is-level-2 { background: #c6c5bf; }
-.ledger-calendar-day.is-level-3 { background: #b0afa9; }
-.ledger-calendar-day.is-level-4 { background: #8f8e88; color: #f0efeb; }
-.ledger-calendar-day.is-level-5 { background: #6a6963; color: #f0efeb; }
-.ledger-calendar-day.is-level-6 { background: #1c1c1a; color: #f0efeb; }
+.ledger-calendar-day.is-level-0 { background: #f0f0ee; outline: 0.7px solid #dbdad3; }
+.ledger-calendar-day.is-level-1 { background: #dbdad3; }
+.ledger-calendar-day.is-level-2 { background: #c0bfb7; }
+.ledger-calendar-day.is-level-3 { background: #aaa9a2; }
+.ledger-calendar-day.is-level-4 { background: #8f8e86; color: #f0f0ee; }
+.ledger-calendar-day.is-level-5 { background: #6e6d66; color: #f0f0ee; }
+.ledger-calendar-day.is-level-6 { background: #22211f; color: #f0f0ee; }
 
-.theme-dark .ledger-statistics-view .ledger-calendar-day.is-level-0 { background: #1c1c1a; outline-color: #2e2d29; }
+.theme-dark .ledger-statistics-view .ledger-calendar-day.is-level-0 { background: #1f1e1c; outline-color: #393834; }
 .theme-dark .ledger-statistics-view .ledger-calendar-day.is-level-1 { background: #2a2925; }
 .theme-dark .ledger-statistics-view .ledger-calendar-day.is-level-2 { background: #4a4944; }
 .theme-dark .ledger-statistics-view .ledger-calendar-day.is-level-3 { background: #6a6963; }
-.theme-dark .ledger-statistics-view .ledger-calendar-day.is-level-4 { background: #8f8e88; color: #1c1c1a; }
-.theme-dark .ledger-statistics-view .ledger-calendar-day.is-level-5 { background: #c9c7bd; color: #1c1c1a; }
-.theme-dark .ledger-statistics-view .ledger-calendar-day.is-level-6 { background: #f0efeb; color: #1c1c1a; }
+.theme-dark .ledger-statistics-view .ledger-calendar-day.is-level-4 { background: #8f8e86; color: #1f1e1c; }
+.theme-dark .ledger-statistics-view .ledger-calendar-day.is-level-5 { background: #c0bfb7; color: #1f1e1c; }
+.theme-dark .ledger-statistics-view .ledger-calendar-day.is-level-6 { background: #f0f0ee; color: #1f1e1c; }
 
 .ledger-calendar-day.is-missing {
   background: var(--mono-paper);
@@ -1631,8 +1656,8 @@ button.ledger-metric:active {
 
   .ledger-tabs {
     display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    gap: 4px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px 6px;
     margin: 12px 0 16px;
     overflow: visible;
     padding: 0;
@@ -1811,7 +1836,7 @@ button.ledger-metric:active {
   }
 
   .ledger-budget-values {
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 0.8fr);
+    grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
     gap: 12px;
     margin-top: 20px;
   }
@@ -1827,7 +1852,7 @@ button.ledger-metric:active {
   }
 
   .ledger-budget-divider {
-    height: 24px;
+    display: none;
   }
 
   .ledger-budget-track {
@@ -1922,7 +1947,7 @@ button.ledger-metric:active {
   }
 
   .ledger-mobile-tick.is-leading {
-    background: var(--mono-ink);
+    background: var(--ledger-accent);
   }
 
   .ledger-mobile-trend-scroll {
