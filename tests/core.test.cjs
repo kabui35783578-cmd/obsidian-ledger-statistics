@@ -21,6 +21,70 @@ function note(date, body, total = "0.00") {
   return `---\ntitle: ${date.replaceAll("-", "")} 日记账\ndate: ${date}\ntotal: ${total}\n---\n\n# 今日消费记录\n\n${body}\n\n## 今日汇总\n\n总支出：￥${total}\n`;
 }
 
+function coverage(start, end) {
+  const days = [];
+  for (let day = start; day <= end; day = require("../dist/core.cjs").addDays(day, 1)) days.push(day);
+  return days;
+}
+
+test("missing history is not a zero cycle and suppresses comparative anomalies", () => {
+  const records = parseLedgerFile("20260915.md", note("2026-09-15", "- 12:00｜住房｜￥2000.00", "2000.00")).records;
+  const result = buildFinanceAdvisorSnapshot(records, new Date(2026, 8, 15, 12), 500000, []);
+  assert.equal(result.historyCycleCount, 0);
+  assert.equal(result.forecastAvailable, false);
+  assert.deepEqual(result.events.map(e => e.id), ["stable"]);
+  assert.equal(result.events[0].title, "参考数据不足");
+});
+
+test("one complete cycle is averaged alone including explicit zero days", () => {
+  const records = parseLedgerFile("20260815.md", note("2026-08-15", "- 12:00｜餐饮｜￥100.00", "100.00")).records;
+  const dates = coverage("2026-08-15", "2026-09-15");
+  const result = buildFinanceAdvisorSnapshot(records, new Date(2026, 8, 15, 12), 500000, [], dates);
+  assert.equal(result.historyCycleCount, 1);
+  assert.equal(result.historicalAverageSpentCents, 10000);
+  assert.equal(result.forecastConfidence, "low");
+  const missing = buildFinanceAdvisorSnapshot(records, new Date(2026, 8, 15, 12), 500000, [], dates.filter(d => d !== "2026-08-20"));
+  assert.equal(missing.historyCycleCount, 0);
+});
+
+test("forecast adds historical remaining spending without multiplying payday rent", () => {
+  const records = ["2026-07-15", "2026-08-15", "2026-09-15"].flatMap(date =>
+    parseLedgerFile(`${date}.md`, note(date, "- 12:00｜住房｜￥2000.00", "2000.00")).records);
+  for (const date of ["2026-08-01", "2026-09-01"]) records.push(...parseLedgerFile(`${date}.md`, note(date, "- 12:00｜餐饮｜￥600.00", "600.00")).records);
+  const dates = coverage("2026-07-15", "2026-10-14");
+  const result = buildFinanceAdvisorSnapshot(records, new Date(2026, 8, 15, 12), 500000, [], dates);
+  assert.equal(result.forecastCents, 260000);
+  assert.equal(result.forecastAvailable, true);
+  assert.equal(result.forecastConfidence, "low");
+  const end = buildFinanceAdvisorSnapshot(records, new Date(2026, 9, 14, 12), 500000, [], dates);
+  assert.equal(end.forecastCents, end.currentSpentCents);
+  const gap = buildFinanceAdvisorSnapshot(records, new Date(2026, 8, 21, 12), 500000, [], dates.filter(d => d !== "2026-09-19"));
+  assert.equal(gap.forecastAvailable, false);
+  assert.deepEqual(gap.events.map(e => e.id), ["stable"]);
+});
+
+test("blank and invalid ledger days do not prove zero spending", () => {
+  const { financeCompleteDates } = require("../dist/core.cjs");
+  const zero = parseLedgerFile("20260915.md", note("2026-09-15", "", "0.00"));
+  const blank = { ...zero, frontmatterTotalCents: null };
+  assert.deepEqual(financeCompleteDates([zero]), ["2026-09-15"]);
+  assert.deepEqual(financeCompleteDates([blank]), []);
+  assert.deepEqual(financeCompleteDates([zero, { ...zero, diagnostics: [{ kind: "parse", path: "bad", reason: "bad" }] }]), []);
+});
+
+test("AI fingerprint invalidates cached results after spending, salary or coverage changes", () => {
+  const { financeSnapshotFingerprint, financeAiInput } = require("../dist/ai.cjs");
+  const snapshot = buildFinanceAdvisorSnapshot([], new Date(2026, 8, 15, 12), 500000, [], []);
+  const fingerprint = financeSnapshotFingerprint(snapshot);
+  assert.equal(fingerprint, financeSnapshotFingerprint(structuredClone(snapshot)));
+  for (const change of [{ currentSpentCents: 100 }, { salaryCents: 600000 }, { historyCycleCount: 1 }, { forecastAvailable: true }]) {
+    assert.notEqual(fingerprint, financeSnapshotFingerprint({ ...snapshot, ...change }));
+  }
+  const input = JSON.parse(financeAiInput(snapshot));
+  assert.equal(input.salary_summary.forecast, null);
+  assert.equal(input.salary_summary.historical_average, null);
+});
+
 test("parses ordinary, backfilled, thousands, one-decimal, spaces and full-width records into integer cents", () => {
   const raw = note("2026-09-12", [
     "- 11:50｜餐饮｜￥14.70（午饭）",
@@ -227,7 +291,7 @@ test("finance advisor subtracts all spending but analyzes consumption categories
     parseLedgerFile("记账/20260720日记账.md", note("2026-07-20", "- 12:00｜餐饮｜￥20.00", "20.00")),
     parseLedgerFile("记账/20260810日记账.md", note("2026-08-10", "- 12:00｜餐饮｜￥40.00", "40.00"))
   ].flatMap((file) => file.records);
-  const result = buildFinanceAdvisorSnapshot(records, new Date(2026, 8, 21, 12), 100_000, ["债务/还款"]);
+  const result = buildFinanceAdvisorSnapshot(records, new Date(2026, 8, 21, 12), 100_000, ["债务/还款"], coverage("2026-07-15", "2026-09-21"));
 
   assert.equal(result.currentSpentCents, 77_000);
   assert.equal(result.remainingSalaryCents, 23_000);

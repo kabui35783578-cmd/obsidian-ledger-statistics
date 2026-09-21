@@ -123,6 +123,9 @@ export interface FinanceAdvisorSnapshot {
   remainingSalaryCents: number;
   historicalAverageSpentCents: number;
   forecastCents: number;
+  historyCycleCount: number;
+  forecastAvailable: boolean;
+  forecastConfidence: "low" | "normal";
   categories: FinanceCategorySnapshot[];
   events: FinanceInsightEvent[];
 }
@@ -459,11 +462,23 @@ function categoryTotals(records: LedgerRecord[]): Map<string, { cents: number; c
   return totals;
 }
 
+export function financeCompleteDates(files: ParsedLedgerFile[]): string[] {
+  const valid = new Set<string>();
+  const invalid = new Set<string>();
+  for (const file of files) {
+    if (!file.date) continue;
+    if (file.diagnostics.length > 0 || (file.records.length === 0 && file.frontmatterTotalCents !== 0)) invalid.add(file.date);
+    else valid.add(file.date);
+  }
+  return [...valid].filter((date) => !invalid.has(date));
+}
+
 export function buildFinanceAdvisorSnapshot(
   records: LedgerRecord[],
   date: Date,
   salaryCents: number,
-  excludedCategories: string[]
+  excludedCategories: string[],
+  completeDates: string[] = [...new Set(records.map((record) => record.date))]
 ): FinanceAdvisorSnapshot {
   const currentRange = salaryDayRange(date);
   const fullCurrentRange = salaryCycleFullRange(date);
@@ -473,13 +488,27 @@ export function buildFinanceAdvisorSnapshot(
   const currentAll = recordsInRange(records, currentRange);
   const currentSpentCents = currentAll.reduce((sum, record) => sum + record.cents, 0);
   const remainingSalaryCents = salaryCents - currentSpentCents;
-  const previousFull = previousRanges.map((range) => recordsInRange(records, range));
+  const recordedDates = new Set(completeDates);
+  const usableRanges = previousRanges.filter((range) => {
+    for (let day = range.start; day <= range.end; day = addDays(day, 1)) {
+      if (!recordedDates.has(day)) return false;
+    }
+    return true;
+  });
+  const historyCycleCount = usableRanges.length;
+  const previousFull = usableRanges.map((range) => recordsInRange(records, range));
   const historicalAverageSpentCents = average(previousFull.map((items) => items.reduce((sum, record) => sum + record.cents, 0)));
-  const forecastCents = elapsedDays === 0 ? currentSpentCents : Math.round(currentSpentCents / elapsedDays * totalDays);
+  const currentCoverage = Array.from({ length: elapsedDays }, (_, index) => addDays(currentRange.start, index))
+    .every((day) => recordedDates.has(day));
+  const forecastAvailable = historyCycleCount > 0 && currentCoverage;
+  const forecastCents = currentSpentCents + (elapsedDays >= totalDays ? 0 : average(usableRanges.map((range) =>
+    recordsInRange(records, { start: addDays(range.start, elapsedDays), end: range.end })
+      .reduce((sum, record) => sum + record.cents, 0))));
+  const forecastConfidence = historyCycleCount < 2 || elapsedDays < 7 ? "low" : "normal";
   const excluded = new Set(excludedCategories);
   const consumption = (items: LedgerRecord[]): LedgerRecord[] => items.filter((record) => !excluded.has(record.category));
   const currentConsumption = consumption(currentAll);
-  const previousProgress = previousRanges.map((range) => consumption(recordsInRange(records, {
+  const previousProgress = usableRanges.map((range) => consumption(recordsInRange(records, {
     start: range.start,
     end: addDays(range.start, Math.min(elapsedDays, daysInclusive(range)) - 1)
   })));
@@ -512,26 +541,27 @@ export function buildFinanceAdvisorSnapshot(
   }).sort((a, b) => b.baselineCycleCents - a.baselineCycleCents || b.currentCents - a.currentCents);
 
   const events: FinanceInsightEvent[] = [];
-  if (salaryCents > 0 && forecastCents > salaryCents) {
+  if (forecastAvailable && salaryCents > 0 && forecastCents > salaryCents) {
     const excess = forecastCents - salaryCents;
     events.push({
       id: "salary-pressure",
       type: "salary-pressure",
-      priority: 100 + Math.min(40, Math.round(excess / Math.max(1, salaryCents) * 100)),
-      title: "本周期支出速度偏快",
-      detail: `按当前速度，周期末支出可能比工资多 ${formatCents(excess)}。`
+      priority: forecastConfidence === "low" ? 35 : 100 + Math.min(40, Math.round(excess / Math.max(1, salaryCents) * 100)),
+      title: forecastConfidence === "low" ? "周期末支出需继续观察" : "周期末支出可能超过工资",
+      detail: `按已花金额加历史剩余阶段支出参考，周期末可能比工资多 ${formatCents(excess)}。${forecastConfidence === "low" ? "目前置信度较低，仅供参考。" : ""}`
     });
-  } else if (salaryCents > 0) {
+  } else if (forecastAvailable && salaryCents > 0) {
     events.push({
       id: "salary-pace",
       type: "salary-pace",
       priority: 30,
-      title: "本周期仍在工资范围内",
-      detail: `按当前速度，周期末预计支出 ${formatCents(forecastCents)}。`
+      title: "周期末支出参考",
+      detail: `按已花金额加历史剩余阶段支出，周期末参考 ${formatCents(forecastCents)}。${forecastConfidence === "low" ? "目前置信度较低。" : ""}`
     });
   }
 
   for (const item of snapshots) {
+    if (historyCycleCount < 2 || !currentCoverage) continue;
     const amountDifference = item.currentCents - item.baselineProgressCents;
     const amountThreshold = Math.max(5_000, Math.round(item.baselineProgressCents * 0.25));
     if (amountDifference >= amountThreshold && (item.currentCount >= 2 || amountDifference >= 10_000)) {
@@ -590,6 +620,7 @@ export function buildFinanceAdvisorSnapshot(
   }
   let largeExpenseIndex = 0;
   for (const record of currentConsumption) {
+    if (historyCycleCount < 2 || !currentCoverage || (historicalByCategory.get(record.category)?.length ?? 0) < 3) continue;
     const historicalMedian = median(historicalByCategory.get(record.category) ?? []);
     const threshold = Math.max(10_000, Math.round(salaryCents * 0.05), historicalMedian * 3);
     if (record.cents >= threshold) {
@@ -605,7 +636,11 @@ export function buildFinanceAdvisorSnapshot(
     }
   }
 
-  events.push({ id: "stable", type: "stable", priority: 10, title: "暂未发现明显变化", detail: "当前消费结构与前两个工资周期同期接近。" });
+  events.push({ id: "stable", type: "stable", priority: 10,
+    title: historyCycleCount < 2 || !currentCoverage ? "参考数据不足" : "暂未发现明显变化",
+    detail: historyCycleCount < 2 || !currentCoverage
+      ? `可用完整历史周期 ${historyCycleCount}/2；缺失或存在核对问题的账本不按零消费处理，暂不判断消费异常。`
+      : "暂未触发可靠的异常提醒。" });
   events.sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id, "zh-CN"));
 
   return {
@@ -619,6 +654,9 @@ export function buildFinanceAdvisorSnapshot(
     remainingSalaryCents,
     historicalAverageSpentCents,
     forecastCents,
+    historyCycleCount,
+    forecastAvailable,
+    forecastConfidence,
     categories: snapshots,
     events
   };

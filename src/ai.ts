@@ -126,6 +126,8 @@ export function parseFinanceAdvice(raw: string, snapshot: FinanceAdvisorSnapshot
 
 export function financeSnapshotFingerprint(snapshot: FinanceAdvisorSnapshot): string {
   const source = JSON.stringify({
+    schema: 2,
+    snapshot,
     date: snapshot.currentRange.end,
     salary: snapshot.salaryCents,
     spent: snapshot.currentSpentCents,
@@ -153,8 +155,12 @@ export function financeAiInput(snapshot: FinanceAdvisorSnapshot): string {
       salary: formatCents(snapshot.salaryCents),
       current_spent: formatCents(snapshot.currentSpentCents),
       remaining_salary: formatCents(snapshot.remainingSalaryCents),
-      previous_two_cycles_average: formatCents(snapshot.historicalAverageSpentCents),
-      current_pace_forecast: formatCents(snapshot.forecastCents)
+      available_complete_cycles: snapshot.historyCycleCount,
+      historical_average: snapshot.historyCycleCount > 0 ? formatCents(snapshot.historicalAverageSpentCents) : null,
+      forecast: snapshot.forecastAvailable ? formatCents(snapshot.forecastCents) : null,
+      forecast_method: "当前已花加历史周期同阶段之后的平均支出；不按日均放大固定支出",
+      forecast_confidence: snapshot.forecastAvailable ? snapshot.forecastConfidence : "unavailable",
+      data_guidance: "历史少于两个完整周期时不得宣称相较两周期异常；低置信度预测仅作参考，不能当成确定超支。"
     },
     candidate_events: snapshot.events.map((event) => ({
       id: event.id,
@@ -167,8 +173,8 @@ export function financeAiInput(snapshot: FinanceAdvisorSnapshot): string {
     category_references: snapshot.categories.map((item) => ({
       category: item.category,
       current_spent: formatCents(item.currentCents),
-      previous_two_cycles_average: formatCents(item.baselineCycleCents),
-      reference_remaining: formatCents(item.remainingReferenceCents)
+      historical_average: snapshot.historyCycleCount > 0 ? formatCents(item.baselineCycleCents) : null,
+      reference_remaining: snapshot.historyCycleCount > 0 ? formatCents(item.remainingReferenceCents) : null
     }))
   });
 }

@@ -346,8 +346,18 @@ function categoryTotals(records) {
   }
   return totals;
 }
-function buildFinanceAdvisorSnapshot(records, date, salaryCents, excludedCategories) {
-  var _a, _b;
+function financeCompleteDates(files) {
+  const valid = /* @__PURE__ */ new Set();
+  const invalid = /* @__PURE__ */ new Set();
+  for (const file of files) {
+    if (!file.date) continue;
+    if (file.diagnostics.length > 0 || file.records.length === 0 && file.frontmatterTotalCents !== 0) invalid.add(file.date);
+    else valid.add(file.date);
+  }
+  return [...valid].filter((date) => !invalid.has(date));
+}
+function buildFinanceAdvisorSnapshot(records, date, salaryCents, excludedCategories, completeDates = [...new Set(records.map((record) => record.date))]) {
+  var _a, _b, _c, _d;
   const currentRange = salaryDayRange(date);
   const fullCurrentRange = salaryCycleFullRange(date);
   const previousRanges = [salaryCycleFullRange(date, 1), salaryCycleFullRange(date, 2)];
@@ -356,13 +366,24 @@ function buildFinanceAdvisorSnapshot(records, date, salaryCents, excludedCategor
   const currentAll = recordsInRange(records, currentRange);
   const currentSpentCents = currentAll.reduce((sum, record) => sum + record.cents, 0);
   const remainingSalaryCents = salaryCents - currentSpentCents;
-  const previousFull = previousRanges.map((range) => recordsInRange(records, range));
+  const recordedDates = new Set(completeDates);
+  const usableRanges = previousRanges.filter((range) => {
+    for (let day = range.start; day <= range.end; day = addDays(day, 1)) {
+      if (!recordedDates.has(day)) return false;
+    }
+    return true;
+  });
+  const historyCycleCount = usableRanges.length;
+  const previousFull = usableRanges.map((range) => recordsInRange(records, range));
   const historicalAverageSpentCents = average(previousFull.map((items) => items.reduce((sum, record) => sum + record.cents, 0)));
-  const forecastCents = elapsedDays === 0 ? currentSpentCents : Math.round(currentSpentCents / elapsedDays * totalDays);
+  const currentCoverage = Array.from({ length: elapsedDays }, (_, index) => addDays(currentRange.start, index)).every((day) => recordedDates.has(day));
+  const forecastAvailable = historyCycleCount > 0 && currentCoverage;
+  const forecastCents = currentSpentCents + (elapsedDays >= totalDays ? 0 : average(usableRanges.map((range) => recordsInRange(records, { start: addDays(range.start, elapsedDays), end: range.end }).reduce((sum, record) => sum + record.cents, 0))));
+  const forecastConfidence = historyCycleCount < 2 || elapsedDays < 7 ? "low" : "normal";
   const excluded = new Set(excludedCategories);
   const consumption = (items) => items.filter((record) => !excluded.has(record.category));
   const currentConsumption = consumption(currentAll);
-  const previousProgress = previousRanges.map((range) => consumption(recordsInRange(records, {
+  const previousProgress = usableRanges.map((range) => consumption(recordsInRange(records, {
     start: range.start,
     end: addDays(range.start, Math.min(elapsedDays, daysInclusive(range)) - 1)
   })));
@@ -404,25 +425,26 @@ function buildFinanceAdvisorSnapshot(records, date, salaryCents, excludedCategor
     };
   }).sort((a, b) => b.baselineCycleCents - a.baselineCycleCents || b.currentCents - a.currentCents);
   const events = [];
-  if (salaryCents > 0 && forecastCents > salaryCents) {
+  if (forecastAvailable && salaryCents > 0 && forecastCents > salaryCents) {
     const excess = forecastCents - salaryCents;
     events.push({
       id: "salary-pressure",
       type: "salary-pressure",
-      priority: 100 + Math.min(40, Math.round(excess / Math.max(1, salaryCents) * 100)),
-      title: "\u672C\u5468\u671F\u652F\u51FA\u901F\u5EA6\u504F\u5FEB",
-      detail: `\u6309\u5F53\u524D\u901F\u5EA6\uFF0C\u5468\u671F\u672B\u652F\u51FA\u53EF\u80FD\u6BD4\u5DE5\u8D44\u591A ${formatCents(excess)}\u3002`
+      priority: forecastConfidence === "low" ? 35 : 100 + Math.min(40, Math.round(excess / Math.max(1, salaryCents) * 100)),
+      title: forecastConfidence === "low" ? "\u5468\u671F\u672B\u652F\u51FA\u9700\u7EE7\u7EED\u89C2\u5BDF" : "\u5468\u671F\u672B\u652F\u51FA\u53EF\u80FD\u8D85\u8FC7\u5DE5\u8D44",
+      detail: `\u6309\u5DF2\u82B1\u91D1\u989D\u52A0\u5386\u53F2\u5269\u4F59\u9636\u6BB5\u652F\u51FA\u53C2\u8003\uFF0C\u5468\u671F\u672B\u53EF\u80FD\u6BD4\u5DE5\u8D44\u591A ${formatCents(excess)}\u3002${forecastConfidence === "low" ? "\u76EE\u524D\u7F6E\u4FE1\u5EA6\u8F83\u4F4E\uFF0C\u4EC5\u4F9B\u53C2\u8003\u3002" : ""}`
     });
-  } else if (salaryCents > 0) {
+  } else if (forecastAvailable && salaryCents > 0) {
     events.push({
       id: "salary-pace",
       type: "salary-pace",
       priority: 30,
-      title: "\u672C\u5468\u671F\u4ECD\u5728\u5DE5\u8D44\u8303\u56F4\u5185",
-      detail: `\u6309\u5F53\u524D\u901F\u5EA6\uFF0C\u5468\u671F\u672B\u9884\u8BA1\u652F\u51FA ${formatCents(forecastCents)}\u3002`
+      title: "\u5468\u671F\u672B\u652F\u51FA\u53C2\u8003",
+      detail: `\u6309\u5DF2\u82B1\u91D1\u989D\u52A0\u5386\u53F2\u5269\u4F59\u9636\u6BB5\u652F\u51FA\uFF0C\u5468\u671F\u672B\u53C2\u8003 ${formatCents(forecastCents)}\u3002${forecastConfidence === "low" ? "\u76EE\u524D\u7F6E\u4FE1\u5EA6\u8F83\u4F4E\u3002" : ""}`
     });
   }
   for (const item of snapshots) {
+    if (historyCycleCount < 2 || !currentCoverage) continue;
     const amountDifference = item.currentCents - item.baselineProgressCents;
     const amountThreshold = Math.max(5e3, Math.round(item.baselineProgressCents * 0.25));
     if (amountDifference >= amountThreshold && (item.currentCount >= 2 || amountDifference >= 1e4)) {
@@ -480,7 +502,8 @@ function buildFinanceAdvisorSnapshot(records, date, salaryCents, excludedCategor
   }
   let largeExpenseIndex = 0;
   for (const record of currentConsumption) {
-    const historicalMedian = median((_b = historicalByCategory.get(record.category)) != null ? _b : []);
+    if (historyCycleCount < 2 || !currentCoverage || ((_c = (_b = historicalByCategory.get(record.category)) == null ? void 0 : _b.length) != null ? _c : 0) < 3) continue;
+    const historicalMedian = median((_d = historicalByCategory.get(record.category)) != null ? _d : []);
     const threshold = Math.max(1e4, Math.round(salaryCents * 0.05), historicalMedian * 3);
     if (record.cents >= threshold) {
       events.push({
@@ -494,7 +517,13 @@ function buildFinanceAdvisorSnapshot(records, date, salaryCents, excludedCategor
       largeExpenseIndex += 1;
     }
   }
-  events.push({ id: "stable", type: "stable", priority: 10, title: "\u6682\u672A\u53D1\u73B0\u660E\u663E\u53D8\u5316", detail: "\u5F53\u524D\u6D88\u8D39\u7ED3\u6784\u4E0E\u524D\u4E24\u4E2A\u5DE5\u8D44\u5468\u671F\u540C\u671F\u63A5\u8FD1\u3002" });
+  events.push({
+    id: "stable",
+    type: "stable",
+    priority: 10,
+    title: historyCycleCount < 2 || !currentCoverage ? "\u53C2\u8003\u6570\u636E\u4E0D\u8DB3" : "\u6682\u672A\u53D1\u73B0\u660E\u663E\u53D8\u5316",
+    detail: historyCycleCount < 2 || !currentCoverage ? `\u53EF\u7528\u5B8C\u6574\u5386\u53F2\u5468\u671F ${historyCycleCount}/2\uFF1B\u7F3A\u5931\u6216\u5B58\u5728\u6838\u5BF9\u95EE\u9898\u7684\u8D26\u672C\u4E0D\u6309\u96F6\u6D88\u8D39\u5904\u7406\uFF0C\u6682\u4E0D\u5224\u65AD\u6D88\u8D39\u5F02\u5E38\u3002` : "\u6682\u672A\u89E6\u53D1\u53EF\u9760\u7684\u5F02\u5E38\u63D0\u9192\u3002"
+  });
   events.sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id, "zh-CN"));
   return {
     currentRange,
@@ -507,6 +536,9 @@ function buildFinanceAdvisorSnapshot(records, date, salaryCents, excludedCategor
     remainingSalaryCents,
     historicalAverageSpentCents,
     forecastCents,
+    historyCycleCount,
+    forecastAvailable,
+    forecastConfidence,
     categories: snapshots,
     events
   };
@@ -915,6 +947,8 @@ function parseFinanceAdvice(raw, snapshot) {
 }
 function financeSnapshotFingerprint(snapshot) {
   const source = JSON.stringify({
+    schema: 2,
+    snapshot,
     date: snapshot.currentRange.end,
     salary: snapshot.salaryCents,
     spent: snapshot.currentSpentCents,
@@ -941,8 +975,12 @@ function financeAiInput(snapshot) {
       salary: formatCents(snapshot.salaryCents),
       current_spent: formatCents(snapshot.currentSpentCents),
       remaining_salary: formatCents(snapshot.remainingSalaryCents),
-      previous_two_cycles_average: formatCents(snapshot.historicalAverageSpentCents),
-      current_pace_forecast: formatCents(snapshot.forecastCents)
+      available_complete_cycles: snapshot.historyCycleCount,
+      historical_average: snapshot.historyCycleCount > 0 ? formatCents(snapshot.historicalAverageSpentCents) : null,
+      forecast: snapshot.forecastAvailable ? formatCents(snapshot.forecastCents) : null,
+      forecast_method: "\u5F53\u524D\u5DF2\u82B1\u52A0\u5386\u53F2\u5468\u671F\u540C\u9636\u6BB5\u4E4B\u540E\u7684\u5E73\u5747\u652F\u51FA\uFF1B\u4E0D\u6309\u65E5\u5747\u653E\u5927\u56FA\u5B9A\u652F\u51FA",
+      forecast_confidence: snapshot.forecastAvailable ? snapshot.forecastConfidence : "unavailable",
+      data_guidance: "\u5386\u53F2\u5C11\u4E8E\u4E24\u4E2A\u5B8C\u6574\u5468\u671F\u65F6\u4E0D\u5F97\u5BA3\u79F0\u76F8\u8F83\u4E24\u5468\u671F\u5F02\u5E38\uFF1B\u4F4E\u7F6E\u4FE1\u5EA6\u9884\u6D4B\u4EC5\u4F5C\u53C2\u8003\uFF0C\u4E0D\u80FD\u5F53\u6210\u786E\u5B9A\u8D85\u652F\u3002"
     },
     candidate_events: snapshot.events.map((event) => {
       var _a;
@@ -958,8 +996,8 @@ function financeAiInput(snapshot) {
     category_references: snapshot.categories.map((item) => ({
       category: item.category,
       current_spent: formatCents(item.currentCents),
-      previous_two_cycles_average: formatCents(item.baselineCycleCents),
-      reference_remaining: formatCents(item.remainingReferenceCents)
+      historical_average: snapshot.historyCycleCount > 0 ? formatCents(item.baselineCycleCents) : null,
+      reference_remaining: snapshot.historyCycleCount > 0 ? formatCents(item.remainingReferenceCents) : null
     }))
   });
 }
@@ -1553,11 +1591,12 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh) {
   spent.createSpan({ text: "\u672C\u6B21\u81EA\u5DE5\u8D44\u65E5\u652F\u51FA" });
   spent.createEl("strong", { text: formatCents(snapshot.currentSpentCents) });
   const average2 = summary.createDiv({ cls: "ledger-advisor-summary-item" });
-  average2.createSpan({ text: "\u524D\u4E24\u4E2A\u5B8C\u6574\u5468\u671F\u5E73\u5747" });
-  average2.createEl("strong", { text: formatCents(snapshot.historicalAverageSpentCents) });
+  average2.createSpan({ text: snapshot.historyCycleCount === 2 ? "\u524D\u4E24\u4E2A\u5B8C\u6574\u5468\u671F\u5E73\u5747" : `\u53EF\u7528\u5386\u53F2\u5468\u671F ${snapshot.historyCycleCount}/2` });
+  average2.createEl("strong", { text: snapshot.historyCycleCount > 0 ? formatCents(snapshot.historicalAverageSpentCents) : "\u53C2\u8003\u6570\u636E\u4E0D\u8DB3" });
   const forecast = summary.createDiv({ cls: "ledger-advisor-summary-item" });
-  forecast.createSpan({ text: "\u7167\u5F53\u524D\u901F\u5EA6\u5468\u671F\u672B\u7EA6" });
-  forecast.createEl("strong", { text: formatCents(snapshot.forecastCents) });
+  forecast.createSpan({ text: `\u5468\u671F\u672B\u652F\u51FA\u53C2\u8003${snapshot.forecastAvailable && snapshot.forecastConfidence === "low" ? " \xB7 \u4F4E\u7F6E\u4FE1\u5EA6" : ""}` });
+  forecast.createEl("strong", { text: snapshot.forecastAvailable ? formatCents(snapshot.forecastCents) : "\u6570\u636E\u4E0D\u8DB3\uFF0C\u6682\u4E0D\u9884\u6D4B" });
+  forecast.createEl("small", { text: "\u5DF2\u82B1\u91D1\u989D\uFF0B\u5386\u53F2\u5269\u4F59\u9636\u6BB5\u5E73\u5747\u652F\u51FA" });
   const event = snapshot.events[0];
   const observation = card.createDiv({ cls: `ledger-advisor-observation is-${event.type}${((_a = state.advice) == null ? void 0 : _a.tone) === "warning" ? " is-warning" : ""}` });
   observation.createDiv({ cls: "ledger-advisor-observation-label", text: state.advice ? "AI \u8D22\u52A1\u5224\u65AD" : "\u672C\u5730\u5019\u9009\u5224\u65AD" });
@@ -1566,10 +1605,10 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh) {
   if (state.message) observation.createDiv({ cls: `ledger-advisor-ai-status is-${state.status}`, text: state.message });
   const adviceCategories = new Map((_g = (_f = state.advice) == null ? void 0 : _f.categoryLines.map((line) => [line.category, line.text])) != null ? _g : []);
   const references = state.advice && adviceCategories.size > 0 ? snapshot.categories.filter((item) => adviceCategories.has(item.category)).slice(0, 3) : snapshot.categories.filter((item) => item.baselineCycleCents > 0 || item.currentCents > 0).sort((a, b) => b.remainingReferenceCents - a.remainingReferenceCents || b.baselineCycleCents - a.baselineCycleCents).slice(0, 3);
-  if (references.length > 0) {
+  if (references.length > 0 && snapshot.historyCycleCount > 0) {
     const section = card.createDiv({ cls: "ledger-advisor-categories" });
     const sectionHeading = section.createDiv({ cls: "ledger-advisor-section-heading" });
-    sectionHeading.createSpan({ text: "\u5206\u7C7B\u53C2\u8003\u4F59\u91CF" });
+    sectionHeading.createSpan({ text: snapshot.historyCycleCount === 2 ? "\u5206\u7C7B\u53C2\u8003\u4F59\u91CF" : "\u5206\u7C7B\u53C2\u8003\u4F59\u91CF \xB7 \u4EC5\u4E00\u4E2A\u5386\u53F2\u5468\u671F" });
     sectionHeading.createEl("small", { text: `\u5DF2\u626B\u63CF ${snapshot.categories.length} \u4E2A\u5206\u7C7B` });
     const list = section.createDiv({ cls: "ledger-advisor-category-list" });
     for (const item of references) {
@@ -1972,7 +2011,7 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
     back.addEventListener("click", () => this.restoreDrillContext());
   }
   renderOverview(parent) {
-    var _a;
+    var _a, _b, _c;
     const files = [...this.plugin.repository.files.values()];
     const records = filteredRecords(files, this.filter);
     const stats = summarize(files, records, this.filter.range);
@@ -2001,9 +2040,13 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
       flattenRecords(files),
       /* @__PURE__ */ new Date(),
       this.plugin.settings.salaryCents,
-      this.plugin.settings.excludedCategories
+      this.plugin.settings.excludedCategories,
+      financeCompleteDates(files)
     );
     const cached = ((_a = this.plugin.settings.financeAdviceCache) == null ? void 0 : _a.date) === financeSnapshot.currentRange.end ? this.plugin.settings.financeAdviceCache.advice : null;
+    const stale = Boolean(cached && ((_b = this.plugin.settings.financeAdviceCache) == null ? void 0 : _b.fingerprint) !== financeSnapshotFingerprint(financeSnapshot));
+    const updatedAt = (_c = this.plugin.settings.financeAdviceCache) == null ? void 0 : _c.updatedAt;
+    const cacheTime = updatedAt && Number.isFinite(Date.parse(updatedAt)) ? new Date(updatedAt).toLocaleString() : "\u65F6\u95F4\u672A\u77E5";
     const configured = this.plugin.settings.financeAiEnabled && Boolean(this.plugin.settings.financeAiEndpoint.trim()) && Boolean(this.plugin.settings.financeAiModel.trim());
     let financeState;
     if (!this.plugin.settings.financeAiEnabled) {
@@ -2011,9 +2054,9 @@ var LedgerStatisticsView = class extends import_obsidian5.ItemView {
     } else if (!configured) {
       financeState = { status: "unconfigured", advice: null, message: "\u8BF7\u5148\u5728\u8BBE\u7F6E\u4E2D\u586B\u5199 AI \u63A5\u53E3\u548C\u6A21\u578B\u3002", canRefresh: false };
     } else if (this.financeAdviceLoading) {
-      financeState = { status: "loading", advice: cached, message: "\u6B63\u5728\u5224\u65AD\u6700\u503C\u5F97\u5173\u6CE8\u7684\u53D8\u5316\uFF0C\u6700\u957F\u7B49\u5F85 60 \u79D2\u2026", canRefresh: true };
+      financeState = { status: "loading", advice: stale ? null : cached, message: "\u6B63\u5728\u5224\u65AD\u6700\u503C\u5F97\u5173\u6CE8\u7684\u53D8\u5316\uFF0C\u6700\u957F\u7B49\u5F85 60 \u79D2\u2026", canRefresh: true };
     } else if (cached) {
-      financeState = { status: "ready", advice: cached, message: "\u4ECA\u65E5\u7ED3\u679C\u5DF2\u7F13\u5B58\uFF1B\u8D26\u76EE\u53D8\u5316\u540E\u53EF\u624B\u52A8\u91CD\u65B0\u5224\u65AD\u3002", canRefresh: true };
+      financeState = { status: "ready", advice: stale ? null : cached, message: `${this.financeAdviceError ? `\u672C\u6B21\u5237\u65B0\u5931\u8D25\uFF1A${this.financeAdviceError}\u3002` : ""}${stale ? "\u8D26\u76EE\u6216\u7EDF\u8BA1\u4F9D\u636E\u5DF2\u53D8\u5316\uFF0CAI \u5224\u65AD\u5F85\u66F4\u65B0\uFF1B\u5F53\u524D\u663E\u793A\u672C\u5730\u5224\u65AD\u3002" : "\u4ECA\u65E5\u5224\u65AD\u5DF2\u7F13\u5B58\u3002"}\u4E0A\u6B21\u751F\u6210\uFF1A${cacheTime}\u3002`, canRefresh: true };
     } else if (this.financeAdviceError) {
       financeState = { status: "error", advice: null, message: `${this.financeAdviceError}\uFF0C\u5DF2\u56DE\u9000\u4E3A\u672C\u5730\u5224\u65AD\u3002`, canRefresh: true };
     } else {

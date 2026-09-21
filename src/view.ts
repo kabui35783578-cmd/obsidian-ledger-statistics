@@ -10,6 +10,7 @@ import {
   addDays,
   barkPushUrl,
   buildFinanceAdvisorSnapshot,
+  financeCompleteDates,
   budgetScopedRecords,
   categorySummaries,
   compareValue,
@@ -378,11 +379,15 @@ export class LedgerStatisticsView extends ItemView {
       flattenRecords(files),
       new Date(),
       this.plugin.settings.salaryCents,
-      this.plugin.settings.excludedCategories
+      this.plugin.settings.excludedCategories,
+      financeCompleteDates(files)
     );
     const cached = this.plugin.settings.financeAdviceCache?.date === financeSnapshot.currentRange.end
       ? this.plugin.settings.financeAdviceCache.advice
       : null;
+    const stale = Boolean(cached && this.plugin.settings.financeAdviceCache?.fingerprint !== financeSnapshotFingerprint(financeSnapshot));
+    const updatedAt = this.plugin.settings.financeAdviceCache?.updatedAt;
+    const cacheTime = updatedAt && Number.isFinite(Date.parse(updatedAt)) ? new Date(updatedAt).toLocaleString() : "时间未知";
     const configured = this.plugin.settings.financeAiEnabled
       && Boolean(this.plugin.settings.financeAiEndpoint.trim())
       && Boolean(this.plugin.settings.financeAiModel.trim());
@@ -392,9 +397,9 @@ export class LedgerStatisticsView extends ItemView {
     } else if (!configured) {
       financeState = { status: "unconfigured", advice: null, message: "请先在设置中填写 AI 接口和模型。", canRefresh: false };
     } else if (this.financeAdviceLoading) {
-      financeState = { status: "loading", advice: cached, message: "正在判断最值得关注的变化，最长等待 60 秒…", canRefresh: true };
+      financeState = { status: "loading", advice: stale ? null : cached, message: "正在判断最值得关注的变化，最长等待 60 秒…", canRefresh: true };
     } else if (cached) {
-      financeState = { status: "ready", advice: cached, message: "今日结果已缓存；账目变化后可手动重新判断。", canRefresh: true };
+      financeState = { status: "ready", advice: stale ? null : cached, message: `${this.financeAdviceError ? `本次刷新失败：${this.financeAdviceError}。` : ""}${stale ? "账目或统计依据已变化，AI 判断待更新；当前显示本地判断。" : "今日判断已缓存。"}上次生成：${cacheTime}。`, canRefresh: true };
     } else if (this.financeAdviceError) {
       financeState = { status: "error", advice: null, message: `${this.financeAdviceError}，已回退为本地判断。`, canRefresh: true };
     } else {

@@ -555,11 +555,12 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
   spent.createSpan({ text: "本次自工资日支出" });
   spent.createEl("strong", { text: formatCents(snapshot.currentSpentCents) });
   const average = summary.createDiv({ cls: "ledger-advisor-summary-item" });
-  average.createSpan({ text: "前两个完整周期平均" });
-  average.createEl("strong", { text: formatCents(snapshot.historicalAverageSpentCents) });
+  average.createSpan({ text: snapshot.historyCycleCount === 2 ? "前两个完整周期平均" : `可用历史周期 ${snapshot.historyCycleCount}/2` });
+  average.createEl("strong", { text: snapshot.historyCycleCount > 0 ? formatCents(snapshot.historicalAverageSpentCents) : "参考数据不足" });
   const forecast = summary.createDiv({ cls: "ledger-advisor-summary-item" });
-  forecast.createSpan({ text: "照当前速度周期末约" });
-  forecast.createEl("strong", { text: formatCents(snapshot.forecastCents) });
+  forecast.createSpan({ text: `周期末支出参考${snapshot.forecastAvailable && snapshot.forecastConfidence === "low" ? " · 低置信度" : ""}` });
+  forecast.createEl("strong", { text: snapshot.forecastAvailable ? formatCents(snapshot.forecastCents) : "数据不足，暂不预测" });
+  forecast.createEl("small", { text: "已花金额＋历史剩余阶段平均支出" });
 
   const event = snapshot.events[0];
   const observation = card.createDiv({ cls: `ledger-advisor-observation is-${event.type}${state.advice?.tone === "warning" ? " is-warning" : ""}` });
@@ -575,10 +576,10 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
       .filter((item) => item.baselineCycleCents > 0 || item.currentCents > 0)
       .sort((a, b) => b.remainingReferenceCents - a.remainingReferenceCents || b.baselineCycleCents - a.baselineCycleCents)
       .slice(0, 3);
-  if (references.length > 0) {
+  if (references.length > 0 && snapshot.historyCycleCount > 0) {
     const section = card.createDiv({ cls: "ledger-advisor-categories" });
     const sectionHeading = section.createDiv({ cls: "ledger-advisor-section-heading" });
-    sectionHeading.createSpan({ text: "分类参考余量" });
+    sectionHeading.createSpan({ text: snapshot.historyCycleCount === 2 ? "分类参考余量" : "分类参考余量 · 仅一个历史周期" });
     sectionHeading.createEl("small", { text: `已扫描 ${snapshot.categories.length} 个分类` });
     const list = section.createDiv({ cls: "ledger-advisor-category-list" });
     for (const item of references) {
