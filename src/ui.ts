@@ -525,7 +525,7 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
   const heading = card.createDiv({ cls: "ledger-advisor-heading" });
   const copy = heading.createDiv({ cls: "ledger-advisor-heading-copy" });
   copy.createDiv({ cls: "ledger-advisor-badge", text: "AI FINANCE BRIEF · SALARY CYCLE" });
-  copy.createEl("h3", { text: "财务观察" });
+  copy.createEl("h3", { text: "洞察" });
   copy.createDiv({ cls: "ledger-advisor-period", text: `${snapshot.currentRange.start.replace(/-/g, ".")} — ${snapshot.currentRange.end.replace(/-/g, ".")}` });
 
   if (state.canRefresh) {
@@ -539,7 +539,7 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
   if (snapshot.salaryCents <= 0) {
     card.addClass("is-empty");
     const empty = card.createDiv({ cls: "ledger-advisor-empty" });
-    empty.createEl("strong", { text: state.canRefresh ? "AI 已配置，还差工资金额" : "填写工资后启用财务观察" });
+    empty.createEl("strong", { text: state.canRefresh ? "AI 已配置，还差工资金额" : "填写工资后启用洞察" });
     empty.createSpan({ text: "请在插件设置中填写“每个工资周期到账工资”。余额、周期预测和 AI 判断都依赖这项数据。" });
     if (state.message) empty.createDiv({ cls: `ledger-advisor-ai-status is-${state.status}`, text: state.message });
     card.createDiv({ cls: "ledger-advisor-source", text: "SALARY CYCLE · TWO-CYCLE BASELINE · LOCAL LEDGER" });

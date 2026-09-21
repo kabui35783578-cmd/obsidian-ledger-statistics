@@ -706,7 +706,7 @@ var LedgerSettingTab = class extends import_obsidian2.PluginSettingTab {
       this.plugin.settings.excludedCategories = [...new Set(value.split(/[,，]/).map((item) => item.trim()).filter(Boolean))];
       await this.plugin.saveSettings(false);
     }));
-    new import_obsidian2.Setting(this.containerEl).setName("\u6BCF\u4E2A\u5DE5\u8D44\u5468\u671F\u5230\u8D26\u5DE5\u8D44").setDesc("\u7528\u4E8E\u8D22\u52A1\u89C2\u5BDF\u5361\u7247\u3002\u4F59\u989D\u4F1A\u7528\u8FD9\u7B14\u5DE5\u8D44\u51CF\u53BB\u672C\u5DE5\u8D44\u5468\u671F\u5185\u7684\u5168\u90E8\u652F\u51FA\uFF1B\u6570\u636E\u4EC5\u4FDD\u5B58\u5728\u672C\u5730\u3002").addText((text) => {
+    new import_obsidian2.Setting(this.containerEl).setName("\u6BCF\u4E2A\u5DE5\u8D44\u5468\u671F\u5230\u8D26\u5DE5\u8D44").setDesc("\u7528\u4E8E\u6D1E\u5BDF\u5361\u7247\u3002\u4F59\u989D\u4F1A\u7528\u8FD9\u7B14\u5DE5\u8D44\u51CF\u53BB\u672C\u5DE5\u8D44\u5468\u671F\u5185\u7684\u5168\u90E8\u652F\u51FA\uFF1B\u6570\u636E\u4EC5\u4FDD\u5B58\u5728\u672C\u5730\u3002").addText((text) => {
       text.setPlaceholder("\u4F8B\u5982 8000").setValue(this.moneyValue(this.plugin.settings.salaryCents)).onChange(async (value) => {
         const trimmed = value.trim();
         if (!trimmed) {
@@ -1527,7 +1527,7 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh) {
   const heading = card.createDiv({ cls: "ledger-advisor-heading" });
   const copy = heading.createDiv({ cls: "ledger-advisor-heading-copy" });
   copy.createDiv({ cls: "ledger-advisor-badge", text: "AI FINANCE BRIEF \xB7 SALARY CYCLE" });
-  copy.createEl("h3", { text: "\u8D22\u52A1\u89C2\u5BDF" });
+  copy.createEl("h3", { text: "\u6D1E\u5BDF" });
   copy.createDiv({ cls: "ledger-advisor-period", text: `${snapshot.currentRange.start.replace(/-/g, ".")} \u2014 ${snapshot.currentRange.end.replace(/-/g, ".")}` });
   if (state.canRefresh) {
     const refresh = heading.createEl("button", { cls: "ledger-advisor-refresh", attr: { type: "button", "aria-label": "\u91CD\u65B0\u751F\u6210\u8D22\u52A1\u5224\u65AD" } });
@@ -1539,7 +1539,7 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh) {
   if (snapshot.salaryCents <= 0) {
     card.addClass("is-empty");
     const empty = card.createDiv({ cls: "ledger-advisor-empty" });
-    empty.createEl("strong", { text: state.canRefresh ? "AI \u5DF2\u914D\u7F6E\uFF0C\u8FD8\u5DEE\u5DE5\u8D44\u91D1\u989D" : "\u586B\u5199\u5DE5\u8D44\u540E\u542F\u7528\u8D22\u52A1\u89C2\u5BDF" });
+    empty.createEl("strong", { text: state.canRefresh ? "AI \u5DF2\u914D\u7F6E\uFF0C\u8FD8\u5DEE\u5DE5\u8D44\u91D1\u989D" : "\u586B\u5199\u5DE5\u8D44\u540E\u542F\u7528\u6D1E\u5BDF" });
     empty.createSpan({ text: "\u8BF7\u5728\u63D2\u4EF6\u8BBE\u7F6E\u4E2D\u586B\u5199\u201C\u6BCF\u4E2A\u5DE5\u8D44\u5468\u671F\u5230\u8D26\u5DE5\u8D44\u201D\u3002\u4F59\u989D\u3001\u5468\u671F\u9884\u6D4B\u548C AI \u5224\u65AD\u90FD\u4F9D\u8D56\u8FD9\u9879\u6570\u636E\u3002" });
     if (state.message) empty.createDiv({ cls: `ledger-advisor-ai-status is-${state.status}`, text: state.message });
     card.createDiv({ cls: "ledger-advisor-source", text: "SALARY CYCLE \xB7 TWO-CYCLE BASELINE \xB7 LOCAL LEDGER" });

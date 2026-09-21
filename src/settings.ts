@@ -115,7 +115,7 @@ export class LedgerSettingTab extends PluginSettingTab {
 
     new Setting(this.containerEl)
       .setName("每个工资周期到账工资")
-      .setDesc("用于财务观察卡片。余额会用这笔工资减去本工资周期内的全部支出；数据仅保存在本地。")
+      .setDesc("用于洞察卡片。余额会用这笔工资减去本工资周期内的全部支出；数据仅保存在本地。")
       .addText((text) => {
         text
           .setPlaceholder("例如 8000")

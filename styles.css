@@ -424,6 +424,13 @@
   box-shadow: none !important;
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .ledger-tabs .ledger-button:not(.is-active):hover {
+    background: var(--mono-grid);
+    color: var(--mono-ink);
+  }
+}
+
 .ledger-drill-back {
   display: flex;
   align-items: center;
@@ -657,7 +664,19 @@ button.ledger-advisor-refresh:disabled svg {
 }
 
 .ledger-advisor-observation-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   color: var(--mono-muted);
+}
+
+.ledger-advisor-observation-label::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  flex: 0 0 5px;
+  border-radius: 50%;
+  background: var(--ledger-accent);
 }
 
 .ledger-advisor-badge::before {
@@ -743,23 +762,11 @@ button.ledger-advisor-refresh:disabled svg {
 }
 
 .ledger-advisor-observation {
-  position: relative;
   margin-top: 9px;
-  padding: 17px 18px 17px 22px;
+  padding: 17px 18px;
   border: 0;
   border-radius: 15px;
   background: var(--mono-ink);
-}
-
-.ledger-advisor-observation::before {
-  content: "";
-  position: absolute;
-  top: 19px;
-  left: 10px;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--ledger-accent);
 }
 
 .ledger-advisor-observation h4 {
