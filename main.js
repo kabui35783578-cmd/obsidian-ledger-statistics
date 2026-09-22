@@ -508,30 +508,25 @@ function buildFinanceAdvisorSnapshot(records, date, salaryCents, excludedCategor
     end: addDays(range.start, Math.min(elapsedDays, daysInclusive(range)) - 1)
   })));
   const currentTotals = categoryTotals(currentConsumption);
-  const previousProgressTotals = previousProgress.map(categoryTotals);
+  const historicalProgressTotals = categoryTotals(previousProgress.flat());
   const previousFullTotals = previousFull.map((items) => categoryTotals(consumption(items)));
   const currentCategoryRecords = (category) => currentConsumption.filter((record) => record.category === category);
   const categories = /* @__PURE__ */ new Set([
     ...currentTotals.keys(),
-    ...previousProgressTotals.flatMap((totals) => [...totals.keys()]),
+    ...historicalProgressTotals.keys(),
     ...previousFullTotals.flatMap((totals) => [...totals.keys()])
   ]);
   const currentConsumptionTotal = currentConsumption.reduce((sum, record) => sum + record.cents, 0);
   const baselineProgressTotal = average(previousProgress.map((items) => items.reduce((sum, record) => sum + record.cents, 0)));
   const snapshots = [...categories].map((category) => {
-    var _a2;
+    var _a2, _b2;
     const current = (_a2 = currentTotals.get(category)) != null ? _a2 : { cents: 0, count: 0 };
-    const baselineProgressCents = average(previousProgressTotals.map((totals) => {
-      var _a3, _b2;
-      return (_b2 = (_a3 = totals.get(category)) == null ? void 0 : _a3.cents) != null ? _b2 : 0;
-    }));
-    const baselineProgressCount = average(previousProgressTotals.map((totals) => {
-      var _a3, _b2;
-      return (_b2 = (_a3 = totals.get(category)) == null ? void 0 : _a3.count) != null ? _b2 : 0;
-    }));
+    const historical = (_b2 = historicalProgressTotals.get(category)) != null ? _b2 : { cents: 0, count: 0 };
+    const baselineProgressCents = historyCycleCount === 0 ? 0 : Math.round(historical.cents / historyCycleCount);
+    const baselineProgressCount = historyCycleCount === 0 ? 0 : historical.count / historyCycleCount;
     const baselineCycleCents = average(previousFullTotals.map((totals) => {
-      var _a3, _b2;
-      return (_b2 = (_a3 = totals.get(category)) == null ? void 0 : _a3.cents) != null ? _b2 : 0;
+      var _a3, _b3;
+      return (_b3 = (_a3 = totals.get(category)) == null ? void 0 : _a3.cents) != null ? _b3 : 0;
     }));
     return {
       category,
@@ -594,7 +589,8 @@ function buildFinanceAdvisorSnapshot(records, date, salaryCents, excludedCategor
       });
     }
     const currentTicket = item.currentCount === 0 ? 0 : Math.round(item.currentCents / item.currentCount);
-    const baselineTicket = item.baselineProgressCount === 0 ? 0 : Math.round(item.baselineProgressCents / item.baselineProgressCount);
+    const historical = historicalProgressTotals.get(item.category);
+    const baselineTicket = (historical == null ? void 0 : historical.count) ? Math.round(historical.cents / historical.count) : 0;
     if (item.currentCount >= 2 && item.baselineProgressCount >= 2 && currentTicket - baselineTicket >= 2e3 && currentTicket >= baselineTicket * 1.3) {
       events.push({
         id: `ticket-spike:${item.category}`,

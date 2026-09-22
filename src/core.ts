@@ -608,20 +608,22 @@ export function buildFinanceAdvisorSnapshot(
     end: addDays(range.start, Math.min(elapsedDays, daysInclusive(range)) - 1)
   })));
   const currentTotals = categoryTotals(currentConsumption);
-  const previousProgressTotals = previousProgress.map(categoryTotals);
+  const historicalProgressTotals = categoryTotals(previousProgress.flat());
   const previousFullTotals = previousFull.map((items) => categoryTotals(consumption(items)));
   const currentCategoryRecords = (category: string): LedgerRecord[] => currentConsumption.filter((record) => record.category === category);
   const categories = new Set<string>([
     ...currentTotals.keys(),
-    ...previousProgressTotals.flatMap((totals) => [...totals.keys()]),
+    ...historicalProgressTotals.keys(),
     ...previousFullTotals.flatMap((totals) => [...totals.keys()])
   ]);
   const currentConsumptionTotal = currentConsumption.reduce((sum, record) => sum + record.cents, 0);
   const baselineProgressTotal = average(previousProgress.map((items) => items.reduce((sum, record) => sum + record.cents, 0)));
   const snapshots: FinanceCategorySnapshot[] = [...categories].map((category) => {
     const current = currentTotals.get(category) ?? { cents: 0, count: 0 };
-    const baselineProgressCents = average(previousProgressTotals.map((totals) => totals.get(category)?.cents ?? 0));
-    const baselineProgressCount = average(previousProgressTotals.map((totals) => totals.get(category)?.count ?? 0));
+    const historical = historicalProgressTotals.get(category) ?? { cents: 0, count: 0 };
+    const baselineProgressCents = historyCycleCount === 0 ? 0 : Math.round(historical.cents / historyCycleCount);
+    // Counts may average to half a transaction; rounding would distort frequency and ticket comparisons.
+    const baselineProgressCount = historyCycleCount === 0 ? 0 : historical.count / historyCycleCount;
     const baselineCycleCents = average(previousFullTotals.map((totals) => totals.get(category)?.cents ?? 0));
     return {
       category,
@@ -686,7 +688,8 @@ export function buildFinanceAdvisorSnapshot(
       });
     }
     const currentTicket = item.currentCount === 0 ? 0 : Math.round(item.currentCents / item.currentCount);
-    const baselineTicket = item.baselineProgressCount === 0 ? 0 : Math.round(item.baselineProgressCents / item.baselineProgressCount);
+    const historical = historicalProgressTotals.get(item.category);
+    const baselineTicket = historical?.count ? Math.round(historical.cents / historical.count) : 0;
     if (item.currentCount >= 2 && item.baselineProgressCount >= 2 && currentTicket - baselineTicket >= 2_000 && currentTicket >= baselineTicket * 1.3) {
       events.push({
         id: `ticket-spike:${item.category}`,

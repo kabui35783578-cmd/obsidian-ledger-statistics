@@ -71,6 +71,48 @@ test("one complete cycle is averaged alone including explicit zero days", () => 
   assert.equal(missing.historyCycleCount, 0);
 });
 
+function ticketSnapshot(previousAmounts, currentAmounts) {
+  const records = [...previousAmounts, currentAmounts].flatMap((amounts, index) => {
+    const date = ["2026-07-16", "2026-08-16", "2026-09-16"][index];
+    return amounts.flatMap((amount, recordIndex) => parseLedgerFile(`${date}-${recordIndex}.md`,
+      note(date, `- 12:00｜餐饮｜￥${amount}`, amount)).records);
+  });
+  return buildFinanceAdvisorSnapshot(records, new Date(2026, 8, 22, 12), 500000, [], coverage("2026-07-15", "2026-09-22"));
+}
+
+test("unequal historical counts preserve fractional averages without inventing a ticket spike", () => {
+  const result = ticketSnapshot([["100.00", "100.00"], ["100.00", "100.00", "100.00"]], ["110.00", "110.00", "110.00"]);
+  assert.equal(result.categories[0].baselineProgressCount, 2.5);
+  assert.equal(result.categories[0].baselineProgressCents, 25000);
+  assert.equal(result.events.some(event => event.type === "ticket-spike"), false);
+  assert.ok(result.events.some(event => event.evidence.includes("分类笔数：3；历史同期平均：2.5")));
+});
+
+test("ticket spikes still trigger at the actual historical unit-price threshold", () => {
+  const history = [["100.00", "100.00"], ["100.00", "100.00", "100.00"]];
+  const below = ticketSnapshot(history, ["129.99", "129.99"]);
+  assert.equal(below.events.some(event => event.type === "ticket-spike"), false);
+  const atThreshold = ticketSnapshot(history, ["130.00", "130.00"]);
+  assert.equal(atThreshold.events.find(event => event.type === "ticket-spike")?.detail, "当前笔均 ¥130.00，同期平均约 ¥100.00。");
+});
+
+test("fractional historical counts cannot round up past the ticket sample minimum", () => {
+  const result = ticketSnapshot([["100.00"], ["100.00", "100.00"]], ["200.00", "200.00"]);
+  assert.equal(result.categories[0].baselineProgressCount, 1.5);
+  assert.equal(result.events.some(event => event.type === "ticket-spike"), false);
+});
+
+test("historical ticket averages round cents only after dividing total money by total count", () => {
+  const result = ticketSnapshot([["100.01", "100.01"], ["100.01", "100.01", "100.03"]], ["140.00", "140.00"]);
+  assert.equal(result.events.find(event => event.type === "ticket-spike")?.detail, "当前笔均 ¥140.00，同期平均约 ¥100.01。");
+});
+
+test("frequency thresholds use the exact historical average count", () => {
+  const result = ticketSnapshot([Array(8).fill("100.00"), Array(9).fill("100.00")], Array(12).fill("100.00"));
+  assert.equal(result.categories[0].baselineProgressCount, 8.5);
+  assert.equal(result.events.find(event => event.type === "frequency-spike")?.detail, "当前已有 12 笔，比同期平均多约 3.5 笔。");
+});
+
 test("forecast adds historical remaining spending without multiplying payday rent", () => {
   const records = ["2026-07-15", "2026-08-15", "2026-09-15"].flatMap(date =>
     parseLedgerFile(`${date}.md`, note(date, "- 12:00｜住房｜￥2000.00", "2000.00")).records);
