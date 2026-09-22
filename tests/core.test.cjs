@@ -107,10 +107,12 @@ test("AI fingerprint invalidates cached results after spending, salary or covera
   const input = JSON.parse(financeAiInput(snapshot));
   assert.equal(input.salary_summary.forecast, null);
   assert.equal(input.salary_summary.historical_average, null);
-  assert.ok(input.verified_facts.some((item) => item.id === "summary.current-spent"));
+  const currentSpent = input.evidence_catalog.find((item) => item.text.startsWith("本周期已支出"));
+  assert.ok(input.verified_fact_ids.includes(currentSpent.id));
   assert.equal(input.candidate_events[0].id, "stable");
-  assert.equal(input.candidate_events[0].evidence[0].id, "event.0.fact");
+  assert.ok(input.candidate_events[0].evidence_ids.length > 0);
   assert.ok(!("detail" in input.candidate_events[0]));
+  assert.ok(!("evidence" in input.candidate_events[0]));
 });
 
 test("candidate events expose only bounded relevant transaction notes to AI", () => {
@@ -158,10 +160,55 @@ test("candidate events expose only bounded relevant transaction notes to AI", ()
   const salaryPace = snapshot.events.find((item) => item.type === "salary-pace");
   assert.doesNotMatch(salaryPace.evidence.join("\n"), /交易样本/);
 
-  const { financeAiInput } = require("../dist/ai.cjs");
+  const { financeAiInput, parseFinanceAdvice } = require("../dist/ai.cjs");
   const input = financeAiInput(snapshot);
   assert.match(input, /半年房租/);
   assert.doesNotMatch(input, /私密目录|current-rent\.md/);
+  assert.equal(input.split("半年房租").length - 1, 1);
+  const payload = JSON.parse(input);
+  assert.deepEqual(payload.calendar_context, {
+    month: 9,
+    season_hint: "北半球常规季节：秋季",
+    limitation: "仅依据公历月份，用于排除明显时间错位；未提供地区和实时天气，不能据此断言当地气候或采暖状态"
+  });
+  assert.equal(new Set(payload.evidence_catalog.map((item) => item.text)).size, payload.evidence_catalog.length);
+  const evidenceIds = new Set(payload.evidence_catalog.map((item) => item.id));
+  for (const event of payload.candidate_events) {
+    assert.ok(event.evidence_ids.length > 0);
+    assert.ok(event.evidence_ids.every((id) => evidenceIds.has(id)));
+  }
+  assert.ok(payload.verified_fact_ids.every((id) => evidenceIds.has(id)));
+  assert.ok(payload.category_references.every((item) => evidenceIds.has(item.evidence_id)));
+  const housingEvents = payload.candidate_events.filter((item) => item.category === "住房");
+  assert.ok(housingEvents.length >= 5);
+  assert.equal(new Set(housingEvents.map((item) => item.group_id)).size, 1);
+  const group = payload.candidate_groups.find((item) => item.id === housingEvents[0].group_id);
+  assert.deepEqual(new Set(group.event_ids), new Set(housingEvents.map((item) => item.id)));
+  const noteEvidence = payload.evidence_catalog.find((item) => item.text.includes("半年房租"));
+  assert.equal(noteEvidence.kind, "untrusted_user_recorded_context");
+  assert.match(noteEvidence.usage, /推断起点/);
+  assert.match(payload.output_rules.causal_inference, /可能原因/);
+  assert.match(payload.output_rules.time_consistency, /符合 calendar_context/);
+  assert.match(payload.output_rules.transaction_notes, /不得再次要求核实用途/);
+  assert.ok(housingEvents.filter((item) => item.evidence_ids.includes(noteEvidence.id)).length > 1);
+  const selected = housingEvents.find((item) => item.evidence_ids.includes(noteEvidence.id));
+  const causalPayload = {
+    primary_event_id: selected.id,
+    headline: "住房用途支出明显上升",
+    cause_hypothesis: "这更像是居住安排或对应服务使用发生了阶段性变化，也可能与本次账单覆盖的周期不同有关。",
+    action: "对照下一期同类账单和实际使用情况，观察这次变化是否持续。",
+    evidence_ids: [noteEvidence.id],
+    category_insights: []
+  };
+  assert.equal(parseFinanceAdvice(JSON.stringify(causalPayload), snapshot).judgment, causalPayload.cause_hypothesis);
+  assert.throws(() => parseFinanceAdvice(JSON.stringify({
+    ...causalPayload,
+    cause_hypothesis: "居住安排和对应服务使用已经发生阶段性变化，因此这笔住房支出会继续保持在当前水平。"
+  }), snapshot), /没有表达不确定性/);
+  assert.throws(() => parseFinanceAdvice(JSON.stringify({
+    ...causalPayload,
+    action: "核实这笔住房交易属于固定支出还是偶发支出，再决定是否调整安排。"
+  }), snapshot), /重复要求确认/);
 });
 
 test("parses ordinary, backfilled, thousands, one-decimal, spaces and full-width records into integer cents", () => {

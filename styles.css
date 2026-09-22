@@ -609,11 +609,24 @@ button.ledger-metric:active {
   color: var(--mono-ink);
 }
 
+.ledger-advisor-card:not(.is-empty) {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(240px, 1fr);
+  grid-template-areas:
+    "advisor-heading advisor-heading"
+    "advisor-observation advisor-summary"
+    "advisor-categories ."
+    "advisor-source advisor-source";
+  gap: 10px 12px;
+}
+
 .ledger-advisor-heading {
+  grid-area: advisor-heading;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
+  margin-bottom: 12px;
 }
 
 .ledger-advisor-heading-copy {
@@ -732,10 +745,12 @@ button.ledger-advisor-refresh:disabled svg {
 }
 
 .ledger-advisor-summary {
+  grid-area: advisor-summary;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: 1fr;
+  align-self: start;
   gap: 8px;
-  margin-top: 22px;
+  margin-top: 0;
 }
 
 .ledger-advisor-summary-item {
@@ -808,8 +823,10 @@ button.ledger-advisor-refresh:disabled svg {
 }
 
 .ledger-advisor-observation {
+  grid-area: advisor-observation;
   position: relative;
-  margin-top: 9px;
+  min-height: 220px;
+  margin-top: 0;
   padding: 17px 52px 17px 18px;
   border: 0;
   border-radius: 15px;
@@ -913,6 +930,12 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
   line-height: 1.55;
 }
 
+.ledger-advisor-judgment,
+.ledger-advisor-action,
+.ledger-advisor-ai-status {
+  max-width: 68ch;
+}
+
 .ledger-advisor-action {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -986,7 +1009,10 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
 }
 
 .ledger-advisor-categories {
-  margin-top: 17px;
+  grid-area: advisor-categories;
+  align-self: start;
+  min-width: 0;
+  margin-top: 0;
 }
 
 .ledger-advisor-section-heading {
@@ -998,6 +1024,7 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
   color: var(--mono-ink);
   font-size: 11px;
   font-weight: 700;
+  flex-wrap: wrap;
 }
 
 .ledger-advisor-section-heading small {
@@ -1076,9 +1103,80 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
 }
 
 .ledger-advisor-source {
+  grid-area: advisor-source;
   margin-top: 14px;
   color: var(--mono-faint);
   font-size: 8px;
+}
+
+@container (max-width: 900px) {
+  .ledger-advisor-card:not(.is-empty) {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "advisor-heading"
+      "advisor-observation"
+      "advisor-summary"
+      "advisor-categories"
+      "advisor-source";
+  }
+
+  .ledger-advisor-summary,
+  .ledger-advisor-category-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ledger-advisor-observation {
+    min-height: 0;
+  }
+}
+
+@container (min-width: 901px) {
+  .ledger-advisor-observation {
+    padding: 22px 58px 22px 22px;
+  }
+
+  .ledger-advisor-observation > .ledger-advisor-judgment,
+  .ledger-advisor-observation > .ledger-advisor-action,
+  .ledger-advisor-observation > .ledger-advisor-ai-status {
+    max-width: none;
+  }
+
+  .ledger-advisor-observation-label {
+    font-size: 10px;
+  }
+
+  .ledger-advisor-observation h4 {
+    margin-top: 8px;
+    font-size: 20px;
+    line-height: 1.3;
+  }
+
+  .ledger-advisor-observation > .ledger-advisor-judgment {
+    margin-top: 7px;
+    font-size: 13.25px;
+    line-height: 1.7;
+  }
+
+  .ledger-advisor-action {
+    gap: 10px;
+    margin-top: 14px;
+    padding-top: 12px;
+  }
+
+  .ledger-advisor-action > span {
+    padding-top: 1px;
+    font-size: 9.5px;
+  }
+
+  .ledger-advisor-action > p {
+    font-size: 12.5px;
+    line-height: 1.65;
+  }
+
+  .ledger-advisor-ai-status {
+    margin-top: 12px;
+    font-size: 9px;
+  }
 }
 
 .ledger-budget-card {

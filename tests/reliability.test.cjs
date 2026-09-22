@@ -95,25 +95,30 @@ test('cancel rejects caller but prevents parallel native requests', async () => 
 
 test('AI judgment is retained only when event, evidence, categories and number policy validate', () => {
   const snapshot = core.buildFinanceAdvisorSnapshot([], new Date(2026, 8, 21), 300000, [], []);
+  const eventEvidenceId = ai.financeAiEvidence(snapshot).find((item) => item.eventIds.includes('stable')).id;
+  const summaryEvidenceId = ai.financeAiEvidence(snapshot).find((item) => item.eventIds.length === 0 && !item.category).id;
   const payload = {
     primary_event_id: 'stable',
     headline: '当前没有值得调整的变化',
-    judgment: '现有记录尚未显示需要立即调整安排的可靠变化，继续观察比仓促改变计划更合适。',
+    cause_hypothesis: '现有记录尚未显示需要立即调整安排的可靠变化，继续观察比仓促改变计划更合适。',
     action: '保持正常记账，等出现新的可靠变化后再评估。',
-    evidence_ids: ['event.0.fact'],
+    evidence_ids: [eventEvidenceId],
     category_insights: []
   };
   const advice = ai.parseFinanceAdvice(JSON.stringify(payload), snapshot);
   assert.equal(advice.headline, payload.headline);
-  assert.equal(advice.judgment, payload.judgment);
+  assert.equal(advice.judgment, payload.cause_hypothesis);
   assert.equal(advice.action, payload.action);
   assert.deepEqual(advice.evidenceIds, payload.evidence_ids);
   assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, primary_event_id: 'fake' }), snapshot));
   assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, headline: '已花999999元' }), snapshot), /具体数字/);
-  assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, judgment: '你已经欠款九百万元，需要立刻处理这项没有依据的风险判断。' }), snapshot), /具体数字/);
-  assert.equal(ai.parseFinanceAdvice(JSON.stringify({ ...payload, judgment: '当前周期大约走过四分之一，现有记录尚未显示需要立即调整安排的可靠变化。' }), snapshot).primaryEventId, 'stable');
+  assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, cause_hypothesis: '你已经欠款九百万元，需要立刻处理这项没有依据的风险判断。' }), snapshot), /具体数字/);
+  assert.equal(ai.parseFinanceAdvice(JSON.stringify({ ...payload, cause_hypothesis: '当前周期大约走过四分之一，现有记录尚未显示需要立即调整安排的可靠变化。' }), snapshot).primaryEventId, 'stable');
+  const legacyPayload = { ...payload, judgment: payload.cause_hypothesis };
+  delete legacyPayload.cause_hypothesis;
+  assert.throws(() => ai.parseFinanceAdvice(JSON.stringify(legacyPayload), snapshot), /原因假设/);
   assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, evidence_ids: ['missing'] }), snapshot), /不存在的证据/);
-  assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, evidence_ids: ['summary.current-spent'] }), snapshot), /所选候选事件/);
+  assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, evidence_ids: [summaryEvidenceId] }), snapshot), /所选候选事件/);
   assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, category_insights: [{ category: '不存在', opinion: '继续观察这个分类的变化。' }] }), snapshot), /不存在的分类/);
 });
 
