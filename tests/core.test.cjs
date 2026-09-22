@@ -113,6 +113,57 @@ test("AI fingerprint invalidates cached results after spending, salary or covera
   assert.ok(!("detail" in input.candidate_events[0]));
 });
 
+test("candidate events expose only bounded relevant transaction notes to AI", () => {
+  const record = (path, date, time, category, amount, remark) => parseLedgerFile(path,
+    note(date, `- ${time}｜${category}｜￥${amount}（${remark}）`, amount)).records[0];
+  const records = [
+    record("私密目录/current-rent.md", "2026-09-15", "09:00", "住房", "200.00", "半年房租"),
+    record("私密目录/current-property.md", "2026-09-16", "09:00", "住房", "40.00", "物业费"),
+    record("私密目录/current-repair.md", "2026-09-17", "09:00", "住房", "30.00", "维修材料"),
+    record("私密目录/current-card.md", "2026-09-18", "09:00", "住房", "30.00", "门禁卡"),
+    ...["2026-08-15", "2026-07-15"].flatMap((start) => {
+      const month = start.slice(0, 7);
+      return [
+        record(`${month}-housing-a.md`, `${month}-15`, "10:00", "住房", "50.00", "历史房租甲"),
+        record(`${month}-housing-b.md`, `${month}-16`, "10:00", "住房", "50.00", "历史房租乙"),
+        record(`${month}-food-a.md`, `${month}-17`, "10:00", "餐饮", "50.00", "历史餐饮甲"),
+        record(`${month}-food-b.md`, `${month}-18`, "10:00", "餐饮", "50.00", "历史餐饮乙"),
+        record(`${month}-food-c.md`, `${month}-19`, "10:00", "餐饮", "50.00", "历史餐饮丙"),
+        record(`${month}-food-d.md`, `${month}-20`, "10:00", "餐饮", "50.00", "历史餐饮丁")
+      ];
+    })
+  ];
+  const dates = coverage("2026-07-15", "2026-09-22");
+  const snapshot = buildFinanceAdvisorSnapshot(records, new Date(2026, 8, 22, 12), 300000, [], dates);
+  for (const type of ["spending-spike", "frequency-spike", "ticket-spike", "mix-shift", "large-expense"]) {
+    const event = snapshot.events.find((item) => item.type === type && item.category === "住房");
+    assert.ok(event, `${type} should be a candidate`);
+    assert.match(event.evidence.join("\n"), /半年房租/);
+  }
+  const large = snapshot.events.find((item) => item.type === "large-expense");
+  assert.match(large.evidence.join("\n"), /备注：半年房租/);
+  assert.doesNotMatch(large.evidence.join("\n"), /物业费|门禁卡|私密目录/);
+  const spending = snapshot.events.find((item) => item.type === "spending-spike" && item.category === "住房");
+  assert.match(spending.evidence.join("\n"), /半年房租|物业费|门禁卡/);
+  assert.equal(spending.evidence.filter((line) => line.startsWith("交易样本")).length, 3);
+  assert.doesNotMatch(spending.evidence.join("\n"), /维修材料|私密目录/);
+  const frequency = snapshot.events.find((item) => item.type === "frequency-spike" && item.category === "住房");
+  assert.match(frequency.evidence.join("\n"), /门禁卡/);
+
+  const pressured = buildFinanceAdvisorSnapshot(records, new Date(2026, 8, 22, 12), 25000, [], dates);
+  const salaryPressure = pressured.events.find((item) => item.type === "salary-pressure");
+  assert.match(salaryPressure.evidence.join("\n"), /半年房租|物业费|门禁卡/);
+  assert.equal(salaryPressure.evidence.filter((line) => line.startsWith("交易样本")).length, 3);
+  assert.doesNotMatch(salaryPressure.evidence.join("\n"), /维修材料|私密目录/);
+  const salaryPace = snapshot.events.find((item) => item.type === "salary-pace");
+  assert.doesNotMatch(salaryPace.evidence.join("\n"), /交易样本/);
+
+  const { financeAiInput } = require("../dist/ai.cjs");
+  const input = financeAiInput(snapshot);
+  assert.match(input, /半年房租/);
+  assert.doesNotMatch(input, /私密目录|current-rent\.md/);
+});
+
 test("parses ordinary, backfilled, thousands, one-decimal, spaces and full-width records into integer cents", () => {
   const raw = note("2026-09-12", [
     "- 11:50｜餐饮｜￥14.70（午饭）",
