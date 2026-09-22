@@ -573,7 +573,12 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
   setIcon(infoToggle, "circle-alert");
   observation.createDiv({ cls: "ledger-advisor-observation-label", text: state.advice ? "AI 财务判断" : "本地候选判断" });
   observation.createEl("h4", { text: state.advice?.headline ?? event.title });
-  observation.createEl("p", { text: state.advice?.summary ?? `${event.detail}${eventAdvice(event)}` });
+  observation.createEl("p", { cls: "ledger-advisor-judgment", text: state.advice?.judgment ?? `${event.detail}${eventAdvice(event)}` });
+  if (state.advice?.action) {
+    const action = observation.createDiv({ cls: "ledger-advisor-action" });
+    action.createSpan({ text: "建议" });
+    action.createEl("p", { text: state.advice.action });
+  }
   if (state.message) observation.createDiv({ cls: `ledger-advisor-ai-status is-${state.status}`, text: state.message });
 
   const infoPanel = observation.createDiv({ cls: "ledger-advisor-info-panel", attr: { role: "region", "aria-label": "洞察说明" } });

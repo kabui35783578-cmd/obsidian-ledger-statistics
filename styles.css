@@ -913,6 +913,27 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
   line-height: 1.55;
 }
 
+.ledger-advisor-action {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid color-mix(in srgb, var(--mono-paper) 12%, transparent);
+}
+
+.ledger-advisor-action > span {
+  color: var(--mono-muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.ledger-advisor-action > p {
+  color: var(--mono-paper);
+}
+
 .ledger-advisor-observation .ledger-advisor-info-section {
   font-family: inherit;
   font-size: 10.5px;

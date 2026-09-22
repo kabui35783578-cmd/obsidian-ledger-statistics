@@ -477,7 +477,7 @@ export class LedgerStatisticsView extends ItemView {
         void this.plugin.saveSettings(false, false).catch(() => new Notice("提醒阅读状态保存失败"));
       }
     }
-    if (configured && financeSnapshot.salaryCents > 0 && this.plugin.settings.financeAdviceCache && !cached && !this.financeAdviceLoading && this.financeAdviceAttemptedDate !== financeSnapshot.currentRange.end) {
+    if (configured && financeSnapshot.salaryCents > 0 && this.plugin.settings.financeAdviceCache && (!cached || stale) && !this.financeAdviceLoading && this.financeAdviceAttemptedDate !== financeSnapshot.currentRange.end) {
       this.financeAdviceAttemptedDate = financeSnapshot.currentRange.end;
       this.financeAutoTimer = window.setTimeout(() => {
         this.financeAutoTimer = null;
@@ -503,6 +503,12 @@ export class LedgerStatisticsView extends ItemView {
       if (manual) new Notice("请先在插件设置中填写每个工资周期到账工资");
       return;
     }
+    const fingerprint = financeSnapshotFingerprint(snapshot);
+    const cached = this.plugin.settings.financeAdviceCache;
+    if (cached?.date === snapshot.currentRange.end && cached.fingerprint === fingerprint) {
+      if (manual) new Notice("账目没有新变化，当前判断保持不变");
+      return;
+    }
     this.financeAdviceLoading = true;
     const controller = new AbortController();
     this.financeController = controller;
@@ -517,7 +523,7 @@ export class LedgerStatisticsView extends ItemView {
       }
       this.plugin.settings.financeAdviceCache = {
         date: snapshot.currentRange.end,
-        fingerprint: financeSnapshotFingerprint(snapshot),
+        fingerprint,
         advice,
         updatedAt: new Date().toISOString()
       };

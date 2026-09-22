@@ -1,17 +1,17 @@
 import { requestUrl } from "obsidian";
 import { RequestGate, sharedRequestGate } from "./request-gate";
 import { FinanceAdvisorSnapshot, formatCents } from "./core";
-import { eventAdvice } from "./insights";
 
 export const FINANCE_AI_PROFILE = `你是一名克制、可靠的个人财务观察员。
-从程序给出的候选事件中，选择最值得用户关注的一项，并选择最多三个相关分类。
-优先考虑金额影响、样本可靠性、变化程度和下一步决策价值；不要固定关注餐饮或购物。
-历史不足、周期初期或低置信度时，降低预测事件优先级。没有可靠变化时选择 stable。
-金额、标题和事实说明全部由程序根据所选事件生成；不要输出任何自由文本或数字。
-action_id 只能是 observe（继续观察）、review（核对相关记录）、plan（检查后续支出安排）。
-不提供投资、借贷或税务建议。分类参考余量不是预算或消费许可。
+程序已经完成金额、周期、分类参考、候选事件和证据的计算。你的职责不是复述数字，而是判断“哪些变化值得告诉用户”。
+从 candidate_events 中选择最值得关注的一项；优先考虑影响、变化程度、证据可靠性和行动价值，不要固定关注某几个分类。没有值得调整的可靠变化时选择 stable，并明确说明暂时无需调整。
+解释这项变化为什么值得关注，区分已经确认的事实、合理推测和暂时无法确认的信息。历史不足、周期初期、低置信度或口径有缺口时，必须主动表达不确定性。
+给出一条具体、克制、可执行的行动建议。最多为三个真正相关的分类给出简短意见；分类参考余量不是预算，也不是消费许可。
+只能依据输入中的 verified_facts、候选事件 evidence 和 category_references。evidence_ids 只能引用输入中存在的证据 ID，且至少包含一条所选候选事件的证据。
+headline、judgment、action 和 category_insights.opinion 中禁止出现任何具体数字、金额、日期或百分比；这些由程序在界面中单独展示。不要添加输入中没有的事实。
+不提供投资、借贷、税务或医疗建议，不夸大风险，不作道德评价，不使用确定性承诺。不要输出思维过程。
 只输出 JSON：
-{"primary_event_id":"输入中存在的事件ID","action_id":"observe","category_names":["输入中存在的分类名称"]}`;
+{"primary_event_id":"输入中存在的事件ID","headline":"8-20个汉字","judgment":"40-140个汉字","action":"20-80个汉字","evidence_ids":["输入中存在的证据ID"],"category_insights":[{"category":"输入中存在的分类名称","opinion":"简短意见，不含具体数字"}]}`;
 
 export interface FinanceAdviceCategoryLine {
   category: string;
@@ -21,9 +21,18 @@ export interface FinanceAdviceCategoryLine {
 export interface FinanceAdvice {
   primaryEventId: string;
   headline: string;
-  summary: string;
+  judgment: string;
+  action: string;
+  evidenceIds: string[];
   categoryLines: FinanceAdviceCategoryLine[];
   tone: "normal" | "warning";
+}
+
+export interface FinanceAiEvidence {
+  id: string;
+  text: string;
+  eventId?: string;
+  category?: string;
 }
 
 export interface FinanceAdviceCache {
@@ -45,6 +54,14 @@ function compactText(value: unknown, maxLength: number): string | null {
   if (typeof value !== "string") return null;
   const text = value.replace(/\s+/g, " ").trim();
   if (!text || text.length > maxLength) return null;
+  return text;
+}
+
+function narrativeText(value: unknown, label: string, minLength: number, maxLength: number): string {
+  const text = compactText(value, maxLength);
+  if (!text || text.length < minLength) throw new Error(`AI 返回的${label}长度不符合要求`);
+  const concreteNumber = /[\d０-９¥￥%％]|百分之|[零〇一二两三四五六七八九十百千万亿]+(?:元|块|角|年|月|日)/;
+  if (concreteNumber.test(text)) throw new Error(`AI 返回的${label}包含具体数字，请由程序展示金额和日期`);
   return text;
 }
 
@@ -71,28 +88,69 @@ export function parseFinanceAdvice(raw: string, snapshot: FinanceAdvisorSnapshot
   const primaryEventId = compactText(value.primary_event_id, 160);
   const event = snapshot.events.find((item) => item.id === primaryEventId);
   if (!event) throw new Error("AI 选择了不存在的候选事件");
-  const actions: Record<string, string> = Object.fromEntries(["observe", "review", "plan"].map((id) => [id, eventAdvice(event, id)]));
-  const action = typeof value.action_id === "string" && Object.prototype.hasOwnProperty.call(actions, value.action_id) ? actions[value.action_id] : undefined;
-  if (!action || !Array.isArray(value.category_names)) throw new Error("AI 返回的选择格式不正确");
+  const headline = narrativeText(value.headline, "标题", 4, 40);
+  const judgment = narrativeText(value.judgment, "判断", 20, 280);
+  const action = narrativeText(value.action, "建议", 8, 160);
+  const catalog = financeAiEvidence(snapshot);
+  const knownEvidence = new Map(catalog.map((item) => [item.id, item]));
+  if (!Array.isArray(value.evidence_ids) || value.evidence_ids.length === 0 || value.evidence_ids.length > 8) {
+    throw new Error("AI 返回的证据引用格式不正确");
+  }
+  const evidenceIds: string[] = [];
+  for (const id of value.evidence_ids) {
+    if (typeof id !== "string" || !knownEvidence.has(id)) throw new Error("AI 引用了不存在的证据");
+    if (!evidenceIds.includes(id)) evidenceIds.push(id);
+  }
+  if (!evidenceIds.some((id) => knownEvidence.get(id)?.eventId === event.id)) {
+    throw new Error("AI 判断没有引用所选候选事件的证据");
+  }
+  if (!Array.isArray(value.category_insights) || value.category_insights.length > 3) {
+    throw new Error("AI 返回的分类意见格式不正确");
+  }
   const categoryLines: FinanceAdviceCategoryLine[] = [];
-  for (const name of value.category_names.slice(0, 3)) {
-    if (typeof name !== "string") throw new Error("AI 返回的分类无效");
+  for (const item of value.category_insights) {
+    if (typeof item !== "object" || item === null) throw new Error("AI 返回的分类意见无效");
+    const insight = item as Record<string, unknown>;
+    const name = compactText(insight.category, 80);
+    if (!name) throw new Error("AI 返回的分类无效");
     const category = snapshot.categories.find((item) => item.category === name);
     if (!category) throw new Error("AI 选择了不存在的分类");
-    if (snapshot.historyCycleCount > 0 && !categoryLines.some((line) => line.category === name)) {
-      categoryLines.push({ category: name, text: `按过往周期参考，参考余量 ${formatCents(category.remainingReferenceCents)}；不等同于预算。` });
-    }
+    if (categoryLines.some((line) => line.category === name)) throw new Error("AI 重复返回了同一分类");
+    categoryLines.push({ category: name, text: narrativeText(insight.opinion, "分类意见", 4, 120) });
   }
-  // Never render model-supplied prose, even if unexpected fields are present.
   return {
-    primaryEventId: event.id, headline: event.title, summary: `${event.detail}${action}`,
-    categoryLines, tone: event.type === "salary-pressure" && snapshot.forecastConfidence === "normal" ? "warning" : "normal"
+    primaryEventId: event.id, headline, judgment, action, evidenceIds, categoryLines,
+    tone: event.type === "salary-pressure" && snapshot.forecastConfidence === "normal" ? "warning" : "normal"
   };
+}
+
+export function financeAiEvidence(snapshot: FinanceAdvisorSnapshot): FinanceAiEvidence[] {
+  const facts: FinanceAiEvidence[] = [
+    { id: "summary.current-spent", text: `本周期已支出 ${formatCents(snapshot.currentSpentCents)}` },
+    { id: "summary.remaining-salary", text: `工资扣除本周期支出后剩余 ${formatCents(snapshot.remainingSalaryCents)}` },
+    { id: "summary.data-quality", text: snapshot.historyCycleCount >= 2 ? "已有两个可用完整历史周期" : `仅有 ${snapshot.historyCycleCount} 个可用完整历史周期` }
+  ];
+  if (snapshot.historyCycleCount > 0) facts.push({ id: "summary.historical-average", text: `可用完整历史周期平均支出 ${formatCents(snapshot.historicalAverageSpentCents)}` });
+  if (snapshot.forecastAvailable) facts.push({ id: "summary.forecast", text: `程序计算的周期末支出参考为 ${formatCents(snapshot.forecastCents)}，置信度为 ${snapshot.forecastConfidence}` });
+  snapshot.events.forEach((event, eventIndex) => {
+    facts.push({ id: `event.${eventIndex}.fact`, text: event.detail, eventId: event.id });
+    (event.evidence ?? []).forEach((text, evidenceIndex) => {
+      facts.push({ id: `event.${eventIndex}.evidence.${evidenceIndex}`, text, eventId: event.id });
+    });
+  });
+  snapshot.categories.forEach((item, categoryIndex) => {
+    facts.push({
+      id: `category.${categoryIndex}.reference`,
+      text: `${item.category}：本周期已支出 ${formatCents(item.currentCents)}，历史周期平均 ${formatCents(item.baselineCycleCents)}，参考余量 ${formatCents(item.remainingReferenceCents)}`,
+      category: item.category
+    });
+  });
+  return facts;
 }
 
 export function financeSnapshotFingerprint(snapshot: FinanceAdvisorSnapshot): string {
   const source = JSON.stringify({
-    schema: 5,
+    schema: 7,
     snapshot,
     date: snapshot.currentRange.end,
     salary: snapshot.salaryCents,
@@ -110,6 +168,7 @@ export function financeSnapshotFingerprint(snapshot: FinanceAdvisorSnapshot): st
 }
 
 export function financeAiInput(snapshot: FinanceAdvisorSnapshot): string {
+  const evidence = financeAiEvidence(snapshot);
   return JSON.stringify({
     period: {
       start: snapshot.currentRange.start,
@@ -128,20 +187,27 @@ export function financeAiInput(snapshot: FinanceAdvisorSnapshot): string {
       forecast_confidence: snapshot.forecastAvailable ? snapshot.forecastConfidence : "unavailable",
       data_guidance: "记账起始后未记账日按零消费计算，补记后会重算；异常账本不当成零消费。历史少于两个可用完整周期时不得宣称相较两周期异常；低置信度预测仅作参考，不能当成确定超支。"
     },
+    verified_facts: evidence.filter((item) => !item.eventId && !item.category).map(({ id, text }) => ({ id, text })),
     candidate_events: snapshot.events.map((event) => ({
       id: event.id,
       type: event.type,
       priority: event.priority,
       category: event.category ?? null,
       title: event.title,
-      detail: event.detail
+      evidence: evidence.filter((item) => item.eventId === event.id).map(({ id, text }) => ({ id, text }))
     })),
-    category_references: snapshot.categories.map((item) => ({
+    category_references: snapshot.categories.map((item, index) => ({
+      evidence_id: `category.${index}.reference`,
       category: item.category,
       current_spent: formatCents(item.currentCents),
       historical_average: snapshot.historyCycleCount > 0 ? formatCents(item.baselineCycleCents) : null,
       reference_remaining: snapshot.historyCycleCount > 0 ? formatCents(item.remainingReferenceCents) : null
-    }))
+    })),
+    output_rules: {
+      facts_and_numbers: "只能引用输入证据；输出文案不得包含具体数字、金额、日期或百分比",
+      uncertainty: "数据不足或低置信度时必须明确表达不确定性",
+      stable: "没有值得调整的可靠变化时选择 stable，并说明暂时无需调整"
+    }
   });
 }
 

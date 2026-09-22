@@ -93,17 +93,45 @@ test('cancel rejects caller but prevents parallel native requests', async () => 
   assert.equal(gate.busy, false);
 });
 
-test('AI prose cannot inject invented numbers and category selection is validated', () => {
+test('AI judgment is retained only when event, evidence, categories and number policy validate', () => {
   const snapshot = core.buildFinanceAdvisorSnapshot([], new Date(2026, 8, 21), 300000, [], []);
-  const payload = { primary_event_id: 'stable', action_id: 'observe', category_names: [], headline: '已花999999元', summary: '你已经欠款九百万元' };
+  const payload = {
+    primary_event_id: 'stable',
+    headline: '当前没有值得调整的变化',
+    judgment: '现有记录尚未显示需要立即调整安排的可靠变化，继续观察比仓促改变计划更合适。',
+    action: '保持正常记账，等出现新的可靠变化后再评估。',
+    evidence_ids: ['event.0.fact'],
+    category_insights: []
+  };
   const advice = ai.parseFinanceAdvice(JSON.stringify(payload), snapshot);
-  assert.equal(advice.headline, snapshot.events[0].title);
-  assert.ok(!advice.summary.includes('九百万元'));
-  assert.ok(!advice.headline.includes('999999'));
+  assert.equal(advice.headline, payload.headline);
+  assert.equal(advice.judgment, payload.judgment);
+  assert.equal(advice.action, payload.action);
+  assert.deepEqual(advice.evidenceIds, payload.evidence_ids);
   assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, primary_event_id: 'fake' }), snapshot));
-  assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, category_names: ['不存在'] }), snapshot));
-  assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, action_id: 'fake' }), snapshot));
-  assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, action_id: '__proto__' }), snapshot));
+  assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, headline: '已花999999元' }), snapshot), /具体数字/);
+  assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, judgment: '你已经欠款九百万元，需要立刻处理这项没有依据的风险判断。' }), snapshot), /具体数字/);
+  assert.equal(ai.parseFinanceAdvice(JSON.stringify({ ...payload, judgment: '当前周期大约走过四分之一，现有记录尚未显示需要立即调整安排的可靠变化。' }), snapshot).primaryEventId, 'stable');
+  assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, evidence_ids: ['missing'] }), snapshot), /不存在的证据/);
+  assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, evidence_ids: ['summary.current-spent'] }), snapshot), /所选候选事件/);
+  assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, category_insights: [{ category: '不存在', opinion: '继续观察这个分类的变化。' }] }), snapshot), /不存在的分类/);
+});
+
+test('manual AI refresh skips a paid request when the verified snapshot has not changed', async () => {
+  const snapshot = core.buildFinanceAdvisorSnapshot([], new Date(2026, 8, 21), 300000, [], []);
+  const fingerprint = ai.financeSnapshotFingerprint(snapshot);
+  let requests = 0;
+  global.__ledgerTestRequest = async () => { requests++; throw new Error('should not request'); };
+  global.__ledgerTestNotices = [];
+  const view = Object.create(LedgerStatisticsView.prototype);
+  Object.assign(view, { closed: false, financeAdviceLoading: false, financeController: null,
+    plugin: { settings: { financeAiEnabled: true, financeAdviceCache: { date: snapshot.currentRange.end, fingerprint, advice: {}, updatedAt: new Date().toISOString() } } },
+    refreshFinanceSection: () => {} });
+  await view.loadFinanceAdvice(snapshot, true);
+  assert.equal(requests, 0);
+  assert.deepEqual(global.__ledgerTestNotices, ['账目没有新变化，当前判断保持不变']);
+  delete global.__ledgerTestRequest;
+  delete global.__ledgerTestNotices;
 });
 
 test('aborting before dispatch sends no request', async () => {

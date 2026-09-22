@@ -941,91 +941,28 @@ var import_obsidian4 = require("obsidian");
 
 // src/ai.ts
 var import_obsidian2 = require("obsidian");
-
-// src/insights.ts
-function signalMetric(snapshot, event) {
-  const category = snapshot.categories.find((item) => item.category === event.category);
-  if (!category) return void 0;
-  if (event.type === "frequency-spike") return category.currentCount;
-  if (event.type === "ticket-spike") return category.currentCents / Math.max(1, category.currentCount);
-  if (event.type === "mix-shift") return category.currentShare;
-  return void 0;
-}
-function prioritizeFreshInsights(snapshot, history) {
-  const repeated = [];
-  const events = snapshot.events.filter((event) => {
-    var _a;
-    if (event.type === "stable") return true;
-    const previous = history.find((seen) => seen.cycle === snapshot.currentRange.start && seen.id === event.id);
-    const worsened = previous && ((_a = event.impactCents) != null ? _a : 0) - previous.impact >= Math.max(5e3, Math.abs(previous.impact) * 0.2);
-    const metric = signalMetric(snapshot, event);
-    const minimum = event.type === "frequency-spike" ? 3 : event.type === "mix-shift" ? 0.1 : 1e3;
-    const metricWorsened = metric !== void 0 && (previous == null ? void 0 : previous.metric) !== void 0 && metric - previous.metric >= Math.max(minimum, previous.metric * 0.2);
-    if (!previous || previous.date === snapshot.currentRange.end || worsened || metricWorsened || event.type === "salary-pressure") return true;
-    repeated.push(event);
-    return false;
-  });
-  if (repeated.length && !events.some((event) => event.type !== "stable")) {
-    return { ...snapshot, repeatedEvents: repeated, events: events.map((event) => event.title === "\u6682\u672A\u53D1\u73B0\u660E\u663E\u53D8\u5316" ? { ...event, title: "\u6682\u65E0\u65B0\u7684\u660E\u663E\u53D8\u5316", detail: "\u4E4B\u524D\u63D0\u9192\u8FC7\u7684\u4E8B\u9879\u4ECD\u53EF\u5728\u4E0B\u65B9\u67E5\u770B\uFF1B\u6682\u672A\u53D1\u73B0\u503C\u5F97\u91CD\u590D\u63D0\u9192\u7684\u65B0\u53D8\u5316\u3002" } : event) };
-  }
-  return { ...snapshot, events, repeatedEvents: repeated };
-}
-function markInsightSeen(history, snapshot, id) {
-  var _a, _b, _c, _d;
-  const event = snapshot.events.find((item) => item.id === id);
-  if (!event || event.type === "stable") return history;
-  const old = history.find((item) => item.cycle === snapshot.currentRange.start && item.id === id);
-  const metric = signalMetric(snapshot, event);
-  if ((old == null ? void 0 : old.date) === snapshot.currentRange.end && old.impact >= ((_a = event.impactCents) != null ? _a : 0) && (metric === void 0 || ((_b = old.metric) != null ? _b : -Infinity) >= metric)) return history;
-  return [
-    ...history.filter((item) => !(item.cycle === snapshot.currentRange.start && item.id === id)),
-    {
-      cycle: snapshot.currentRange.start,
-      id,
-      date: snapshot.currentRange.end,
-      impact: Math.max((_c = event.impactCents) != null ? _c : 0, (old == null ? void 0 : old.date) === snapshot.currentRange.end ? old.impact : 0),
-      metric: metric === void 0 ? void 0 : Math.max(metric, (old == null ? void 0 : old.date) === snapshot.currentRange.end ? (_d = old.metric) != null ? _d : metric : metric)
-    }
-  ].slice(-200);
-}
-function eventAdvice(event, action = "observe") {
-  var _a;
-  const advice = {
-    "frequency-spike": ["\u7559\u610F\u63A5\u4E0B\u6765\u662F\u5426\u4ECD\u9891\u7E41\u8D2D\u4E70\uFF0C\u800C\u4E0D\u53EA\u770B\u6BCF\u7B14\u91D1\u989D\u3002", "\u6838\u5BF9\u662F\u5426\u4E3A\u5206\u5355\u6216\u8865\u8BB0\uFF0C\u518D\u5224\u65AD\u8D2D\u4E70\u6B21\u6570\u662F\u5426\u771F\u7684\u589E\u52A0\u3002", "\u53EF\u5148\u68C0\u67E5\u91CD\u590D\u8D2D\u4E70\u7684\u5B89\u6392\uFF0C\u51CF\u5C11\u4E0D\u5FC5\u8981\u7684\u989D\u5916\u6B21\u6570\u3002"],
-    "ticket-spike": ["\u7559\u610F\u662F\u5355\u4EF7\u4E0A\u6DA8\u8FD8\u662F\u4E00\u6B21\u8D2D\u4E70\u66F4\u591A\u3002", "\u5BF9\u6BD4\u76F8\u8FD1\u5546\u54C1\u6216\u670D\u52A1\u7684\u5355\u4EF7\u4E0E\u6570\u91CF\uFF0C\u907F\u514D\u628A\u56E4\u8D27\u8BEF\u5224\u6210\u6DA8\u4EF7\u3002", "\u5B89\u6392\u4E0B\u4E00\u6B21\u8D2D\u4E70\u524D\uFF0C\u5148\u786E\u8BA4\u672C\u6B21\u589E\u52A0\u7684\u662F\u6570\u91CF\u8FD8\u662F\u5355\u4EF7\u3002"],
-    "spending-spike": ["\u7EE7\u7EED\u533A\u5206\u4E00\u6B21\u6027\u652F\u51FA\u548C\u6301\u7EED\u589E\u52A0\u7684\u65E5\u5E38\u652F\u51FA\u3002", "\u6838\u5BF9\u8FD9\u4E00\u5206\u7C7B\u7684\u5927\u989D\u8BB0\u5F55\uFF0C\u786E\u8BA4\u662F\u5426\u5C5E\u4E8E\u4E00\u6B21\u6027\u4E8B\u9879\u3002", "\u5148\u5217\u51FA\u8BE5\u5206\u7C7B\u5269\u4F59\u7684\u5FC5\u8981\u652F\u51FA\uFF0C\u518D\u5B89\u6392\u53EF\u5EF6\u540E\u7684\u6D88\u8D39\u3002"],
-    "mix-shift": ["\u5360\u6BD4\u53D8\u5316\u4E0D\u4E00\u5B9A\u662F\u8D85\u652F\uFF0C\u4E5F\u53EF\u80FD\u662F\u5176\u4ED6\u5206\u7C7B\u51CF\u5C11\u3002", "\u540C\u65F6\u6838\u5BF9\u8BE5\u5206\u7C7B\u7684\u91D1\u989D\u548C\u603B\u6D88\u8D39\uFF0C\u907F\u514D\u53EA\u770B\u5360\u6BD4\u3002", "\u5148\u786E\u8BA4\u652F\u51FA\u7ED3\u6784\u53D8\u5316\u662F\u5426\u7B26\u5408\u672C\u5468\u671F\u7684\u5B9E\u9645\u5B89\u6392\u3002"],
-    "large-expense": ["\u7559\u610F\u8FD9\u7B14\u652F\u51FA\u662F\u5426\u4F1A\u5728\u672C\u5468\u671F\u518D\u6B21\u53D1\u751F\u3002", "\u6838\u5BF9\u91D1\u989D\u53CA\u662F\u5426\u91CD\u590D\u8BB0\u8D26\uFF0C\u518D\u786E\u8BA4\u662F\u4E00\u6B21\u6027\u8FD8\u662F\u56FA\u5B9A\u652F\u51FA\u3002", "\u82E5\u5C5E\u4E8E\u56FA\u5B9A\u652F\u51FA\uFF0C\u53EF\u5728\u56FA\u5B9A\u652F\u51FA\u4E2D\u5173\u8054\u8FD9\u7B14\u8BB0\u5F55\uFF0C\u907F\u514D\u9884\u6D4B\u91CD\u590D\u8BA1\u5165\u3002"],
-    "salary-pressure": ["\u8FD9\u53EA\u662F\u53C2\u8003\uFF1B\u8BF7\u4F18\u5148\u6838\u5BF9\u5C1A\u672A\u652F\u4ED8\u7684\u5FC5\u8981\u652F\u51FA\u3002", "\u5148\u68C0\u67E5\u56FA\u5B9A\u652F\u51FA\u662F\u5426\u5DF2\u4ED8\uFF0C\u4EE5\u53CA\u5386\u53F2\u4ED8\u6B3E\u65E5\u671F\u662F\u5426\u504F\u79FB\u3002", "\u5148\u9884\u7559\u5C1A\u672A\u652F\u4ED8\u7684\u5FC5\u8981\u652F\u51FA\uFF0C\u518D\u5224\u65AD\u54EA\u4E9B\u975E\u5FC5\u8981\u6D88\u8D39\u53EF\u4EE5\u63A8\u8FDF\u3002"],
-    "salary-pace": ["\u53C2\u8003\u503C\u4E0D\u662F\u6D88\u8D39\u989D\u5EA6\uFF0C\u4ECD\u9700\u8003\u8651\u5C1A\u672A\u53D1\u751F\u7684\u5FC5\u8981\u652F\u51FA\u3002", "\u6838\u5BF9\u672C\u5468\u671F\u4E0E\u5386\u53F2\u5468\u671F\u7684\u56FA\u5B9A\u652F\u51FA\u652F\u4ED8\u65F6\u95F4\u662F\u5426\u4E00\u81F4\u3002", "\u628A\u672A\u4ED8\u56FA\u5B9A\u652F\u51FA\u786E\u8BA4\u540E\uFF0C\u518D\u8BC4\u4F30\u5269\u4F59\u5B89\u6392\u3002"],
-    "stable": ["\u53EF\u5C55\u5F00\u5224\u65AD\u4F9D\u636E\u548C\u6570\u636E\u5B8C\u6574\u6027\u7EE7\u7EED\u6838\u5BF9\u3002", "\u4F18\u5148\u6838\u5BF9\u7F3A\u5931\u65E5\u671F\u3001\u8D26\u76EE\u5DEE\u5F02\u4E0E\u5F85\u786E\u8BA4\u56FA\u5B9A\u652F\u51FA\u3002", "\u6570\u636E\u9F50\u5168\u540E\u518D\u51B3\u5B9A\u662F\u5426\u9700\u8981\u8C03\u6574\u6D88\u8D39\u5B89\u6392\u3002"]
-  };
-  return ((_a = advice[event.type]) != null ? _a : advice.stable)[action === "review" ? 1 : action === "plan" ? 2 : 0];
-}
-function unmatchedStarIds(ids, records) {
-  const known = new Set(records.map((record) => record.id));
-  return [...new Set(ids.filter((id) => !known.has(id)))];
-}
-function relinkStar(ids, oldId, newId, records) {
-  if (!ids.includes(oldId) || !records.some((record) => record.id === newId)) throw new Error("\u8BB0\u5F55\u5DF2\u53D8\u5316\uFF0C\u8BF7\u91CD\u65B0\u6838\u5BF9");
-  return [...new Set(ids.map((id) => id === oldId ? newId : id))];
-}
-
-// src/ai.ts
 var FINANCE_AI_PROFILE = `\u4F60\u662F\u4E00\u540D\u514B\u5236\u3001\u53EF\u9760\u7684\u4E2A\u4EBA\u8D22\u52A1\u89C2\u5BDF\u5458\u3002
-\u4ECE\u7A0B\u5E8F\u7ED9\u51FA\u7684\u5019\u9009\u4E8B\u4EF6\u4E2D\uFF0C\u9009\u62E9\u6700\u503C\u5F97\u7528\u6237\u5173\u6CE8\u7684\u4E00\u9879\uFF0C\u5E76\u9009\u62E9\u6700\u591A\u4E09\u4E2A\u76F8\u5173\u5206\u7C7B\u3002
-\u4F18\u5148\u8003\u8651\u91D1\u989D\u5F71\u54CD\u3001\u6837\u672C\u53EF\u9760\u6027\u3001\u53D8\u5316\u7A0B\u5EA6\u548C\u4E0B\u4E00\u6B65\u51B3\u7B56\u4EF7\u503C\uFF1B\u4E0D\u8981\u56FA\u5B9A\u5173\u6CE8\u9910\u996E\u6216\u8D2D\u7269\u3002
-\u5386\u53F2\u4E0D\u8DB3\u3001\u5468\u671F\u521D\u671F\u6216\u4F4E\u7F6E\u4FE1\u5EA6\u65F6\uFF0C\u964D\u4F4E\u9884\u6D4B\u4E8B\u4EF6\u4F18\u5148\u7EA7\u3002\u6CA1\u6709\u53EF\u9760\u53D8\u5316\u65F6\u9009\u62E9 stable\u3002
-\u91D1\u989D\u3001\u6807\u9898\u548C\u4E8B\u5B9E\u8BF4\u660E\u5168\u90E8\u7531\u7A0B\u5E8F\u6839\u636E\u6240\u9009\u4E8B\u4EF6\u751F\u6210\uFF1B\u4E0D\u8981\u8F93\u51FA\u4EFB\u4F55\u81EA\u7531\u6587\u672C\u6216\u6570\u5B57\u3002
-action_id \u53EA\u80FD\u662F observe\uFF08\u7EE7\u7EED\u89C2\u5BDF\uFF09\u3001review\uFF08\u6838\u5BF9\u76F8\u5173\u8BB0\u5F55\uFF09\u3001plan\uFF08\u68C0\u67E5\u540E\u7EED\u652F\u51FA\u5B89\u6392\uFF09\u3002
-\u4E0D\u63D0\u4F9B\u6295\u8D44\u3001\u501F\u8D37\u6216\u7A0E\u52A1\u5EFA\u8BAE\u3002\u5206\u7C7B\u53C2\u8003\u4F59\u91CF\u4E0D\u662F\u9884\u7B97\u6216\u6D88\u8D39\u8BB8\u53EF\u3002
+\u7A0B\u5E8F\u5DF2\u7ECF\u5B8C\u6210\u91D1\u989D\u3001\u5468\u671F\u3001\u5206\u7C7B\u53C2\u8003\u3001\u5019\u9009\u4E8B\u4EF6\u548C\u8BC1\u636E\u7684\u8BA1\u7B97\u3002\u4F60\u7684\u804C\u8D23\u4E0D\u662F\u590D\u8FF0\u6570\u5B57\uFF0C\u800C\u662F\u5224\u65AD\u201C\u54EA\u4E9B\u53D8\u5316\u503C\u5F97\u544A\u8BC9\u7528\u6237\u201D\u3002
+\u4ECE candidate_events \u4E2D\u9009\u62E9\u6700\u503C\u5F97\u5173\u6CE8\u7684\u4E00\u9879\uFF1B\u4F18\u5148\u8003\u8651\u5F71\u54CD\u3001\u53D8\u5316\u7A0B\u5EA6\u3001\u8BC1\u636E\u53EF\u9760\u6027\u548C\u884C\u52A8\u4EF7\u503C\uFF0C\u4E0D\u8981\u56FA\u5B9A\u5173\u6CE8\u67D0\u51E0\u4E2A\u5206\u7C7B\u3002\u6CA1\u6709\u503C\u5F97\u8C03\u6574\u7684\u53EF\u9760\u53D8\u5316\u65F6\u9009\u62E9 stable\uFF0C\u5E76\u660E\u786E\u8BF4\u660E\u6682\u65F6\u65E0\u9700\u8C03\u6574\u3002
+\u89E3\u91CA\u8FD9\u9879\u53D8\u5316\u4E3A\u4EC0\u4E48\u503C\u5F97\u5173\u6CE8\uFF0C\u533A\u5206\u5DF2\u7ECF\u786E\u8BA4\u7684\u4E8B\u5B9E\u3001\u5408\u7406\u63A8\u6D4B\u548C\u6682\u65F6\u65E0\u6CD5\u786E\u8BA4\u7684\u4FE1\u606F\u3002\u5386\u53F2\u4E0D\u8DB3\u3001\u5468\u671F\u521D\u671F\u3001\u4F4E\u7F6E\u4FE1\u5EA6\u6216\u53E3\u5F84\u6709\u7F3A\u53E3\u65F6\uFF0C\u5FC5\u987B\u4E3B\u52A8\u8868\u8FBE\u4E0D\u786E\u5B9A\u6027\u3002
+\u7ED9\u51FA\u4E00\u6761\u5177\u4F53\u3001\u514B\u5236\u3001\u53EF\u6267\u884C\u7684\u884C\u52A8\u5EFA\u8BAE\u3002\u6700\u591A\u4E3A\u4E09\u4E2A\u771F\u6B63\u76F8\u5173\u7684\u5206\u7C7B\u7ED9\u51FA\u7B80\u77ED\u610F\u89C1\uFF1B\u5206\u7C7B\u53C2\u8003\u4F59\u91CF\u4E0D\u662F\u9884\u7B97\uFF0C\u4E5F\u4E0D\u662F\u6D88\u8D39\u8BB8\u53EF\u3002
+\u53EA\u80FD\u4F9D\u636E\u8F93\u5165\u4E2D\u7684 verified_facts\u3001\u5019\u9009\u4E8B\u4EF6 evidence \u548C category_references\u3002evidence_ids \u53EA\u80FD\u5F15\u7528\u8F93\u5165\u4E2D\u5B58\u5728\u7684\u8BC1\u636E ID\uFF0C\u4E14\u81F3\u5C11\u5305\u542B\u4E00\u6761\u6240\u9009\u5019\u9009\u4E8B\u4EF6\u7684\u8BC1\u636E\u3002
+headline\u3001judgment\u3001action \u548C category_insights.opinion \u4E2D\u7981\u6B62\u51FA\u73B0\u4EFB\u4F55\u5177\u4F53\u6570\u5B57\u3001\u91D1\u989D\u3001\u65E5\u671F\u6216\u767E\u5206\u6BD4\uFF1B\u8FD9\u4E9B\u7531\u7A0B\u5E8F\u5728\u754C\u9762\u4E2D\u5355\u72EC\u5C55\u793A\u3002\u4E0D\u8981\u6DFB\u52A0\u8F93\u5165\u4E2D\u6CA1\u6709\u7684\u4E8B\u5B9E\u3002
+\u4E0D\u63D0\u4F9B\u6295\u8D44\u3001\u501F\u8D37\u3001\u7A0E\u52A1\u6216\u533B\u7597\u5EFA\u8BAE\uFF0C\u4E0D\u5938\u5927\u98CE\u9669\uFF0C\u4E0D\u4F5C\u9053\u5FB7\u8BC4\u4EF7\uFF0C\u4E0D\u4F7F\u7528\u786E\u5B9A\u6027\u627F\u8BFA\u3002\u4E0D\u8981\u8F93\u51FA\u601D\u7EF4\u8FC7\u7A0B\u3002
 \u53EA\u8F93\u51FA JSON\uFF1A
-{"primary_event_id":"\u8F93\u5165\u4E2D\u5B58\u5728\u7684\u4E8B\u4EF6ID","action_id":"observe","category_names":["\u8F93\u5165\u4E2D\u5B58\u5728\u7684\u5206\u7C7B\u540D\u79F0"]}`;
+{"primary_event_id":"\u8F93\u5165\u4E2D\u5B58\u5728\u7684\u4E8B\u4EF6ID","headline":"8-20\u4E2A\u6C49\u5B57","judgment":"40-140\u4E2A\u6C49\u5B57","action":"20-80\u4E2A\u6C49\u5B57","evidence_ids":["\u8F93\u5165\u4E2D\u5B58\u5728\u7684\u8BC1\u636EID"],"category_insights":[{"category":"\u8F93\u5165\u4E2D\u5B58\u5728\u7684\u5206\u7C7B\u540D\u79F0","opinion":"\u7B80\u77ED\u610F\u89C1\uFF0C\u4E0D\u542B\u5177\u4F53\u6570\u5B57"}]}`;
 var FINANCE_AI_TIMEOUT_MS = 6e4;
 function compactText(value, maxLength) {
   if (typeof value !== "string") return null;
   const text = value.replace(/\s+/g, " ").trim();
   if (!text || text.length > maxLength) return null;
+  return text;
+}
+function narrativeText(value, label, minLength, maxLength) {
+  const text = compactText(value, maxLength);
+  if (!text || text.length < minLength) throw new Error(`AI \u8FD4\u56DE\u7684${label}\u957F\u5EA6\u4E0D\u7B26\u5408\u8981\u6C42`);
+  const concreteNumber = /[\d０-９¥￥%％]|百分之|[零〇一二两三四五六七八九十百千万亿]+(?:元|块|角|年|月|日)/;
+  if (concreteNumber.test(text)) throw new Error(`AI \u8FD4\u56DE\u7684${label}\u5305\u542B\u5177\u4F53\u6570\u5B57\uFF0C\u8BF7\u7531\u7A0B\u5E8F\u5C55\u793A\u91D1\u989D\u548C\u65E5\u671F`);
   return text;
 }
 function jsonTextFromResponse(value) {
@@ -1047,29 +984,76 @@ function parseFinanceAdvice(raw, snapshot) {
   const primaryEventId = compactText(value.primary_event_id, 160);
   const event = snapshot.events.find((item) => item.id === primaryEventId);
   if (!event) throw new Error("AI \u9009\u62E9\u4E86\u4E0D\u5B58\u5728\u7684\u5019\u9009\u4E8B\u4EF6");
-  const actions = Object.fromEntries(["observe", "review", "plan"].map((id) => [id, eventAdvice(event, id)]));
-  const action = typeof value.action_id === "string" && Object.prototype.hasOwnProperty.call(actions, value.action_id) ? actions[value.action_id] : void 0;
-  if (!action || !Array.isArray(value.category_names)) throw new Error("AI \u8FD4\u56DE\u7684\u9009\u62E9\u683C\u5F0F\u4E0D\u6B63\u786E");
+  const headline = narrativeText(value.headline, "\u6807\u9898", 4, 40);
+  const judgment = narrativeText(value.judgment, "\u5224\u65AD", 20, 280);
+  const action = narrativeText(value.action, "\u5EFA\u8BAE", 8, 160);
+  const catalog = financeAiEvidence(snapshot);
+  const knownEvidence = new Map(catalog.map((item) => [item.id, item]));
+  if (!Array.isArray(value.evidence_ids) || value.evidence_ids.length === 0 || value.evidence_ids.length > 8) {
+    throw new Error("AI \u8FD4\u56DE\u7684\u8BC1\u636E\u5F15\u7528\u683C\u5F0F\u4E0D\u6B63\u786E");
+  }
+  const evidenceIds = [];
+  for (const id of value.evidence_ids) {
+    if (typeof id !== "string" || !knownEvidence.has(id)) throw new Error("AI \u5F15\u7528\u4E86\u4E0D\u5B58\u5728\u7684\u8BC1\u636E");
+    if (!evidenceIds.includes(id)) evidenceIds.push(id);
+  }
+  if (!evidenceIds.some((id) => {
+    var _a;
+    return ((_a = knownEvidence.get(id)) == null ? void 0 : _a.eventId) === event.id;
+  })) {
+    throw new Error("AI \u5224\u65AD\u6CA1\u6709\u5F15\u7528\u6240\u9009\u5019\u9009\u4E8B\u4EF6\u7684\u8BC1\u636E");
+  }
+  if (!Array.isArray(value.category_insights) || value.category_insights.length > 3) {
+    throw new Error("AI \u8FD4\u56DE\u7684\u5206\u7C7B\u610F\u89C1\u683C\u5F0F\u4E0D\u6B63\u786E");
+  }
   const categoryLines = [];
-  for (const name of value.category_names.slice(0, 3)) {
-    if (typeof name !== "string") throw new Error("AI \u8FD4\u56DE\u7684\u5206\u7C7B\u65E0\u6548");
-    const category = snapshot.categories.find((item) => item.category === name);
+  for (const item of value.category_insights) {
+    if (typeof item !== "object" || item === null) throw new Error("AI \u8FD4\u56DE\u7684\u5206\u7C7B\u610F\u89C1\u65E0\u6548");
+    const insight = item;
+    const name = compactText(insight.category, 80);
+    if (!name) throw new Error("AI \u8FD4\u56DE\u7684\u5206\u7C7B\u65E0\u6548");
+    const category = snapshot.categories.find((item2) => item2.category === name);
     if (!category) throw new Error("AI \u9009\u62E9\u4E86\u4E0D\u5B58\u5728\u7684\u5206\u7C7B");
-    if (snapshot.historyCycleCount > 0 && !categoryLines.some((line) => line.category === name)) {
-      categoryLines.push({ category: name, text: `\u6309\u8FC7\u5F80\u5468\u671F\u53C2\u8003\uFF0C\u53C2\u8003\u4F59\u91CF ${formatCents(category.remainingReferenceCents)}\uFF1B\u4E0D\u7B49\u540C\u4E8E\u9884\u7B97\u3002` });
-    }
+    if (categoryLines.some((line) => line.category === name)) throw new Error("AI \u91CD\u590D\u8FD4\u56DE\u4E86\u540C\u4E00\u5206\u7C7B");
+    categoryLines.push({ category: name, text: narrativeText(insight.opinion, "\u5206\u7C7B\u610F\u89C1", 4, 120) });
   }
   return {
     primaryEventId: event.id,
-    headline: event.title,
-    summary: `${event.detail}${action}`,
+    headline,
+    judgment,
+    action,
+    evidenceIds,
     categoryLines,
     tone: event.type === "salary-pressure" && snapshot.forecastConfidence === "normal" ? "warning" : "normal"
   };
 }
+function financeAiEvidence(snapshot) {
+  const facts = [
+    { id: "summary.current-spent", text: `\u672C\u5468\u671F\u5DF2\u652F\u51FA ${formatCents(snapshot.currentSpentCents)}` },
+    { id: "summary.remaining-salary", text: `\u5DE5\u8D44\u6263\u9664\u672C\u5468\u671F\u652F\u51FA\u540E\u5269\u4F59 ${formatCents(snapshot.remainingSalaryCents)}` },
+    { id: "summary.data-quality", text: snapshot.historyCycleCount >= 2 ? "\u5DF2\u6709\u4E24\u4E2A\u53EF\u7528\u5B8C\u6574\u5386\u53F2\u5468\u671F" : `\u4EC5\u6709 ${snapshot.historyCycleCount} \u4E2A\u53EF\u7528\u5B8C\u6574\u5386\u53F2\u5468\u671F` }
+  ];
+  if (snapshot.historyCycleCount > 0) facts.push({ id: "summary.historical-average", text: `\u53EF\u7528\u5B8C\u6574\u5386\u53F2\u5468\u671F\u5E73\u5747\u652F\u51FA ${formatCents(snapshot.historicalAverageSpentCents)}` });
+  if (snapshot.forecastAvailable) facts.push({ id: "summary.forecast", text: `\u7A0B\u5E8F\u8BA1\u7B97\u7684\u5468\u671F\u672B\u652F\u51FA\u53C2\u8003\u4E3A ${formatCents(snapshot.forecastCents)}\uFF0C\u7F6E\u4FE1\u5EA6\u4E3A ${snapshot.forecastConfidence}` });
+  snapshot.events.forEach((event, eventIndex) => {
+    var _a;
+    facts.push({ id: `event.${eventIndex}.fact`, text: event.detail, eventId: event.id });
+    ((_a = event.evidence) != null ? _a : []).forEach((text, evidenceIndex) => {
+      facts.push({ id: `event.${eventIndex}.evidence.${evidenceIndex}`, text, eventId: event.id });
+    });
+  });
+  snapshot.categories.forEach((item, categoryIndex) => {
+    facts.push({
+      id: `category.${categoryIndex}.reference`,
+      text: `${item.category}\uFF1A\u672C\u5468\u671F\u5DF2\u652F\u51FA ${formatCents(item.currentCents)}\uFF0C\u5386\u53F2\u5468\u671F\u5E73\u5747 ${formatCents(item.baselineCycleCents)}\uFF0C\u53C2\u8003\u4F59\u91CF ${formatCents(item.remainingReferenceCents)}`,
+      category: item.category
+    });
+  });
+  return facts;
+}
 function financeSnapshotFingerprint(snapshot) {
   const source = JSON.stringify({
-    schema: 5,
+    schema: 7,
     snapshot,
     date: snapshot.currentRange.end,
     salary: snapshot.salaryCents,
@@ -1087,6 +1071,7 @@ function financeSnapshotFingerprint(snapshot) {
 }
 function financeAiInput(snapshot) {
   var _a;
+  const evidence = financeAiEvidence(snapshot);
   return JSON.stringify({
     period: {
       start: snapshot.currentRange.start,
@@ -1105,6 +1090,7 @@ function financeAiInput(snapshot) {
       forecast_confidence: snapshot.forecastAvailable ? snapshot.forecastConfidence : "unavailable",
       data_guidance: "\u8BB0\u8D26\u8D77\u59CB\u540E\u672A\u8BB0\u8D26\u65E5\u6309\u96F6\u6D88\u8D39\u8BA1\u7B97\uFF0C\u8865\u8BB0\u540E\u4F1A\u91CD\u7B97\uFF1B\u5F02\u5E38\u8D26\u672C\u4E0D\u5F53\u6210\u96F6\u6D88\u8D39\u3002\u5386\u53F2\u5C11\u4E8E\u4E24\u4E2A\u53EF\u7528\u5B8C\u6574\u5468\u671F\u65F6\u4E0D\u5F97\u5BA3\u79F0\u76F8\u8F83\u4E24\u5468\u671F\u5F02\u5E38\uFF1B\u4F4E\u7F6E\u4FE1\u5EA6\u9884\u6D4B\u4EC5\u4F5C\u53C2\u8003\uFF0C\u4E0D\u80FD\u5F53\u6210\u786E\u5B9A\u8D85\u652F\u3002"
     },
+    verified_facts: evidence.filter((item) => !item.eventId && !item.category).map(({ id, text }) => ({ id, text })),
     candidate_events: snapshot.events.map((event) => {
       var _a2;
       return {
@@ -1113,15 +1099,21 @@ function financeAiInput(snapshot) {
         priority: event.priority,
         category: (_a2 = event.category) != null ? _a2 : null,
         title: event.title,
-        detail: event.detail
+        evidence: evidence.filter((item) => item.eventId === event.id).map(({ id, text }) => ({ id, text }))
       };
     }),
-    category_references: snapshot.categories.map((item) => ({
+    category_references: snapshot.categories.map((item, index) => ({
+      evidence_id: `category.${index}.reference`,
       category: item.category,
       current_spent: formatCents(item.currentCents),
       historical_average: snapshot.historyCycleCount > 0 ? formatCents(item.baselineCycleCents) : null,
       reference_remaining: snapshot.historyCycleCount > 0 ? formatCents(item.remainingReferenceCents) : null
-    }))
+    })),
+    output_rules: {
+      facts_and_numbers: "\u53EA\u80FD\u5F15\u7528\u8F93\u5165\u8BC1\u636E\uFF1B\u8F93\u51FA\u6587\u6848\u4E0D\u5F97\u5305\u542B\u5177\u4F53\u6570\u5B57\u3001\u91D1\u989D\u3001\u65E5\u671F\u6216\u767E\u5206\u6BD4",
+      uncertainty: "\u6570\u636E\u4E0D\u8DB3\u6216\u4F4E\u7F6E\u4FE1\u5EA6\u65F6\u5FC5\u987B\u660E\u786E\u8868\u8FBE\u4E0D\u786E\u5B9A\u6027",
+      stable: "\u6CA1\u6709\u503C\u5F97\u8C03\u6574\u7684\u53EF\u9760\u53D8\u5316\u65F6\u9009\u62E9 stable\uFF0C\u5E76\u8BF4\u660E\u6682\u65F6\u65E0\u9700\u8C03\u6574"
+    }
   });
 }
 function validateEndpoint(value) {
@@ -1196,6 +1188,77 @@ async function testFinanceConnection(config, signal, gate = sharedRequestGate("a
 
 // src/management.ts
 var import_obsidian3 = require("obsidian");
+
+// src/insights.ts
+function signalMetric(snapshot, event) {
+  const category = snapshot.categories.find((item) => item.category === event.category);
+  if (!category) return void 0;
+  if (event.type === "frequency-spike") return category.currentCount;
+  if (event.type === "ticket-spike") return category.currentCents / Math.max(1, category.currentCount);
+  if (event.type === "mix-shift") return category.currentShare;
+  return void 0;
+}
+function prioritizeFreshInsights(snapshot, history) {
+  const repeated = [];
+  const events = snapshot.events.filter((event) => {
+    var _a;
+    if (event.type === "stable") return true;
+    const previous = history.find((seen) => seen.cycle === snapshot.currentRange.start && seen.id === event.id);
+    const worsened = previous && ((_a = event.impactCents) != null ? _a : 0) - previous.impact >= Math.max(5e3, Math.abs(previous.impact) * 0.2);
+    const metric = signalMetric(snapshot, event);
+    const minimum = event.type === "frequency-spike" ? 3 : event.type === "mix-shift" ? 0.1 : 1e3;
+    const metricWorsened = metric !== void 0 && (previous == null ? void 0 : previous.metric) !== void 0 && metric - previous.metric >= Math.max(minimum, previous.metric * 0.2);
+    if (!previous || previous.date === snapshot.currentRange.end || worsened || metricWorsened || event.type === "salary-pressure") return true;
+    repeated.push(event);
+    return false;
+  });
+  if (repeated.length && !events.some((event) => event.type !== "stable")) {
+    return { ...snapshot, repeatedEvents: repeated, events: events.map((event) => event.title === "\u6682\u672A\u53D1\u73B0\u660E\u663E\u53D8\u5316" ? { ...event, title: "\u6682\u65E0\u65B0\u7684\u660E\u663E\u53D8\u5316", detail: "\u4E4B\u524D\u63D0\u9192\u8FC7\u7684\u4E8B\u9879\u4ECD\u53EF\u5728\u4E0B\u65B9\u67E5\u770B\uFF1B\u6682\u672A\u53D1\u73B0\u503C\u5F97\u91CD\u590D\u63D0\u9192\u7684\u65B0\u53D8\u5316\u3002" } : event) };
+  }
+  return { ...snapshot, events, repeatedEvents: repeated };
+}
+function markInsightSeen(history, snapshot, id) {
+  var _a, _b, _c, _d;
+  const event = snapshot.events.find((item) => item.id === id);
+  if (!event || event.type === "stable") return history;
+  const old = history.find((item) => item.cycle === snapshot.currentRange.start && item.id === id);
+  const metric = signalMetric(snapshot, event);
+  if ((old == null ? void 0 : old.date) === snapshot.currentRange.end && old.impact >= ((_a = event.impactCents) != null ? _a : 0) && (metric === void 0 || ((_b = old.metric) != null ? _b : -Infinity) >= metric)) return history;
+  return [
+    ...history.filter((item) => !(item.cycle === snapshot.currentRange.start && item.id === id)),
+    {
+      cycle: snapshot.currentRange.start,
+      id,
+      date: snapshot.currentRange.end,
+      impact: Math.max((_c = event.impactCents) != null ? _c : 0, (old == null ? void 0 : old.date) === snapshot.currentRange.end ? old.impact : 0),
+      metric: metric === void 0 ? void 0 : Math.max(metric, (old == null ? void 0 : old.date) === snapshot.currentRange.end ? (_d = old.metric) != null ? _d : metric : metric)
+    }
+  ].slice(-200);
+}
+function eventAdvice(event, action = "observe") {
+  var _a;
+  const advice = {
+    "frequency-spike": ["\u7559\u610F\u63A5\u4E0B\u6765\u662F\u5426\u4ECD\u9891\u7E41\u8D2D\u4E70\uFF0C\u800C\u4E0D\u53EA\u770B\u6BCF\u7B14\u91D1\u989D\u3002", "\u6838\u5BF9\u662F\u5426\u4E3A\u5206\u5355\u6216\u8865\u8BB0\uFF0C\u518D\u5224\u65AD\u8D2D\u4E70\u6B21\u6570\u662F\u5426\u771F\u7684\u589E\u52A0\u3002", "\u53EF\u5148\u68C0\u67E5\u91CD\u590D\u8D2D\u4E70\u7684\u5B89\u6392\uFF0C\u51CF\u5C11\u4E0D\u5FC5\u8981\u7684\u989D\u5916\u6B21\u6570\u3002"],
+    "ticket-spike": ["\u7559\u610F\u662F\u5355\u4EF7\u4E0A\u6DA8\u8FD8\u662F\u4E00\u6B21\u8D2D\u4E70\u66F4\u591A\u3002", "\u5BF9\u6BD4\u76F8\u8FD1\u5546\u54C1\u6216\u670D\u52A1\u7684\u5355\u4EF7\u4E0E\u6570\u91CF\uFF0C\u907F\u514D\u628A\u56E4\u8D27\u8BEF\u5224\u6210\u6DA8\u4EF7\u3002", "\u5B89\u6392\u4E0B\u4E00\u6B21\u8D2D\u4E70\u524D\uFF0C\u5148\u786E\u8BA4\u672C\u6B21\u589E\u52A0\u7684\u662F\u6570\u91CF\u8FD8\u662F\u5355\u4EF7\u3002"],
+    "spending-spike": ["\u7EE7\u7EED\u533A\u5206\u4E00\u6B21\u6027\u652F\u51FA\u548C\u6301\u7EED\u589E\u52A0\u7684\u65E5\u5E38\u652F\u51FA\u3002", "\u6838\u5BF9\u8FD9\u4E00\u5206\u7C7B\u7684\u5927\u989D\u8BB0\u5F55\uFF0C\u786E\u8BA4\u662F\u5426\u5C5E\u4E8E\u4E00\u6B21\u6027\u4E8B\u9879\u3002", "\u5148\u5217\u51FA\u8BE5\u5206\u7C7B\u5269\u4F59\u7684\u5FC5\u8981\u652F\u51FA\uFF0C\u518D\u5B89\u6392\u53EF\u5EF6\u540E\u7684\u6D88\u8D39\u3002"],
+    "mix-shift": ["\u5360\u6BD4\u53D8\u5316\u4E0D\u4E00\u5B9A\u662F\u8D85\u652F\uFF0C\u4E5F\u53EF\u80FD\u662F\u5176\u4ED6\u5206\u7C7B\u51CF\u5C11\u3002", "\u540C\u65F6\u6838\u5BF9\u8BE5\u5206\u7C7B\u7684\u91D1\u989D\u548C\u603B\u6D88\u8D39\uFF0C\u907F\u514D\u53EA\u770B\u5360\u6BD4\u3002", "\u5148\u786E\u8BA4\u652F\u51FA\u7ED3\u6784\u53D8\u5316\u662F\u5426\u7B26\u5408\u672C\u5468\u671F\u7684\u5B9E\u9645\u5B89\u6392\u3002"],
+    "large-expense": ["\u7559\u610F\u8FD9\u7B14\u652F\u51FA\u662F\u5426\u4F1A\u5728\u672C\u5468\u671F\u518D\u6B21\u53D1\u751F\u3002", "\u6838\u5BF9\u91D1\u989D\u53CA\u662F\u5426\u91CD\u590D\u8BB0\u8D26\uFF0C\u518D\u786E\u8BA4\u662F\u4E00\u6B21\u6027\u8FD8\u662F\u56FA\u5B9A\u652F\u51FA\u3002", "\u82E5\u5C5E\u4E8E\u56FA\u5B9A\u652F\u51FA\uFF0C\u53EF\u5728\u56FA\u5B9A\u652F\u51FA\u4E2D\u5173\u8054\u8FD9\u7B14\u8BB0\u5F55\uFF0C\u907F\u514D\u9884\u6D4B\u91CD\u590D\u8BA1\u5165\u3002"],
+    "salary-pressure": ["\u8FD9\u53EA\u662F\u53C2\u8003\uFF1B\u8BF7\u4F18\u5148\u6838\u5BF9\u5C1A\u672A\u652F\u4ED8\u7684\u5FC5\u8981\u652F\u51FA\u3002", "\u5148\u68C0\u67E5\u56FA\u5B9A\u652F\u51FA\u662F\u5426\u5DF2\u4ED8\uFF0C\u4EE5\u53CA\u5386\u53F2\u4ED8\u6B3E\u65E5\u671F\u662F\u5426\u504F\u79FB\u3002", "\u5148\u9884\u7559\u5C1A\u672A\u652F\u4ED8\u7684\u5FC5\u8981\u652F\u51FA\uFF0C\u518D\u5224\u65AD\u54EA\u4E9B\u975E\u5FC5\u8981\u6D88\u8D39\u53EF\u4EE5\u63A8\u8FDF\u3002"],
+    "salary-pace": ["\u53C2\u8003\u503C\u4E0D\u662F\u6D88\u8D39\u989D\u5EA6\uFF0C\u4ECD\u9700\u8003\u8651\u5C1A\u672A\u53D1\u751F\u7684\u5FC5\u8981\u652F\u51FA\u3002", "\u6838\u5BF9\u672C\u5468\u671F\u4E0E\u5386\u53F2\u5468\u671F\u7684\u56FA\u5B9A\u652F\u51FA\u652F\u4ED8\u65F6\u95F4\u662F\u5426\u4E00\u81F4\u3002", "\u628A\u672A\u4ED8\u56FA\u5B9A\u652F\u51FA\u786E\u8BA4\u540E\uFF0C\u518D\u8BC4\u4F30\u5269\u4F59\u5B89\u6392\u3002"],
+    "stable": ["\u53EF\u5C55\u5F00\u5224\u65AD\u4F9D\u636E\u548C\u6570\u636E\u5B8C\u6574\u6027\u7EE7\u7EED\u6838\u5BF9\u3002", "\u4F18\u5148\u6838\u5BF9\u7F3A\u5931\u65E5\u671F\u3001\u8D26\u76EE\u5DEE\u5F02\u4E0E\u5F85\u786E\u8BA4\u56FA\u5B9A\u652F\u51FA\u3002", "\u6570\u636E\u9F50\u5168\u540E\u518D\u51B3\u5B9A\u662F\u5426\u9700\u8981\u8C03\u6574\u6D88\u8D39\u5B89\u6392\u3002"]
+  };
+  return ((_a = advice[event.type]) != null ? _a : advice.stable)[action === "review" ? 1 : action === "plan" ? 2 : 0];
+}
+function unmatchedStarIds(ids, records) {
+  const known = new Set(records.map((record) => record.id));
+  return [...new Set(ids.filter((id) => !known.has(id)))];
+}
+function relinkStar(ids, oldId, newId, records) {
+  if (!ids.includes(oldId) || !records.some((record) => record.id === newId)) throw new Error("\u8BB0\u5F55\u5DF2\u53D8\u5316\uFF0C\u8BF7\u91CD\u65B0\u6838\u5BF9");
+  return [...new Set(ids.map((id) => id === oldId ? newId : id))];
+}
+
+// src/management.ts
 var RecordPicker = class extends import_obsidian3.FuzzySuggestModal {
   constructor(plugin, choose, range) {
     super(plugin.app);
@@ -2046,7 +2109,7 @@ function renderEmpty(parent, message) {
   parent.createDiv({ cls: "ledger-empty", text: message });
 }
 function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true, coverage, onOpenFile, onManageFixed) {
-  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r;
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s;
   const card = parent.createDiv({ cls: `ledger-advisor-card${animate ? " ledger-reveal" : ""}` });
   card.setAttribute("aria-busy", String(state.status === "loading"));
   const heading = card.createDiv({ cls: "ledger-advisor-heading" });
@@ -2096,7 +2159,12 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
   (0, import_obsidian5.setIcon)(infoToggle, "circle-alert");
   observation.createDiv({ cls: "ledger-advisor-observation-label", text: state.advice ? "AI \u8D22\u52A1\u5224\u65AD" : "\u672C\u5730\u5019\u9009\u5224\u65AD" });
   observation.createEl("h4", { text: (_f = (_e = state.advice) == null ? void 0 : _e.headline) != null ? _f : event.title });
-  observation.createEl("p", { text: (_h = (_g = state.advice) == null ? void 0 : _g.summary) != null ? _h : `${event.detail}${eventAdvice(event)}` });
+  observation.createEl("p", { cls: "ledger-advisor-judgment", text: (_h = (_g = state.advice) == null ? void 0 : _g.judgment) != null ? _h : `${event.detail}${eventAdvice(event)}` });
+  if ((_i = state.advice) == null ? void 0 : _i.action) {
+    const action = observation.createDiv({ cls: "ledger-advisor-action" });
+    action.createSpan({ text: "\u5EFA\u8BAE" });
+    action.createEl("p", { text: state.advice.action });
+  }
   if (state.message) observation.createDiv({ cls: `ledger-advisor-ai-status is-${state.status}`, text: state.message });
   const infoPanel = observation.createDiv({ cls: "ledger-advisor-info-panel", attr: { role: "region", "aria-label": "\u6D1E\u5BDF\u8BF4\u660E" } });
   infoPanel.hidden = true;
@@ -2117,8 +2185,8 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
   evidence.createEl("h5", { text: "\u5224\u65AD\u4F9D\u636E" });
   evidence.createEl("strong", { text: event.title });
   const evidenceList = evidence.createEl("ul");
-  for (const line of (_i = event.evidence) != null ? _i : [event.detail]) evidenceList.createEl("li", { text: line });
-  if ((_j = snapshot.repeatedEvents) == null ? void 0 : _j.length) {
+  for (const line of (_j = event.evidence) != null ? _j : [event.detail]) evidenceList.createEl("li", { text: line });
+  if ((_k = snapshot.repeatedEvents) == null ? void 0 : _k.length) {
     const repeated = infoPanel.createDiv({ cls: "ledger-advisor-info-section" });
     repeated.createEl("h5", { text: `\u5DF2\u63D0\u9192\u4E8B\u9879 \xB7 ${snapshot.repeatedEvents.length}` });
     repeated.createEl("p", { text: "\u540C\u4E00\u5468\u671F\u5185\uFF0C\u91D1\u989D\u5F71\u54CD\u589E\u52A0\u81F3\u5C11 20% \u4E14\u4E0D\u5C11\u4E8E \xA550 \u65F6\u91CD\u65B0\u63D0\u9192\uFF1B\u9891\u6B21\u3001\u5BA2\u5355\u4EF7\u6216\u5360\u6BD4\u7EE7\u7EED\u660E\u663E\u589E\u52A0\u4E5F\u4F1A\u91CD\u63D0\u9192\u3002\u5DE5\u8D44\u8D85\u652F\u98CE\u9669\u6301\u7EED\u663E\u793A\u3002" });
@@ -2129,10 +2197,10 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
   }
   if (onManageFixed) {
     const fixed = infoPanel.createDiv({ cls: "ledger-advisor-info-section" });
-    fixed.createEl("h5", { text: `\u56FA\u5B9A\u652F\u51FA \xB7 ${(_l = (_k = snapshot.fixedExpenses) == null ? void 0 : _k.items.length) != null ? _l : 0} \u9879${((_m = snapshot.fixedExpenses) == null ? void 0 : _m.available) === false ? "\u5F85\u6838\u5BF9" : ""}` });
+    fixed.createEl("h5", { text: `\u56FA\u5B9A\u652F\u51FA \xB7 ${(_m = (_l = snapshot.fixedExpenses) == null ? void 0 : _l.items.length) != null ? _m : 0} \u9879${((_n = snapshot.fixedExpenses) == null ? void 0 : _n.available) === false ? "\u5F85\u6838\u5BF9" : ""}` });
     fixed.createEl("p", { text: "\u5DE5\u8D44\u65E5\uFF1A\u6BCF\u6708 15 \u65E5\u3002\u624B\u52A8\u786E\u8BA4\u5B9E\u9645\u652F\u4ED8\u8BB0\u5F55\uFF0C\u4E0D\u4FEE\u6539\u8D26\u76EE\uFF1B\u672A\u914D\u7F6E\u65F6\u7EE7\u7EED\u6309\u5386\u53F2\u652F\u51FA\u53C2\u8003\u3002" });
     const statuses = { paid: "\u5DF2\u4ED8", unpaid: "\u672A\u4ED8", none: "\u65E0\u9700\u652F\u4ED8", unconfirmed: "\u5F85\u786E\u8BA4" };
-    for (const item of (_o = (_n = snapshot.fixedExpenses) == null ? void 0 : _n.items) != null ? _o : []) {
+    for (const item of (_p = (_o = snapshot.fixedExpenses) == null ? void 0 : _o.items) != null ? _p : []) {
       fixed.createEl("p", { text: `${item.name} \xB7 ${statuses[item.status]} \xB7 ${formatCents(item.status === "paid" ? item.paidCents : item.amountCents)}` });
       for (const issue of item.issues) fixed.createEl("small", { text: issue });
     }
@@ -2162,7 +2230,7 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
       for (const problem of coverage.undated) problemLink(problem.path, problem.reason);
     }
   }
-  const adviceCategories = new Map((_q = (_p = state.advice) == null ? void 0 : _p.categoryLines.map((line) => [line.category, line.text])) != null ? _q : []);
+  const adviceCategories = new Map((_r = (_q = state.advice) == null ? void 0 : _q.categoryLines.map((line) => [line.category, line.text])) != null ? _r : []);
   const references = state.advice && adviceCategories.size > 0 ? snapshot.categories.filter((item) => adviceCategories.has(item.category)).slice(0, 3) : snapshot.categories.filter((item) => item.baselineCycleCents > 0 || item.currentCents > 0).sort((a, b) => b.remainingReferenceCents - a.remainingReferenceCents || b.baselineCycleCents - a.baselineCycleCents).slice(0, 3);
   if (references.length > 0 && snapshot.historyCycleCount > 0) {
     const section = card.createDiv({ cls: "ledger-advisor-categories" });
@@ -2175,7 +2243,7 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
       row.createSpan({ text: item.category });
       const value = row.createDiv();
       value.createEl("strong", { text: formatCents(item.remainingReferenceCents) });
-      value.createEl("small", { text: (_r = adviceCategories.get(item.category)) != null ? _r : `\u8FC7\u5F80\u5468\u671F\u5747\u503C ${formatCents(item.baselineCycleCents)}` });
+      value.createEl("small", { text: (_s = adviceCategories.get(item.category)) != null ? _s : `\u8FC7\u5F80\u5468\u671F\u5747\u503C ${formatCents(item.baselineCycleCents)}` });
     }
   }
   card.createDiv({ cls: "ledger-advisor-source", text: "CURRENT SALARY CYCLE \xB7 PREVIOUS 2 FULL CYCLES \xB7 ALL CATEGORIES SCANNED \xB7 LOCAL LEDGER" });
@@ -2694,7 +2762,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian6.
         void this.plugin.saveSettings(false, false).catch(() => new import_obsidian6.Notice("\u63D0\u9192\u9605\u8BFB\u72B6\u6001\u4FDD\u5B58\u5931\u8D25"));
       }
     }
-    if (configured && financeSnapshot.salaryCents > 0 && this.plugin.settings.financeAdviceCache && !cached && !this.financeAdviceLoading && this.financeAdviceAttemptedDate !== financeSnapshot.currentRange.end) {
+    if (configured && financeSnapshot.salaryCents > 0 && this.plugin.settings.financeAdviceCache && (!cached || stale) && !this.financeAdviceLoading && this.financeAdviceAttemptedDate !== financeSnapshot.currentRange.end) {
       this.financeAdviceAttemptedDate = financeSnapshot.currentRange.end;
       this.financeAutoTimer = window.setTimeout(() => {
         this.financeAutoTimer = null;
@@ -2719,6 +2787,12 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian6.
       if (manual) new import_obsidian6.Notice("\u8BF7\u5148\u5728\u63D2\u4EF6\u8BBE\u7F6E\u4E2D\u586B\u5199\u6BCF\u4E2A\u5DE5\u8D44\u5468\u671F\u5230\u8D26\u5DE5\u8D44");
       return;
     }
+    const fingerprint = financeSnapshotFingerprint(snapshot);
+    const cached = this.plugin.settings.financeAdviceCache;
+    if ((cached == null ? void 0 : cached.date) === snapshot.currentRange.end && cached.fingerprint === fingerprint) {
+      if (manual) new import_obsidian6.Notice("\u8D26\u76EE\u6CA1\u6709\u65B0\u53D8\u5316\uFF0C\u5F53\u524D\u5224\u65AD\u4FDD\u6301\u4E0D\u53D8");
+      return;
+    }
     this.financeAdviceLoading = true;
     const controller = new AbortController();
     this.financeController = controller;
@@ -2733,7 +2807,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian6.
       }
       this.plugin.settings.financeAdviceCache = {
         date: snapshot.currentRange.end,
-        fingerprint: financeSnapshotFingerprint(snapshot),
+        fingerprint,
         advice,
         updatedAt: (/* @__PURE__ */ new Date()).toISOString()
       };

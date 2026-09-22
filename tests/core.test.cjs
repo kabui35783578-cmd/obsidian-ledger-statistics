@@ -107,6 +107,10 @@ test("AI fingerprint invalidates cached results after spending, salary or covera
   const input = JSON.parse(financeAiInput(snapshot));
   assert.equal(input.salary_summary.forecast, null);
   assert.equal(input.salary_summary.historical_average, null);
+  assert.ok(input.verified_facts.some((item) => item.id === "summary.current-spent"));
+  assert.equal(input.candidate_events[0].id, "stable");
+  assert.equal(input.candidate_events[0].evidence[0].id, "event.0.fact");
+  assert.ok(!("detail" in input.candidate_events[0]));
 });
 
 test("parses ordinary, backfilled, thousands, one-decimal, spaces and full-width records into integer cents", () => {
