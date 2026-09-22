@@ -566,20 +566,41 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
 
   const event = snapshot.events.find((item) => item.id === state.advice?.primaryEventId) ?? snapshot.events[0];
   const observation = card.createDiv({ cls: `ledger-advisor-observation is-${event.type}${state.advice?.tone === "warning" ? " is-warning" : ""}` });
+  const infoToggle = observation.createEl("button", {
+    cls: "ledger-advisor-info-toggle",
+    attr: { type: "button", "aria-label": "查看洞察说明", "aria-expanded": "false" }
+  });
+  setIcon(infoToggle, "circle-alert");
   observation.createDiv({ cls: "ledger-advisor-observation-label", text: state.advice ? "AI 财务判断" : "本地候选判断" });
   observation.createEl("h4", { text: state.advice?.headline ?? event.title });
   observation.createEl("p", { text: state.advice?.summary ?? `${event.detail}${eventAdvice(event)}` });
   if (state.message) observation.createDiv({ cls: `ledger-advisor-ai-status is-${state.status}`, text: state.message });
 
-  const evidence = card.createEl("details", { cls: "ledger-advisor-evidence" });
-  evidence.createEl("summary", { text: "查看判断依据" });
+  const infoPanel = observation.createDiv({ cls: "ledger-advisor-info-panel", attr: { role: "region", "aria-label": "洞察说明" } });
+  infoPanel.hidden = true;
+  infoToggle.addEventListener("click", () => {
+    infoPanel.hidden = !infoPanel.hidden;
+    infoToggle.setAttribute("aria-expanded", String(!infoPanel.hidden));
+    observation.toggleClass("has-open-info", !infoPanel.hidden);
+  });
+  observation.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !infoPanel.hidden) {
+      infoPanel.hidden = true;
+      infoToggle.setAttribute("aria-expanded", "false");
+      observation.removeClass("has-open-info");
+      infoToggle.focus();
+    }
+  });
+
+  const evidence = infoPanel.createDiv({ cls: "ledger-advisor-info-section" });
+  evidence.createEl("h5", { text: "判断依据" });
   evidence.createEl("strong", { text: event.title });
   const evidenceList = evidence.createEl("ul");
   for (const line of event.evidence ?? [event.detail]) evidenceList.createEl("li", { text: line });
 
   if (snapshot.repeatedEvents?.length) {
-    const repeated = card.createEl("details", { cls: "ledger-advisor-evidence" });
-    repeated.createEl("summary", { text: `已提醒事项 · ${snapshot.repeatedEvents.length}` });
+    const repeated = infoPanel.createDiv({ cls: "ledger-advisor-info-section" });
+    repeated.createEl("h5", { text: `已提醒事项 · ${snapshot.repeatedEvents.length}` });
     repeated.createEl("p", { text: "同一周期内，金额影响增加至少 20% 且不少于 ¥50 时重新提醒；频次、客单价或占比继续明显增加也会重提醒。工资超支风险持续显示。" });
     for (const item of snapshot.repeatedEvents) {
       repeated.createEl("strong", { text: item.title });
@@ -587,8 +608,8 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
     }
   }
   if (onManageFixed) {
-    const fixed = card.createEl("details", { cls: "ledger-advisor-evidence" });
-    fixed.createEl("summary", { text: `固定支出 · ${snapshot.fixedExpenses?.items.length ?? 0} 项${snapshot.fixedExpenses?.available === false ? "待核对" : ""}` });
+    const fixed = infoPanel.createDiv({ cls: "ledger-advisor-info-section" });
+    fixed.createEl("h5", { text: `固定支出 · ${snapshot.fixedExpenses?.items.length ?? 0} 项${snapshot.fixedExpenses?.available === false ? "待核对" : ""}` });
     fixed.createEl("p", { text: "工资日：每月 15 日。手动确认实际支付记录，不修改账目；未配置时继续按历史支出参考。" });
     const statuses = { paid: "已付", unpaid: "未付", none: "无需支付", unconfirmed: "待确认" };
     for (const item of snapshot.fixedExpenses?.items ?? []) {
@@ -600,9 +621,9 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
 
   if (coverage) {
     const issueCount = coverage.undated.length + coverage.cycles.reduce((sum, cycle) => sum + cycle.missingDates.length + cycle.problems.length, 0);
-    const details = card.createEl("details", { cls: "ledger-advisor-coverage" });
+    const details = infoPanel.createDiv({ cls: "ledger-advisor-info-section" });
     const zeroDays = coverage.cycles.reduce((sum, cycle) => sum + cycle.assumedZeroDates.length, 0);
-    details.createEl("summary", { text: issueCount ? `查看统计口径 · ${issueCount} 项待核对` : zeroDays ? `查看统计口径 · ${zeroDays} 天未记账按零消费` : "查看统计口径 · 记录齐全" });
+    details.createEl("h5", { text: issueCount ? `统计口径 · ${issueCount} 项待核对` : zeroDays ? `统计口径 · ${zeroDays} 天未记账按零消费` : "统计口径 · 记录齐全" });
     details.createEl("p", { text: "未记账日期按 ¥0 参与洞察；若有漏记，补记后会重新计算。解析或金额核对异常仍需处理，不会当成零消费。" });
     const problemLink = (path: string, reason: string) => {
       const row = details.createDiv({ cls: "ledger-advisor-data-issue" });

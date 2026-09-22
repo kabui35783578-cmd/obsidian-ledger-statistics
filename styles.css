@@ -808,12 +808,96 @@ button.ledger-advisor-refresh:disabled svg {
 }
 
 .ledger-advisor-observation {
+  position: relative;
   margin-top: 9px;
-  padding: 17px 18px;
+  padding: 17px 52px 17px 18px;
   border: 0;
   border-radius: 15px;
   background: var(--mono-ink);
 }
+
+button.ledger-advisor-info-toggle {
+  position: absolute;
+  top: 13px;
+  right: 14px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: var(--mono-faint);
+  background: transparent;
+  box-shadow: none;
+  opacity: 0.58;
+  transition: opacity 180ms ease, background-color 180ms ease, color 180ms ease;
+}
+
+button.ledger-advisor-info-toggle svg {
+  width: 17px;
+  height: 17px;
+  stroke-width: 1.6;
+}
+
+button.ledger-advisor-info-toggle[aria-expanded="true"] {
+  color: var(--mono-paper);
+  background: color-mix(in srgb, var(--mono-paper) 10%, transparent);
+  opacity: 0.9;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  button.ledger-advisor-info-toggle:hover {
+    color: var(--mono-paper);
+    background: color-mix(in srgb, var(--mono-paper) 8%, transparent);
+    opacity: 0.9;
+  }
+}
+
+.ledger-advisor-info-panel {
+  width: 100%;
+  max-height: min(430px, 60vh);
+  margin-top: 14px;
+  padding: 4px 16px;
+  overflow: auto;
+  border: 1px solid color-mix(in srgb, var(--mono-paper) 16%, transparent);
+  border-radius: 14px;
+  color: var(--mono-paper);
+  background: color-mix(in srgb, var(--mono-ink) 94%, var(--mono-paper));
+  box-shadow: 0 16px 36px color-mix(in srgb, black 24%, transparent);
+  overscroll-behavior: contain;
+}
+
+.ledger-advisor-info-panel[hidden] { display: none; }
+
+.ledger-advisor-info-section {
+  padding: 13px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--mono-paper) 12%, transparent);
+  color: var(--mono-faint);
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.ledger-advisor-info-section:last-child { border-bottom: 0; }
+.ledger-advisor-info-section h5 {
+  margin: 0 0 8px;
+  color: var(--mono-paper);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+.ledger-advisor-info-section strong { color: var(--mono-paper); }
+.ledger-advisor-info-section p { margin: 5px 0; }
+.ledger-advisor-info-section ul { margin: 7px 0 0; padding-left: 18px; }
+.ledger-advisor-info-section .ledger-button {
+  min-height: 34px;
+  margin-top: 8px;
+  color: var(--mono-ink);
+  background: var(--mono-paper);
+}
+.ledger-advisor-info-section .ledger-advisor-data-issue button { color: var(--mono-paper); }
 
 .ledger-advisor-observation h4 {
   margin: 5px 0 3px;
@@ -827,6 +911,46 @@ button.ledger-advisor-refresh:disabled svg {
   color: var(--mono-faint);
   font-size: 11px;
   line-height: 1.55;
+}
+
+.ledger-advisor-observation .ledger-advisor-info-section {
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 400;
+  line-height: 1.6;
+  letter-spacing: 0;
+}
+
+.ledger-advisor-observation .ledger-advisor-info-section h4 {
+  margin: 11px 0 3px;
+  color: var(--mono-paper);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.45;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.ledger-advisor-observation .ledger-advisor-info-section h5 {
+  margin: 0 0 7px;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 650;
+  line-height: 1.45;
+  letter-spacing: 0.01em;
+}
+
+.ledger-advisor-observation .ledger-advisor-info-section strong {
+  font-size: inherit;
+  font-weight: 600;
+  line-height: inherit;
+}
+
+.ledger-advisor-observation .ledger-advisor-info-section > p {
+  margin: 3px 0;
+  font-size: inherit;
+  line-height: inherit;
 }
 
 .ledger-advisor-ai-status {
@@ -2244,7 +2368,21 @@ button.ledger-advisor-refresh:disabled svg {
   }
 
   .ledger-advisor-observation {
-    padding: 14px;
+    padding: 14px 48px 14px 14px;
+  }
+
+  button.ledger-advisor-info-toggle {
+    top: 5px;
+    right: 5px;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .ledger-advisor-info-panel {
+    width: 100%;
+    max-height: min(460px, 58vh);
   }
 
   .ledger-budget-heading {

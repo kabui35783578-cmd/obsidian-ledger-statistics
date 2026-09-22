@@ -2089,18 +2089,38 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
     return item.id === ((_a2 = state.advice) == null ? void 0 : _a2.primaryEventId);
   })) != null ? _c : snapshot.events[0];
   const observation = card.createDiv({ cls: `ledger-advisor-observation is-${event.type}${((_d = state.advice) == null ? void 0 : _d.tone) === "warning" ? " is-warning" : ""}` });
+  const infoToggle = observation.createEl("button", {
+    cls: "ledger-advisor-info-toggle",
+    attr: { type: "button", "aria-label": "\u67E5\u770B\u6D1E\u5BDF\u8BF4\u660E", "aria-expanded": "false" }
+  });
+  (0, import_obsidian5.setIcon)(infoToggle, "circle-alert");
   observation.createDiv({ cls: "ledger-advisor-observation-label", text: state.advice ? "AI \u8D22\u52A1\u5224\u65AD" : "\u672C\u5730\u5019\u9009\u5224\u65AD" });
   observation.createEl("h4", { text: (_f = (_e = state.advice) == null ? void 0 : _e.headline) != null ? _f : event.title });
   observation.createEl("p", { text: (_h = (_g = state.advice) == null ? void 0 : _g.summary) != null ? _h : `${event.detail}${eventAdvice(event)}` });
   if (state.message) observation.createDiv({ cls: `ledger-advisor-ai-status is-${state.status}`, text: state.message });
-  const evidence = card.createEl("details", { cls: "ledger-advisor-evidence" });
-  evidence.createEl("summary", { text: "\u67E5\u770B\u5224\u65AD\u4F9D\u636E" });
+  const infoPanel = observation.createDiv({ cls: "ledger-advisor-info-panel", attr: { role: "region", "aria-label": "\u6D1E\u5BDF\u8BF4\u660E" } });
+  infoPanel.hidden = true;
+  infoToggle.addEventListener("click", () => {
+    infoPanel.hidden = !infoPanel.hidden;
+    infoToggle.setAttribute("aria-expanded", String(!infoPanel.hidden));
+    observation.toggleClass("has-open-info", !infoPanel.hidden);
+  });
+  observation.addEventListener("keydown", (event2) => {
+    if (event2.key === "Escape" && !infoPanel.hidden) {
+      infoPanel.hidden = true;
+      infoToggle.setAttribute("aria-expanded", "false");
+      observation.removeClass("has-open-info");
+      infoToggle.focus();
+    }
+  });
+  const evidence = infoPanel.createDiv({ cls: "ledger-advisor-info-section" });
+  evidence.createEl("h5", { text: "\u5224\u65AD\u4F9D\u636E" });
   evidence.createEl("strong", { text: event.title });
   const evidenceList = evidence.createEl("ul");
   for (const line of (_i = event.evidence) != null ? _i : [event.detail]) evidenceList.createEl("li", { text: line });
   if ((_j = snapshot.repeatedEvents) == null ? void 0 : _j.length) {
-    const repeated = card.createEl("details", { cls: "ledger-advisor-evidence" });
-    repeated.createEl("summary", { text: `\u5DF2\u63D0\u9192\u4E8B\u9879 \xB7 ${snapshot.repeatedEvents.length}` });
+    const repeated = infoPanel.createDiv({ cls: "ledger-advisor-info-section" });
+    repeated.createEl("h5", { text: `\u5DF2\u63D0\u9192\u4E8B\u9879 \xB7 ${snapshot.repeatedEvents.length}` });
     repeated.createEl("p", { text: "\u540C\u4E00\u5468\u671F\u5185\uFF0C\u91D1\u989D\u5F71\u54CD\u589E\u52A0\u81F3\u5C11 20% \u4E14\u4E0D\u5C11\u4E8E \xA550 \u65F6\u91CD\u65B0\u63D0\u9192\uFF1B\u9891\u6B21\u3001\u5BA2\u5355\u4EF7\u6216\u5360\u6BD4\u7EE7\u7EED\u660E\u663E\u589E\u52A0\u4E5F\u4F1A\u91CD\u63D0\u9192\u3002\u5DE5\u8D44\u8D85\u652F\u98CE\u9669\u6301\u7EED\u663E\u793A\u3002" });
     for (const item of snapshot.repeatedEvents) {
       repeated.createEl("strong", { text: item.title });
@@ -2108,8 +2128,8 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
     }
   }
   if (onManageFixed) {
-    const fixed = card.createEl("details", { cls: "ledger-advisor-evidence" });
-    fixed.createEl("summary", { text: `\u56FA\u5B9A\u652F\u51FA \xB7 ${(_l = (_k = snapshot.fixedExpenses) == null ? void 0 : _k.items.length) != null ? _l : 0} \u9879${((_m = snapshot.fixedExpenses) == null ? void 0 : _m.available) === false ? "\u5F85\u6838\u5BF9" : ""}` });
+    const fixed = infoPanel.createDiv({ cls: "ledger-advisor-info-section" });
+    fixed.createEl("h5", { text: `\u56FA\u5B9A\u652F\u51FA \xB7 ${(_l = (_k = snapshot.fixedExpenses) == null ? void 0 : _k.items.length) != null ? _l : 0} \u9879${((_m = snapshot.fixedExpenses) == null ? void 0 : _m.available) === false ? "\u5F85\u6838\u5BF9" : ""}` });
     fixed.createEl("p", { text: "\u5DE5\u8D44\u65E5\uFF1A\u6BCF\u6708 15 \u65E5\u3002\u624B\u52A8\u786E\u8BA4\u5B9E\u9645\u652F\u4ED8\u8BB0\u5F55\uFF0C\u4E0D\u4FEE\u6539\u8D26\u76EE\uFF1B\u672A\u914D\u7F6E\u65F6\u7EE7\u7EED\u6309\u5386\u53F2\u652F\u51FA\u53C2\u8003\u3002" });
     const statuses = { paid: "\u5DF2\u4ED8", unpaid: "\u672A\u4ED8", none: "\u65E0\u9700\u652F\u4ED8", unconfirmed: "\u5F85\u786E\u8BA4" };
     for (const item of (_o = (_n = snapshot.fixedExpenses) == null ? void 0 : _n.items) != null ? _o : []) {
@@ -2120,9 +2140,9 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
   }
   if (coverage) {
     const issueCount = coverage.undated.length + coverage.cycles.reduce((sum, cycle) => sum + cycle.missingDates.length + cycle.problems.length, 0);
-    const details = card.createEl("details", { cls: "ledger-advisor-coverage" });
+    const details = infoPanel.createDiv({ cls: "ledger-advisor-info-section" });
     const zeroDays = coverage.cycles.reduce((sum, cycle) => sum + cycle.assumedZeroDates.length, 0);
-    details.createEl("summary", { text: issueCount ? `\u67E5\u770B\u7EDF\u8BA1\u53E3\u5F84 \xB7 ${issueCount} \u9879\u5F85\u6838\u5BF9` : zeroDays ? `\u67E5\u770B\u7EDF\u8BA1\u53E3\u5F84 \xB7 ${zeroDays} \u5929\u672A\u8BB0\u8D26\u6309\u96F6\u6D88\u8D39` : "\u67E5\u770B\u7EDF\u8BA1\u53E3\u5F84 \xB7 \u8BB0\u5F55\u9F50\u5168" });
+    details.createEl("h5", { text: issueCount ? `\u7EDF\u8BA1\u53E3\u5F84 \xB7 ${issueCount} \u9879\u5F85\u6838\u5BF9` : zeroDays ? `\u7EDF\u8BA1\u53E3\u5F84 \xB7 ${zeroDays} \u5929\u672A\u8BB0\u8D26\u6309\u96F6\u6D88\u8D39` : "\u7EDF\u8BA1\u53E3\u5F84 \xB7 \u8BB0\u5F55\u9F50\u5168" });
     details.createEl("p", { text: "\u672A\u8BB0\u8D26\u65E5\u671F\u6309 \xA50 \u53C2\u4E0E\u6D1E\u5BDF\uFF1B\u82E5\u6709\u6F0F\u8BB0\uFF0C\u8865\u8BB0\u540E\u4F1A\u91CD\u65B0\u8BA1\u7B97\u3002\u89E3\u6790\u6216\u91D1\u989D\u6838\u5BF9\u5F02\u5E38\u4ECD\u9700\u5904\u7406\uFF0C\u4E0D\u4F1A\u5F53\u6210\u96F6\u6D88\u8D39\u3002" });
     const problemLink = (path, reason) => {
       const row = details.createDiv({ cls: "ledger-advisor-data-issue" });
