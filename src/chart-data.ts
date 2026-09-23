@@ -1,4 +1,5 @@
 import { DateRange, LedgerRecord, salaryCycleFullRange } from "./core";
+import type { BalanceStatus } from "./balance";
 
 export interface WaterfallStep {
   label: string;
@@ -6,10 +7,10 @@ export interface WaterfallStep {
   fromCents: number;
   toCents: number;
   categories: string[];
-  kind: "salary" | "expense" | "remaining";
+  kind: "salary" | "expense" | "calibration" | "remaining";
 }
 
-export function salaryWaterfall(records: LedgerRecord[], range: DateRange, salaryCents: number): WaterfallStep[] {
+export function salaryWaterfall(records: LedgerRecord[], range: DateRange, salaryCents: number, balanceStatus?: BalanceStatus): WaterfallStep[] {
   if (salaryCents <= 0) return [];
   const amounts = new Map<string, number>();
   for (const record of records) {
@@ -30,7 +31,14 @@ export function salaryWaterfall(records: LedgerRecord[], range: DateRange, salar
     steps.push({ label: group.label, deltaCents: -group.cents, fromCents: balance, toCents: balance - group.cents, categories: group.categories, kind: "expense" });
     balance -= group.cents;
   }
-  steps.push({ label: "账面剩余", deltaCents: balance, fromCents: 0, toCents: balance, categories: [], kind: "remaining" });
+  if (balanceStatus?.calibrated) {
+    const adjustment = balanceStatus.remainingCents - balance;
+    if (adjustment !== 0) {
+      steps.push({ label: "余额校准差额", deltaCents: adjustment, fromCents: balance, toCents: balanceStatus.remainingCents, categories: [], kind: "calibration" });
+    }
+    balance = balanceStatus.remainingCents;
+  }
+  steps.push({ label: balanceStatus?.calibrated ? "实际余额" : "账面剩余", deltaCents: balance, fromCents: 0, toCents: balance, categories: [], kind: "remaining" });
   return steps;
 }
 

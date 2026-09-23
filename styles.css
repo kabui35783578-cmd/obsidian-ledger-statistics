@@ -3042,6 +3042,7 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
   .ledger-waterfall-desktop { display: none; }
   .ledger-waterfall-mobile { display: grid; gap: 8px; }
   .ledger-waterfall-mobile-step { padding: 12px 14px; border-radius: 14px; background: var(--mono-7); }
+  .ledger-waterfall-mobile-step.is-calibration { background: var(--ledger-panel-strong); }
   .ledger-waterfall-mobile-step.is-remaining { background: var(--mono-ink); color: var(--mono-paper); }
   .ledger-waterfall-mobile-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-width: 0; font-size: 13px; }
   .ledger-waterfall-mobile-head > span { min-width: 0; overflow-wrap: anywhere; }

@@ -433,8 +433,11 @@ export class LedgerStatisticsView extends ItemView {
     this.metric(metrics, "笔数", String(stats.count), "点击查看全部明细", () => this.goDetails());
     this.metric(metrics, "日均", formatCents(stats.averagePerRecordedDayCents), `分母：${stats.recordedDays} 个有日记账文件的日期`, () => this.goDetails());
     this.metric(metrics, "最大单笔", stats.maxRecord ? formatCents(stats.maxRecord.cents) : "—", stats.maxRecord ? `${stats.maxRecord.category} · ${stats.maxRecord.date}` : "暂无记录", () => this.goDetails());
-    const currentCycle = salaryDayRange(new Date());
-    const waterfall = salaryWaterfall(flattenRecords(files), currentCycle, this.plugin.settings.salaryCents);
+    const now = new Date();
+    const currentCycle = salaryDayRange(now);
+    const cycleRecords = flattenRecords(files);
+    const balance = balanceStatus(cycleRecords, now, this.plugin.settings.salaryCents, this.plugin.settings.balanceCalibration);
+    const waterfall = salaryWaterfall(cycleRecords, currentCycle, this.plugin.settings.salaryCents, balance);
     renderSalaryWaterfall(parent, waterfall, currentCycle, (category) => this.drillCategoryInRange(category, currentCycle));
     if (records.length === 0) {
       renderEmpty(parent, "当前筛选条件下没有记录。缺少文件的日期不会按零消费处理。");

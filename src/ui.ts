@@ -486,11 +486,13 @@ export function renderTrendChart(parent: HTMLElement, points: TrendPoint[], type
 export function renderSalaryWaterfall(parent: HTMLElement, steps: WaterfallStep[], range: { start: string; end: string }, onCategory: (category: string) => void): void {
   const spent = -steps.filter((step) => step.kind === "expense").reduce((sum, step) => sum + step.deltaCents, 0);
   const remaining = steps.at(-1)?.toCents ?? 0;
+  const calibrated = steps.at(-1)?.label === "实际余额";
+  const signedAdjustment = (cents: number): string => `${cents < 0 ? "−" : "+"}${formatCents(Math.abs(cents))}`;
   const { shell, chart } = monoCard(
     parent,
     "LUPI BASICS · F9 RUNG WATERFALL",
-    remaining < 0 ? `本工资周期支出超出工资 ${formatCents(-remaining)}` : `本工资周期已支出 ${formatCents(spent)}`,
-    `${range.start} — ${range.end} · 工资为设置值 · 扣减全部已入账支出，与顶部筛选无关`
+    !calibrated && remaining < 0 ? `本工资周期支出超出工资 ${formatCents(-remaining)}` : `本工资周期已支出 ${formatCents(spent)}`,
+    `${range.start} — ${range.end} · 工资为设置值 · 分类只计已入账支出${calibrated ? " · 末段按余额校准" : ""} · 与顶部筛选无关`
   );
   if (!steps.length) {
     renderEmpty(chart, "请先在设置中填写每个工资周期到账工资");
@@ -506,24 +508,24 @@ export function renderSalaryWaterfall(parent: HTMLElement, steps: WaterfallStep[
   const scale = (value: number): number => bottom - (value - low) / (high - low) * (bottom - top);
   const xAt = (index: number): number => 74 + index * (width - 148) / Math.max(1, steps.length - 1);
   const unit = niceCurrencyUnit(Math.max(...steps.map((step) => Math.abs(step.deltaCents))), 25);
-  const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": `工资周期瀑布图，已支出 ${formatCents(spent)}，账面剩余 ${formatCents(remaining)}` });
+  const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": `工资周期瀑布图，已记账支出 ${formatCents(spent)}，${calibrated ? "实际余额" : "账面剩余"} ${formatCents(remaining)}` });
   svg.classList.add("ledger-svg", "ledger-waterfall-svg", "ledger-waterfall-desktop");
   svg.append(svgEl("line", { x1: 32, y1: scale(0), x2: width - 30, y2: scale(0), stroke: GRID, "stroke-width": 1, class: "ledger-fade" }));
   steps.forEach((step, index) => {
     const x = xAt(index);
-    const a = step.kind === "expense" ? step.toCents : 0;
-    const b = step.kind === "expense" ? step.fromCents : step.toCents;
+    const a = step.kind === "expense" || step.kind === "calibration" ? Math.min(step.fromCents, step.toCents) : 0;
+    const b = step.kind === "expense" || step.kind === "calibration" ? Math.max(step.fromCents, step.toCents) : step.toCents;
     const count = step.deltaCents === 0 ? 1 : Math.min(34, Math.max(1, Math.ceil(Math.abs(b - a) / unit)));
     const group = svgEl("g", { class: "ledger-waterfall-step" });
     const title = svgEl("title");
-    title.textContent = `${step.label}：${step.kind === "expense" ? "支出 " + formatCents(-step.deltaCents) : formatCents(step.toCents)}`;
+    title.textContent = `${step.label}：${step.kind === "expense" ? "已记账支出 " + formatCents(-step.deltaCents) : step.kind === "calibration" ? `${signedAdjustment(step.deltaCents)}，不计入已记账支出` : formatCents(step.toCents)}`;
     group.append(title);
     for (let rung = 0; rung < count; rung += 1) {
       const value = a + (rung + 0.5) / count * (b - a);
       group.append(svgEl("line", {
         x1: x - 12, y1: scale(value), x2: x + 12, y2: scale(value),
-        stroke: step.kind === "expense" ? MUTED : step.kind === "remaining" ? HERO : INK,
-        "stroke-width": 1.3, ...(step.kind === "expense" ? { "stroke-dasharray": "3 3" } : {}),
+        stroke: step.kind === "expense" || step.kind === "calibration" ? MUTED : step.kind === "remaining" ? HERO : INK,
+        "stroke-width": 1.3, ...(step.kind === "expense" || step.kind === "calibration" ? { "stroke-dasharray": step.kind === "calibration" ? "1 3" : "3 3" } : {}),
         class: "ledger-fade", style: `animation-delay:${index * 0.08 + rung * 0.008}s`
       }));
     }
@@ -531,7 +533,7 @@ export function renderSalaryWaterfall(parent: HTMLElement, steps: WaterfallStep[
       group.append(svgEl("line", { x1: x + 15, y1: scale(step.toCents), x2: xAt(index + 1) - 15, y2: scale(step.toCents), stroke: FAINT, "stroke-width": 1, "stroke-dasharray": "2 4" }));
     }
     const value = svgEl("text", { x, y: Math.max(19, scale(Math.max(a, b)) - 11), "text-anchor": "middle", class: "ledger-waterfall-value" });
-    value.textContent = step.kind === "expense" ? `−${formatCents(-step.deltaCents)}` : formatCents(step.toCents);
+    value.textContent = step.kind === "expense" ? `−${formatCents(-step.deltaCents)}` : step.kind === "calibration" ? signedAdjustment(step.deltaCents) : formatCents(step.toCents);
     const label = svgEl("text", { x, y: 298, "text-anchor": "middle", class: "ledger-waterfall-label" });
     label.textContent = step.label;
     group.append(value, label);
@@ -539,7 +541,7 @@ export function renderSalaryWaterfall(parent: HTMLElement, steps: WaterfallStep[
     svg.append(group);
   });
   const foot = svgEl("text", { x: width / 2, y: height - 9, "text-anchor": "middle", class: "ledger-foot-label" });
-  foot.textContent = `SOLID = SET SALARY / REMAINING · DASHED = POSTED SPENDING · ONE RUNG ≈ ${formatCents(unit)}`;
+  foot.textContent = `SOLID = SALARY / REMAINING · DASHED = POSTED SPENDING${calibrated ? " / BALANCE RECONCILIATION" : ""} · ONE RUNG ≈ ${formatCents(unit)}`;
   svg.append(foot);
   chart.append(svg);
   const mobile = chart.createDiv({ cls: "ledger-waterfall-mobile" });
@@ -547,8 +549,9 @@ export function renderSalaryWaterfall(parent: HTMLElement, steps: WaterfallStep[
     const row = mobile.createDiv({ cls: `ledger-waterfall-mobile-step is-${step.kind}` });
     const head = row.createDiv({ cls: "ledger-waterfall-mobile-head" });
     head.createSpan({ text: step.label });
-    head.createEl("strong", { text: step.kind === "expense" ? `−${formatCents(-step.deltaCents)}` : formatCents(step.toCents) });
+    head.createEl("strong", { text: step.kind === "expense" ? `−${formatCents(-step.deltaCents)}` : step.kind === "calibration" ? signedAdjustment(step.deltaCents) : formatCents(step.toCents) });
     if (step.kind === "expense") row.createDiv({ cls: "ledger-waterfall-mobile-balance", text: `扣除后剩余 ${formatCents(step.toCents)}` });
+    if (step.kind === "calibration") row.createDiv({ cls: "ledger-waterfall-mobile-balance", text: "对账差额，不计入上方已支出" });
     if (step.categories.length === 1) {
       row.setAttribute("role", "button");
       row.setAttribute("tabindex", "0");
@@ -556,7 +559,9 @@ export function renderSalaryWaterfall(parent: HTMLElement, steps: WaterfallStep[
       row.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onCategory(step.categories[0]); } });
     }
   });
-  shell.createDiv({ cls: "ledger-waterfall-note", text: "只扣除已记录的交易；固定支出如已入账，不会再次扣除。账面剩余不包含余额校准，与洞察卡片显示的当前余额可能不同。" });
+  shell.createDiv({ cls: "ledger-waterfall-note", text: calibrated
+    ? "已支出与分类金额只来自账本；余额校准差额单独桥接到实际余额，不当作新消费，也不影响洞察判断。"
+    : "只扣除已记录的交易；固定支出如已入账，不会再次扣除。未校准时的账面剩余只是推算值。" });
   sourceLine(shell, "RUNG WATERFALL · WIRE · CURRENT SALARY CYCLE · LOCAL LEDGER");
 }
 

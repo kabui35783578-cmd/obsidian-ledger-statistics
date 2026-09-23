@@ -1901,7 +1901,7 @@ function assessFinanceAdvice(snapshot, cache) {
 }
 
 // src/chart-data.ts
-function salaryWaterfall(records, range, salaryCents) {
+function salaryWaterfall(records, range, salaryCents, balanceStatus2) {
   var _a;
   if (salaryCents <= 0) return [];
   const amounts = /* @__PURE__ */ new Map();
@@ -1920,7 +1920,14 @@ function salaryWaterfall(records, range, salaryCents) {
     steps.push({ label: group.label, deltaCents: -group.cents, fromCents: balance, toCents: balance - group.cents, categories: group.categories, kind: "expense" });
     balance -= group.cents;
   }
-  steps.push({ label: "\u8D26\u9762\u5269\u4F59", deltaCents: balance, fromCents: 0, toCents: balance, categories: [], kind: "remaining" });
+  if (balanceStatus2 == null ? void 0 : balanceStatus2.calibrated) {
+    const adjustment = balanceStatus2.remainingCents - balance;
+    if (adjustment !== 0) {
+      steps.push({ label: "\u4F59\u989D\u6821\u51C6\u5DEE\u989D", deltaCents: adjustment, fromCents: balance, toCents: balanceStatus2.remainingCents, categories: [], kind: "calibration" });
+    }
+    balance = balanceStatus2.remainingCents;
+  }
+  steps.push({ label: (balanceStatus2 == null ? void 0 : balanceStatus2.calibrated) ? "\u5B9E\u9645\u4F59\u989D" : "\u8D26\u9762\u5269\u4F59", deltaCents: balance, fromCents: 0, toCents: balance, categories: [], kind: "remaining" });
   return steps;
 }
 function median2(sorted) {
@@ -2461,14 +2468,16 @@ function renderTrendChart(parent, points, type, onClick) {
   sourceLine(shell, `${isLine ? "HAIRLINE LINE" : "HAIRLINE AREA"} \xB7 MONO-BASIC \xB7 LOCAL LEDGER`);
 }
 function renderSalaryWaterfall(parent, steps, range, onCategory) {
-  var _a, _b;
+  var _a, _b, _c;
   const spent = -steps.filter((step) => step.kind === "expense").reduce((sum, step) => sum + step.deltaCents, 0);
   const remaining = (_b = (_a = steps.at(-1)) == null ? void 0 : _a.toCents) != null ? _b : 0;
+  const calibrated = ((_c = steps.at(-1)) == null ? void 0 : _c.label) === "\u5B9E\u9645\u4F59\u989D";
+  const signedAdjustment = (cents) => `${cents < 0 ? "\u2212" : "+"}${formatCents(Math.abs(cents))}`;
   const { shell, chart } = monoCard(
     parent,
     "LUPI BASICS \xB7 F9 RUNG WATERFALL",
-    remaining < 0 ? `\u672C\u5DE5\u8D44\u5468\u671F\u652F\u51FA\u8D85\u51FA\u5DE5\u8D44 ${formatCents(-remaining)}` : `\u672C\u5DE5\u8D44\u5468\u671F\u5DF2\u652F\u51FA ${formatCents(spent)}`,
-    `${range.start} \u2014 ${range.end} \xB7 \u5DE5\u8D44\u4E3A\u8BBE\u7F6E\u503C \xB7 \u6263\u51CF\u5168\u90E8\u5DF2\u5165\u8D26\u652F\u51FA\uFF0C\u4E0E\u9876\u90E8\u7B5B\u9009\u65E0\u5173`
+    !calibrated && remaining < 0 ? `\u672C\u5DE5\u8D44\u5468\u671F\u652F\u51FA\u8D85\u51FA\u5DE5\u8D44 ${formatCents(-remaining)}` : `\u672C\u5DE5\u8D44\u5468\u671F\u5DF2\u652F\u51FA ${formatCents(spent)}`,
+    `${range.start} \u2014 ${range.end} \xB7 \u5DE5\u8D44\u4E3A\u8BBE\u7F6E\u503C \xB7 \u5206\u7C7B\u53EA\u8BA1\u5DF2\u5165\u8D26\u652F\u51FA${calibrated ? " \xB7 \u672B\u6BB5\u6309\u4F59\u989D\u6821\u51C6" : ""} \xB7 \u4E0E\u9876\u90E8\u7B5B\u9009\u65E0\u5173`
   );
   if (!steps.length) {
     renderEmpty(chart, "\u8BF7\u5148\u5728\u8BBE\u7F6E\u4E2D\u586B\u5199\u6BCF\u4E2A\u5DE5\u8D44\u5468\u671F\u5230\u8D26\u5DE5\u8D44");
@@ -2484,17 +2493,17 @@ function renderSalaryWaterfall(parent, steps, range, onCategory) {
   const scale = (value) => bottom - (value - low) / (high - low) * (bottom - top);
   const xAt = (index) => 74 + index * (width - 148) / Math.max(1, steps.length - 1);
   const unit = niceCurrencyUnit(Math.max(...steps.map((step) => Math.abs(step.deltaCents))), 25);
-  const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": `\u5DE5\u8D44\u5468\u671F\u7011\u5E03\u56FE\uFF0C\u5DF2\u652F\u51FA ${formatCents(spent)}\uFF0C\u8D26\u9762\u5269\u4F59 ${formatCents(remaining)}` });
+  const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": `\u5DE5\u8D44\u5468\u671F\u7011\u5E03\u56FE\uFF0C\u5DF2\u8BB0\u8D26\u652F\u51FA ${formatCents(spent)}\uFF0C${calibrated ? "\u5B9E\u9645\u4F59\u989D" : "\u8D26\u9762\u5269\u4F59"} ${formatCents(remaining)}` });
   svg.classList.add("ledger-svg", "ledger-waterfall-svg", "ledger-waterfall-desktop");
   svg.append(svgEl("line", { x1: 32, y1: scale(0), x2: width - 30, y2: scale(0), stroke: GRID, "stroke-width": 1, class: "ledger-fade" }));
   steps.forEach((step, index) => {
     const x = xAt(index);
-    const a = step.kind === "expense" ? step.toCents : 0;
-    const b = step.kind === "expense" ? step.fromCents : step.toCents;
+    const a = step.kind === "expense" || step.kind === "calibration" ? Math.min(step.fromCents, step.toCents) : 0;
+    const b = step.kind === "expense" || step.kind === "calibration" ? Math.max(step.fromCents, step.toCents) : step.toCents;
     const count = step.deltaCents === 0 ? 1 : Math.min(34, Math.max(1, Math.ceil(Math.abs(b - a) / unit)));
     const group = svgEl("g", { class: "ledger-waterfall-step" });
     const title = svgEl("title");
-    title.textContent = `${step.label}\uFF1A${step.kind === "expense" ? "\u652F\u51FA " + formatCents(-step.deltaCents) : formatCents(step.toCents)}`;
+    title.textContent = `${step.label}\uFF1A${step.kind === "expense" ? "\u5DF2\u8BB0\u8D26\u652F\u51FA " + formatCents(-step.deltaCents) : step.kind === "calibration" ? `${signedAdjustment(step.deltaCents)}\uFF0C\u4E0D\u8BA1\u5165\u5DF2\u8BB0\u8D26\u652F\u51FA` : formatCents(step.toCents)}`;
     group.append(title);
     for (let rung = 0; rung < count; rung += 1) {
       const value2 = a + (rung + 0.5) / count * (b - a);
@@ -2503,9 +2512,9 @@ function renderSalaryWaterfall(parent, steps, range, onCategory) {
         y1: scale(value2),
         x2: x + 12,
         y2: scale(value2),
-        stroke: step.kind === "expense" ? MUTED : step.kind === "remaining" ? HERO : INK,
+        stroke: step.kind === "expense" || step.kind === "calibration" ? MUTED : step.kind === "remaining" ? HERO : INK,
         "stroke-width": 1.3,
-        ...step.kind === "expense" ? { "stroke-dasharray": "3 3" } : {},
+        ...step.kind === "expense" || step.kind === "calibration" ? { "stroke-dasharray": step.kind === "calibration" ? "1 3" : "3 3" } : {},
         class: "ledger-fade",
         style: `animation-delay:${index * 0.08 + rung * 8e-3}s`
       }));
@@ -2514,7 +2523,7 @@ function renderSalaryWaterfall(parent, steps, range, onCategory) {
       group.append(svgEl("line", { x1: x + 15, y1: scale(step.toCents), x2: xAt(index + 1) - 15, y2: scale(step.toCents), stroke: FAINT, "stroke-width": 1, "stroke-dasharray": "2 4" }));
     }
     const value = svgEl("text", { x, y: Math.max(19, scale(Math.max(a, b)) - 11), "text-anchor": "middle", class: "ledger-waterfall-value" });
-    value.textContent = step.kind === "expense" ? `\u2212${formatCents(-step.deltaCents)}` : formatCents(step.toCents);
+    value.textContent = step.kind === "expense" ? `\u2212${formatCents(-step.deltaCents)}` : step.kind === "calibration" ? signedAdjustment(step.deltaCents) : formatCents(step.toCents);
     const label = svgEl("text", { x, y: 298, "text-anchor": "middle", class: "ledger-waterfall-label" });
     label.textContent = step.label;
     group.append(value, label);
@@ -2522,7 +2531,7 @@ function renderSalaryWaterfall(parent, steps, range, onCategory) {
     svg.append(group);
   });
   const foot = svgEl("text", { x: width / 2, y: height - 9, "text-anchor": "middle", class: "ledger-foot-label" });
-  foot.textContent = `SOLID = SET SALARY / REMAINING \xB7 DASHED = POSTED SPENDING \xB7 ONE RUNG \u2248 ${formatCents(unit)}`;
+  foot.textContent = `SOLID = SALARY / REMAINING \xB7 DASHED = POSTED SPENDING${calibrated ? " / BALANCE RECONCILIATION" : ""} \xB7 ONE RUNG \u2248 ${formatCents(unit)}`;
   svg.append(foot);
   chart.append(svg);
   const mobile = chart.createDiv({ cls: "ledger-waterfall-mobile" });
@@ -2530,8 +2539,9 @@ function renderSalaryWaterfall(parent, steps, range, onCategory) {
     const row = mobile.createDiv({ cls: `ledger-waterfall-mobile-step is-${step.kind}` });
     const head = row.createDiv({ cls: "ledger-waterfall-mobile-head" });
     head.createSpan({ text: step.label });
-    head.createEl("strong", { text: step.kind === "expense" ? `\u2212${formatCents(-step.deltaCents)}` : formatCents(step.toCents) });
+    head.createEl("strong", { text: step.kind === "expense" ? `\u2212${formatCents(-step.deltaCents)}` : step.kind === "calibration" ? signedAdjustment(step.deltaCents) : formatCents(step.toCents) });
     if (step.kind === "expense") row.createDiv({ cls: "ledger-waterfall-mobile-balance", text: `\u6263\u9664\u540E\u5269\u4F59 ${formatCents(step.toCents)}` });
+    if (step.kind === "calibration") row.createDiv({ cls: "ledger-waterfall-mobile-balance", text: "\u5BF9\u8D26\u5DEE\u989D\uFF0C\u4E0D\u8BA1\u5165\u4E0A\u65B9\u5DF2\u652F\u51FA" });
     if (step.categories.length === 1) {
       row.setAttribute("role", "button");
       row.setAttribute("tabindex", "0");
@@ -2544,7 +2554,7 @@ function renderSalaryWaterfall(parent, steps, range, onCategory) {
       });
     }
   });
-  shell.createDiv({ cls: "ledger-waterfall-note", text: "\u53EA\u6263\u9664\u5DF2\u8BB0\u5F55\u7684\u4EA4\u6613\uFF1B\u56FA\u5B9A\u652F\u51FA\u5982\u5DF2\u5165\u8D26\uFF0C\u4E0D\u4F1A\u518D\u6B21\u6263\u9664\u3002\u8D26\u9762\u5269\u4F59\u4E0D\u5305\u542B\u4F59\u989D\u6821\u51C6\uFF0C\u4E0E\u6D1E\u5BDF\u5361\u7247\u663E\u793A\u7684\u5F53\u524D\u4F59\u989D\u53EF\u80FD\u4E0D\u540C\u3002" });
+  shell.createDiv({ cls: "ledger-waterfall-note", text: calibrated ? "\u5DF2\u652F\u51FA\u4E0E\u5206\u7C7B\u91D1\u989D\u53EA\u6765\u81EA\u8D26\u672C\uFF1B\u4F59\u989D\u6821\u51C6\u5DEE\u989D\u5355\u72EC\u6865\u63A5\u5230\u5B9E\u9645\u4F59\u989D\uFF0C\u4E0D\u5F53\u4F5C\u65B0\u6D88\u8D39\uFF0C\u4E5F\u4E0D\u5F71\u54CD\u6D1E\u5BDF\u5224\u65AD\u3002" : "\u53EA\u6263\u9664\u5DF2\u8BB0\u5F55\u7684\u4EA4\u6613\uFF1B\u56FA\u5B9A\u652F\u51FA\u5982\u5DF2\u5165\u8D26\uFF0C\u4E0D\u4F1A\u518D\u6B21\u6263\u9664\u3002\u672A\u6821\u51C6\u65F6\u7684\u8D26\u9762\u5269\u4F59\u53EA\u662F\u63A8\u7B97\u503C\u3002" });
   sourceLine(shell, "RUNG WATERFALL \xB7 WIRE \xB7 CURRENT SALARY CYCLE \xB7 LOCAL LEDGER");
 }
 function renderCategoryBox(parent, data, onOpenRecord) {
@@ -3299,8 +3309,11 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian6.
     this.metric(metrics, "\u7B14\u6570", String(stats.count), "\u70B9\u51FB\u67E5\u770B\u5168\u90E8\u660E\u7EC6", () => this.goDetails());
     this.metric(metrics, "\u65E5\u5747", formatCents(stats.averagePerRecordedDayCents), `\u5206\u6BCD\uFF1A${stats.recordedDays} \u4E2A\u6709\u65E5\u8BB0\u8D26\u6587\u4EF6\u7684\u65E5\u671F`, () => this.goDetails());
     this.metric(metrics, "\u6700\u5927\u5355\u7B14", stats.maxRecord ? formatCents(stats.maxRecord.cents) : "\u2014", stats.maxRecord ? `${stats.maxRecord.category} \xB7 ${stats.maxRecord.date}` : "\u6682\u65E0\u8BB0\u5F55", () => this.goDetails());
-    const currentCycle = salaryDayRange(/* @__PURE__ */ new Date());
-    const waterfall = salaryWaterfall(flattenRecords(files), currentCycle, this.plugin.settings.salaryCents);
+    const now = /* @__PURE__ */ new Date();
+    const currentCycle = salaryDayRange(now);
+    const cycleRecords = flattenRecords(files);
+    const balance = balanceStatus(cycleRecords, now, this.plugin.settings.salaryCents, this.plugin.settings.balanceCalibration);
+    const waterfall = salaryWaterfall(cycleRecords, currentCycle, this.plugin.settings.salaryCents, balance);
     renderSalaryWaterfall(parent, waterfall, currentCycle, (category) => this.drillCategoryInRange(category, currentCycle));
     if (records.length === 0) {
       renderEmpty(parent, "\u5F53\u524D\u7B5B\u9009\u6761\u4EF6\u4E0B\u6CA1\u6709\u8BB0\u5F55\u3002\u7F3A\u5C11\u6587\u4EF6\u7684\u65E5\u671F\u4E0D\u4F1A\u6309\u96F6\u6D88\u8D39\u5904\u7406\u3002");
