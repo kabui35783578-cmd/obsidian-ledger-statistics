@@ -130,11 +130,11 @@ test('manual AI refresh skips a paid request when the verified snapshot has not 
   global.__ledgerTestNotices = [];
   const view = Object.create(LedgerStatisticsView.prototype);
   Object.assign(view, { closed: false, financeAdviceLoading: false, financeController: null,
-    plugin: { settings: { financeAiEnabled: true, financeAdviceCache: { date: snapshot.currentRange.end, fingerprint, advice: {}, updatedAt: new Date().toISOString() } } },
+    plugin: { settings: { financeAiEnabled: true, financeAdviceCache: { date: snapshot.currentRange.end, fingerprint, advice: { primaryEventId: 'stable' }, updatedAt: new Date().toISOString() } } },
     refreshFinanceSection: () => {} });
   await view.loadFinanceAdvice(snapshot, true);
   assert.equal(requests, 0);
-  assert.deepEqual(global.__ledgerTestNotices, ['账目没有新变化，当前判断保持不变']);
+  assert.deepEqual(global.__ledgerTestNotices, ['当前判断仍有效，没有需要重新分析的重要变化']);
   delete global.__ledgerTestRequest;
   delete global.__ledgerTestNotices;
 });

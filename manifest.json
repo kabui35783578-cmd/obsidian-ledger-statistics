@@ -1,7 +1,7 @@
 {
   "id": "ledger-statistics",
   "name": "记账统计",
-  "version": "2.3.1",
+  "version": "2.4.0",
   "minAppVersion": "1.5.12",
   "description": "本地解析每日记账，提供多视图统计、预算与可选 AI 财务洞察。",
   "author": "Local",

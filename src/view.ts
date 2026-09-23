@@ -1,8 +1,9 @@
 import { ItemView, MarkdownView, Menu, Notice, Platform, TFile, WorkspaceLeaf, setIcon } from "obsidian";
 import { sharedRequestGate } from "./request-gate";
 import type LedgerStatisticsPlugin from "./main";
-import { financeSnapshotFingerprint, requestFinanceAdvice } from "./ai";
-import { markInsightSeen, prioritizeFreshInsights, unmatchedStarIds } from "./insights";
+import { requestFinanceAdvice } from "./ai";
+import { assessFinanceAdvice, createFinanceAdviceCache } from "./advice-lifecycle";
+import { markInsightSeen, withInsightHistory, unmatchedStarIds } from "./insights";
 import { FixedExpenseModal, StarRepairModal } from "./management";
 import {
   AccountingScope,
@@ -124,7 +125,7 @@ export class LedgerStatisticsView extends ItemView {
   private financeAutoTimer: number | null = null;
   private financeAdviceLoading = false;
   private financeAdviceError = "";
-  private financeAdviceAttemptedDate = "";
+  private financeAdviceAttemptedKey = "";
   private filtersExpanded = !Platform.isMobile;
   private drillContext: DrillContext | null = null;
   private pullEligible = false;
@@ -193,7 +194,11 @@ export class LedgerStatisticsView extends ItemView {
 
   refreshDate(now = new Date()): void {
     const date = isoFromDate(now);
-    if (this.closed || date === this.lastDate) return;
+    if (this.closed) return;
+    if (date === this.lastDate) {
+      this.scheduleFinanceAdviceUpdate();
+      return;
+    }
     this.lastDate = date;
     this.cancelFinanceRequest();
     if (this.periodOffset === 0 && this.preset !== "custom" && this.preset !== "previous") {
@@ -428,10 +433,9 @@ export class LedgerStatisticsView extends ItemView {
     renderStarredExpenses(parent, this.starredRecords(), (record) => void this.openRecord(record));
   }
 
-  private renderFinanceSection(parent: HTMLElement, animate = true): void {
+  private currentFinanceSnapshot(now = new Date()): ReturnType<typeof buildFinanceAdvisorSnapshot> {
     const files = [...this.plugin.repository.files.values()];
-    const now = new Date();
-    const financeSnapshot = prioritizeFreshInsights(buildFinanceAdvisorSnapshot(
+    return withInsightHistory(buildFinanceAdvisorSnapshot(
       flattenRecords(files),
       now,
       this.plugin.settings.salaryCents,
@@ -439,12 +443,42 @@ export class LedgerStatisticsView extends ItemView {
       financeCompleteDates(files, now),
       this.plugin.settings.fixedExpenses ?? []
     ), this.plugin.settings.insightHistory ?? []);
-    const cached = this.plugin.settings.financeAdviceCache?.date === financeSnapshot.currentRange.end
-      ? this.plugin.settings.financeAdviceCache.advice
-      : null;
-    const stale = Boolean(cached && this.plugin.settings.financeAdviceCache?.fingerprint !== financeSnapshotFingerprint(financeSnapshot));
-    const updatedAt = this.plugin.settings.financeAdviceCache?.updatedAt;
+  }
+
+  private financeSectionVisible(): boolean {
+    const host = this.contentEl.querySelector<HTMLElement>(".ledger-advisor-host");
+    if (!host || !this.containerEl.isConnected) return false;
+    const card = host.getBoundingClientRect();
+    const view = this.contentEl.getBoundingClientRect();
+    return !host.ownerDocument.hidden && !host.ownerDocument.querySelector(".modal-container")
+      && this.app.workspace.getActiveViewOfType(LedgerStatisticsView) === this
+      && card.bottom > view.top && card.top < view.bottom;
+  }
+
+  private scheduleFinanceAdviceUpdate(snapshot?: ReturnType<typeof buildFinanceAdvisorSnapshot>): void {
+    if (this.closed || !this.plugin?.repository?.loaded || this.financeAdviceLoading || this.financeAutoTimer !== null) return;
+    const settings = this.plugin.settings;
+    if (!settings.financeAiEnabled || !settings.financeAiEndpoint.trim() || !settings.financeAiModel.trim()
+      || !settings.financeAdviceCache || !this.financeSectionVisible()) return;
+    const current = snapshot ?? this.currentFinanceSnapshot();
+    if (current.salaryCents <= 0) return;
+    const assessment = assessFinanceAdvice(current, settings.financeAdviceCache);
+    if (!assessment.needsRefresh || this.financeAdviceAttemptedKey === assessment.refreshKey) return;
+    this.financeAutoTimer = window.setTimeout(() => {
+      this.financeAutoTimer = null;
+      if (!this.closed && this.financeSectionVisible()) void this.loadFinanceAdvice(this.currentFinanceSnapshot(), false);
+    }, 300);
+  }
+
+  private renderFinanceSection(parent: HTMLElement, animate = true): void {
+    const files = [...this.plugin.repository.files.values()];
+    const now = new Date();
+    const financeSnapshot = this.currentFinanceSnapshot(now);
+    const cache = this.plugin.settings.financeAdviceCache;
+    const assessment = assessFinanceAdvice(financeSnapshot, cache);
+    const updatedAt = cache?.updatedAt;
     const cacheTime = updatedAt && Number.isFinite(Date.parse(updatedAt)) ? new Date(updatedAt).toLocaleString() : "时间未知";
+    const generated = cache ? `生成于：${cacheTime}。` : "";
     const configured = this.plugin.settings.financeAiEnabled
       && Boolean(this.plugin.settings.financeAiEndpoint.trim())
       && Boolean(this.plugin.settings.financeAiModel.trim());
@@ -454,15 +488,17 @@ export class LedgerStatisticsView extends ItemView {
     } else if (!configured) {
       financeState = { status: "unconfigured", advice: null, message: "请先在设置中填写 AI 接口和模型。", canRefresh: false };
     } else if (this.financeAdviceLoading) {
-      financeState = { status: "loading", advice: stale ? null : cached, message: "正在判断最值得关注的变化，最长等待 60 秒…", canRefresh: true };
-    } else if (cached) {
-      financeState = { status: this.financeAdviceError ? "error" : "ready", advice: stale ? null : cached, message: `${this.financeAdviceError ? `本次刷新失败：${this.financeAdviceError}。` : ""}${stale ? "账目或统计依据已变化，AI 判断待更新；当前显示本地判断。" : this.financeAdviceError ? "正在显示上次结果。" : "今日判断已缓存。"}上次生成：${cacheTime}。`, canRefresh: true };
+      financeState = { status: "loading", advice: assessment.advice, message: `正在评估变化，最长等待 60 秒…${assessment.advice ? "原判断仍有效，暂时保留。" + generated : ""}`, canRefresh: true };
+    } else if (assessment.advice) {
+      financeState = { status: this.financeAdviceError ? "error" : "ready", advice: assessment.advice, message: `${this.financeAdviceError ? `本次更新失败：${this.financeAdviceError}。原判断仍有效，继续保留。` : `${assessment.reason}。`}${generated}`, canRefresh: true };
+    } else if (cache) {
+      financeState = { status: this.financeAdviceError ? "error" : "local", advice: null, message: `${assessment.reason}，已撤下旧判断；当前显示本地判断。${this.financeAdviceError ? `本次更新失败：${this.financeAdviceError}。` : "等待更新。"}`, canRefresh: true };
     } else if (this.financeAdviceError) {
       financeState = { status: "error", advice: null, message: `${this.financeAdviceError}，已回退为本地判断。`, canRefresh: true };
     } else {
-      financeState = { status: "local", advice: null, message: "点击“刷新判断”生成首次结果；以后每天自动更新一次。", canRefresh: true };
+      financeState = { status: "local", advice: null, message: "点击“刷新判断”生成首次结果；有效判断持续保留，重要变化时再更新。", canRefresh: true };
     }
-    renderFinanceAdvisor(parent, financeSnapshot, financeState, () => void this.loadFinanceAdvice(financeSnapshot, true), animate,
+    renderFinanceAdvisor(parent, financeSnapshot, financeState, () => void this.loadFinanceAdvice(this.currentFinanceSnapshot(), true), animate,
       financeCoverageReport(files, now), (path) => void this.app.workspace.openLinkText(path, "", false),
       () => new FixedExpenseModal(this.plugin).open());
     const ownerDocument = parent.ownerDocument;
@@ -477,13 +513,9 @@ export class LedgerStatisticsView extends ItemView {
         void this.plugin.saveSettings(false, false).catch(() => new Notice("提醒阅读状态保存失败"));
       }
     }
-    if (configured && financeSnapshot.salaryCents > 0 && this.plugin.settings.financeAdviceCache && (!cached || stale) && !this.financeAdviceLoading && this.financeAdviceAttemptedDate !== financeSnapshot.currentRange.end) {
-      this.financeAdviceAttemptedDate = financeSnapshot.currentRange.end;
-      this.financeAutoTimer = window.setTimeout(() => {
-        this.financeAutoTimer = null;
-        if (!this.closed) void this.loadFinanceAdvice(financeSnapshot, false);
-      }, 0);
-    }
+    if (this.financeAutoTimer !== null) window.clearTimeout(this.financeAutoTimer);
+    this.financeAutoTimer = null;
+    this.scheduleFinanceAdviceUpdate(financeSnapshot);
   }
 
   private refreshFinanceSection(): void {
@@ -503,12 +535,15 @@ export class LedgerStatisticsView extends ItemView {
       if (manual) new Notice("请先在插件设置中填写每个工资周期到账工资");
       return;
     }
-    const fingerprint = financeSnapshotFingerprint(snapshot);
-    const cached = this.plugin.settings.financeAdviceCache;
-    if (cached?.date === snapshot.currentRange.end && cached.fingerprint === fingerprint) {
-      if (manual) new Notice("账目没有新变化，当前判断保持不变");
+    const assessment = assessFinanceAdvice(snapshot, this.plugin.settings.financeAdviceCache);
+    if (!assessment.needsRefresh) {
+      if (manual) new Notice("当前判断仍有效，没有需要重新分析的重要变化");
       return;
     }
+    if (!manual && this.financeAdviceAttemptedKey === assessment.refreshKey) return;
+    if (this.financeAutoTimer !== null) window.clearTimeout(this.financeAutoTimer);
+    this.financeAutoTimer = null;
+    this.financeAdviceAttemptedKey = assessment.refreshKey;
     this.financeAdviceLoading = true;
     const controller = new AbortController();
     this.financeController = controller;
@@ -521,12 +556,11 @@ export class LedgerStatisticsView extends ItemView {
       if (config.endpoint !== this.plugin.settings.financeAiEndpoint || config.model !== this.plugin.settings.financeAiModel || config.apiKey !== this.plugin.settings.financeAiApiKey) {
         throw new Error("AI 配置已变化，本次结果已废弃，请重新判断");
       }
-      this.plugin.settings.financeAdviceCache = {
-        date: snapshot.currentRange.end,
-        fingerprint,
-        advice,
-        updatedAt: new Date().toISOString()
-      };
+      const nextCache = createFinanceAdviceCache(snapshot, advice);
+      if (assessFinanceAdvice(this.currentFinanceSnapshot(), nextCache).needsRefresh) {
+        throw new Error("分析期间相关依据已变化，本次结果已废弃，等待重新判断");
+      }
+      this.plugin.settings.financeAdviceCache = nextCache;
       await this.plugin.saveSettings(false, false);
       if (manual) new Notice("财务判断已更新");
     } catch (error) {

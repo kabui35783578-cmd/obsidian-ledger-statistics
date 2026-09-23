@@ -11,25 +11,11 @@ function signalMetric(snapshot: FinanceAdvisorSnapshot, event: FinanceInsightEve
   return undefined;
 }
 
-export function prioritizeFreshInsights(snapshot: FinanceAdvisorSnapshot, history: SeenInsight[]): FinanceAdvisorSnapshot {
-  const repeated: FinanceInsightEvent[] = [];
-  const events = snapshot.events.filter((event) => {
-    if (event.type === "stable") return true;
-    const previous = history.find((seen) => seen.cycle === snapshot.currentRange.start && seen.id === event.id);
-    const worsened = previous && (event.impactCents ?? 0) - previous.impact >= Math.max(5000, Math.abs(previous.impact) * 0.2);
-    const metric = signalMetric(snapshot, event);
-    const minimum = event.type === "frequency-spike" ? 3 : event.type === "mix-shift" ? 0.1 : 1000;
-    const metricWorsened = metric !== undefined && previous?.metric !== undefined && metric - previous.metric >= Math.max(minimum, previous.metric * 0.2);
-    // Keep urgent budget pressure visible even when it has already been reported.
-    if (!previous || previous.date === snapshot.currentRange.end || worsened || metricWorsened || event.type === "salary-pressure") return true;
-    repeated.push(event);
-    return false;
-  });
-  if (repeated.length && !events.some((event) => event.type !== "stable")) {
-    return { ...snapshot, repeatedEvents: repeated, events: events.map((event) => event.title === "暂未发现明显变化"
-      ? { ...event, title: "暂无新的明显变化", detail: "之前提醒过的事项仍可在下方查看；暂未发现值得重复提醒的新变化。" } : event) };
-  }
-  return { ...snapshot, events, repeatedEvents: repeated };
+export function withInsightHistory(snapshot: FinanceAdvisorSnapshot, history: SeenInsight[]): FinanceAdvisorSnapshot {
+  // Reading an insight does not resolve it. Keep every currently valid candidate selectable.
+  const repeatedEvents = snapshot.events.filter((event) => event.type !== "stable"
+    && history.some((seen) => seen.cycle === snapshot.currentRange.start && seen.id === event.id));
+  return { ...snapshot, repeatedEvents };
 }
 
 export function markInsightSeen(history: SeenInsight[], snapshot: FinanceAdvisorSnapshot, id: string): SeenInsight[] {

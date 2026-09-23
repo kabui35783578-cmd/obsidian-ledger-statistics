@@ -1,6 +1,7 @@
 import { requestUrl } from "obsidian";
 import { RequestGate, sharedRequestGate } from "./request-gate";
 import { FinanceAdvisorSnapshot, FinanceInsightEvent, formatCents } from "./core";
+import type { FinanceAdviceBasis } from "./advice-lifecycle";
 
 export const FINANCE_AI_PROFILE = `你是一名克制、可靠的个人财务观察员。
 程序已经完成金额、周期、分类参考、候选事件和证据的计算。候选事件描述的是已经由程序确认的“异常结果”；你的职责是选择最值得关注的结果，并进一步提出“什么生活场景、使用行为或消费行为可能导致了它”的原因假设，而不是停留在复述异常。
@@ -45,6 +46,7 @@ export interface FinanceAdviceCache {
   fingerprint: string;
   advice: FinanceAdvice;
   updatedAt: string;
+  basis?: FinanceAdviceBasis;
 }
 
 export interface FinanceAiConfig {

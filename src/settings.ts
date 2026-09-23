@@ -159,7 +159,7 @@ export class LedgerSettingTab extends PluginSettingTab {
 
     new Setting(this.containerEl)
       .setName("启用 AI 财务判断")
-      .setDesc("发送程序生成的汇总、候选事件、分类参考值，以及异常候选所需的有限交易备注；不发送账本文件、路径或完整原始行。每天自动请求最多一次，也可在卡片中手动刷新。")
+      .setDesc("发送汇总、候选事件、分类参考及有限交易备注，不发送账本文件、路径或完整原始行。有效判断跨日保留；重要变化或原判断失效时，在查看洞察时自动更新，也可手动刷新。")
       .addToggle((toggle) => toggle
         .setValue(this.plugin.settings.financeAiEnabled)
         .onChange(async (value) => {

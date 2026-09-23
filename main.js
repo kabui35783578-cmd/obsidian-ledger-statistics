@@ -797,12 +797,12 @@ var RequestGate = class {
   constructor() {
     this.busy = false;
   }
-  async run(operation, signal, timeoutMs = 6e4) {
-    if (signal == null ? void 0 : signal.aborted) throw new Error("\u8BF7\u6C42\u5DF2\u53D6\u6D88");
+  async run(operation, signal2, timeoutMs = 6e4) {
+    if (signal2 == null ? void 0 : signal2.aborted) throw new Error("\u8BF7\u6C42\u5DF2\u53D6\u6D88");
     if (this.busy) throw new Error("\u4E0A\u6B21\u8BF7\u6C42\u7684\u8FDE\u63A5\u5C1A\u672A\u7ED3\u675F\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5");
     this.busy = true;
     const pending = Promise.resolve().then(() => {
-      if (signal == null ? void 0 : signal.aborted) throw new Error("\u8BF7\u6C42\u5DF2\u53D6\u6D88");
+      if (signal2 == null ? void 0 : signal2.aborted) throw new Error("\u8BF7\u6C42\u5DF2\u53D6\u6D88");
       return operation();
     }).finally(() => {
       this.busy = false;
@@ -811,14 +811,14 @@ var RequestGate = class {
     let cancel;
     const deadline = new Promise((_, reject) => {
       cancel = () => reject(new Error("\u8BF7\u6C42\u5DF2\u53D6\u6D88"));
-      signal == null ? void 0 : signal.addEventListener("abort", cancel, { once: true });
+      signal2 == null ? void 0 : signal2.addEventListener("abort", cancel, { once: true });
       timer = setTimeout(() => reject(new Error("\u8BF7\u6C42\u8D85\u8FC7\u7B49\u5F85\u65F6\u9650\uFF0C\u5DF2\u505C\u6B62\u7B49\u5F85\uFF1B\u8FDE\u63A5\u7ED3\u675F\u524D\u4E0D\u4F1A\u91CD\u590D\u8BF7\u6C42")), timeoutMs);
     });
     try {
       return await Promise.race([pending, deadline]);
     } finally {
       if (timer !== void 0) clearTimeout(timer);
-      if (cancel) signal == null ? void 0 : signal.removeEventListener("abort", cancel);
+      if (cancel) signal2 == null ? void 0 : signal2.removeEventListener("abort", cancel);
     }
   }
 };
@@ -1192,7 +1192,7 @@ function validateEndpoint(value) {
   if (trimmedPath === "/v1") url.pathname = `${trimmedPath}/chat/completions`;
   return url.toString();
 }
-async function chatContent(config, messages, maxTokens, signal, gate) {
+async function chatContent(config, messages, maxTokens, signal2, gate) {
   var _a, _b, _c;
   const endpoint = validateEndpoint(config.endpoint);
   const model = config.model.trim();
@@ -1224,7 +1224,7 @@ async function chatContent(config, messages, maxTokens, signal, gate) {
     } catch (e) {
       throw new Error("\u8FDE\u63A5\u5931\u8D25\uFF1A\u8BF7\u68C0\u67E5\u7F51\u7EDC\u3001\u63A5\u53E3\u5730\u5740\u4E0E\u670D\u52A1\u5546\u53EF\u7528\u6027");
     }
-  }, signal, FINANCE_AI_TIMEOUT_MS);
+  }, signal2, FINANCE_AI_TIMEOUT_MS);
   if (response.status >= 400) {
     const status = response.status;
     throw new Error(status === 401 || status === 403 ? "\u8BA4\u8BC1\u5931\u8D25\uFF1A\u8BF7\u68C0\u67E5 API Key\u3001\u8D26\u53F7\u6743\u9650\u4E0E\u6A21\u578B\u8BBF\u95EE\u6743\u9650" : status === 404 ? "\u63A5\u53E3\u6216\u6A21\u578B\u4E0D\u5B58\u5728\uFF1A\u8BF7\u68C0\u67E5\u5B8C\u6574\u63A5\u53E3\u5730\u5740\u548C\u6A21\u578B ID" : status === 429 ? "\u8BF7\u6C42\u53D7\u9650\uFF1A\u8BF7\u68C0\u67E5\u8D26\u6237\u989D\u5EA6\u6216\u7A0D\u540E\u91CD\u8BD5" : status === 400 || status === 422 ? "\u8BF7\u6C42\u4E0D\u517C\u5BB9\uFF1A\u8BF7\u68C0\u67E5\u6A21\u578B ID \u53CA\u670D\u52A1\u5546\u662F\u5426\u652F\u6301 Chat Completions \u53C2\u6570" : `AI \u670D\u52A1\u6682\u4E0D\u53EF\u7528\uFF08HTTP ${status}\uFF09\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5`);
@@ -1239,14 +1239,14 @@ async function chatContent(config, messages, maxTokens, signal, gate) {
   if (!content) throw new Error("AI \u63A5\u53E3\u6CA1\u6709\u8FD4\u56DE\u53EF\u7528\u5185\u5BB9");
   return content;
 }
-async function requestFinanceAdvice(config, snapshot, signal, gate = sharedRequestGate("ai")) {
+async function requestFinanceAdvice(config, snapshot, signal2, gate = sharedRequestGate("ai")) {
   return parseFinanceAdvice(await chatContent(config, [
     { role: "system", content: FINANCE_AI_PROFILE },
     { role: "user", content: financeAiInput(snapshot) }
-  ], 1200, signal, gate), snapshot);
+  ], 1200, signal2, gate), snapshot);
 }
-async function testFinanceConnection(config, signal, gate = sharedRequestGate("ai")) {
-  await chatContent(config, [{ role: "user", content: "Connection test. Reply with OK only." }], 128, signal, gate);
+async function testFinanceConnection(config, signal2, gate = sharedRequestGate("ai")) {
+  await chatContent(config, [{ role: "user", content: "Connection test. Reply with OK only." }], 128, signal2, gate);
 }
 
 // src/management.ts
@@ -1261,24 +1261,9 @@ function signalMetric(snapshot, event) {
   if (event.type === "mix-shift") return category.currentShare;
   return void 0;
 }
-function prioritizeFreshInsights(snapshot, history) {
-  const repeated = [];
-  const events = snapshot.events.filter((event) => {
-    var _a;
-    if (event.type === "stable") return true;
-    const previous = history.find((seen) => seen.cycle === snapshot.currentRange.start && seen.id === event.id);
-    const worsened = previous && ((_a = event.impactCents) != null ? _a : 0) - previous.impact >= Math.max(5e3, Math.abs(previous.impact) * 0.2);
-    const metric = signalMetric(snapshot, event);
-    const minimum = event.type === "frequency-spike" ? 3 : event.type === "mix-shift" ? 0.1 : 1e3;
-    const metricWorsened = metric !== void 0 && (previous == null ? void 0 : previous.metric) !== void 0 && metric - previous.metric >= Math.max(minimum, previous.metric * 0.2);
-    if (!previous || previous.date === snapshot.currentRange.end || worsened || metricWorsened || event.type === "salary-pressure") return true;
-    repeated.push(event);
-    return false;
-  });
-  if (repeated.length && !events.some((event) => event.type !== "stable")) {
-    return { ...snapshot, repeatedEvents: repeated, events: events.map((event) => event.title === "\u6682\u672A\u53D1\u73B0\u660E\u663E\u53D8\u5316" ? { ...event, title: "\u6682\u65E0\u65B0\u7684\u660E\u663E\u53D8\u5316", detail: "\u4E4B\u524D\u63D0\u9192\u8FC7\u7684\u4E8B\u9879\u4ECD\u53EF\u5728\u4E0B\u65B9\u67E5\u770B\uFF1B\u6682\u672A\u53D1\u73B0\u503C\u5F97\u91CD\u590D\u63D0\u9192\u7684\u65B0\u53D8\u5316\u3002" } : event) };
-  }
-  return { ...snapshot, events, repeatedEvents: repeated };
+function withInsightHistory(snapshot, history) {
+  const repeatedEvents = snapshot.events.filter((event) => event.type !== "stable" && history.some((seen) => seen.cycle === snapshot.currentRange.start && seen.id === event.id));
+  return { ...snapshot, repeatedEvents };
 }
 function markInsightSeen(history, snapshot, id) {
   var _a, _b, _c, _d;
@@ -1555,7 +1540,7 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
     });
     new import_obsidian4.Setting(this.containerEl).setName("\u56FA\u5B9A\u652F\u51FA").setDesc("\u624B\u52A8\u786E\u8BA4\u672C\u5468\u671F\u53CA\u524D\u4E24\u4E2A\u5468\u671F\u7684\u652F\u4ED8\u8BB0\u5F55\uFF0C\u51CF\u5C11\u4ED8\u6B3E\u65E5\u671F\u53D8\u5316\u5BF9\u9884\u6D4B\u7684\u5F71\u54CD\u3002").addButton((button) => button.setButtonText("\u7BA1\u7406\u56FA\u5B9A\u652F\u51FA").onClick(() => new FixedExpenseModal(this.plugin).open()));
     new import_obsidian4.Setting(this.containerEl).setName("\u661F\u6807\u6838\u5BF9").setDesc("\u68C0\u67E5\u4FEE\u6539\u3001\u5220\u9664\u6216\u79BB\u7EBF\u79FB\u52A8\u540E\u65E0\u6CD5\u5339\u914D\u7684\u661F\u6807\u3002").addButton((button) => button.setButtonText("\u6838\u5BF9\u661F\u6807").onClick(() => new StarRepairModal(this.plugin).open()));
-    new import_obsidian4.Setting(this.containerEl).setName("\u542F\u7528 AI \u8D22\u52A1\u5224\u65AD").setDesc("\u53D1\u9001\u7A0B\u5E8F\u751F\u6210\u7684\u6C47\u603B\u3001\u5019\u9009\u4E8B\u4EF6\u3001\u5206\u7C7B\u53C2\u8003\u503C\uFF0C\u4EE5\u53CA\u5F02\u5E38\u5019\u9009\u6240\u9700\u7684\u6709\u9650\u4EA4\u6613\u5907\u6CE8\uFF1B\u4E0D\u53D1\u9001\u8D26\u672C\u6587\u4EF6\u3001\u8DEF\u5F84\u6216\u5B8C\u6574\u539F\u59CB\u884C\u3002\u6BCF\u5929\u81EA\u52A8\u8BF7\u6C42\u6700\u591A\u4E00\u6B21\uFF0C\u4E5F\u53EF\u5728\u5361\u7247\u4E2D\u624B\u52A8\u5237\u65B0\u3002").addToggle((toggle) => toggle.setValue(this.plugin.settings.financeAiEnabled).onChange(async (value) => {
+    new import_obsidian4.Setting(this.containerEl).setName("\u542F\u7528 AI \u8D22\u52A1\u5224\u65AD").setDesc("\u53D1\u9001\u6C47\u603B\u3001\u5019\u9009\u4E8B\u4EF6\u3001\u5206\u7C7B\u53C2\u8003\u53CA\u6709\u9650\u4EA4\u6613\u5907\u6CE8\uFF0C\u4E0D\u53D1\u9001\u8D26\u672C\u6587\u4EF6\u3001\u8DEF\u5F84\u6216\u5B8C\u6574\u539F\u59CB\u884C\u3002\u6709\u6548\u5224\u65AD\u8DE8\u65E5\u4FDD\u7559\uFF1B\u91CD\u8981\u53D8\u5316\u6216\u539F\u5224\u65AD\u5931\u6548\u65F6\uFF0C\u5728\u67E5\u770B\u6D1E\u5BDF\u65F6\u81EA\u52A8\u66F4\u65B0\uFF0C\u4E5F\u53EF\u624B\u52A8\u5237\u65B0\u3002").addToggle((toggle) => toggle.setValue(this.plugin.settings.financeAiEnabled).onChange(async (value) => {
       this.plugin.settings.financeAiEnabled = value;
       await this.plugin.saveSettings(false);
       this.display();
@@ -1670,6 +1655,109 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
 
 // src/view.ts
 var import_obsidian6 = require("obsidian");
+
+// src/advice-lifecycle.ts
+function signal(snapshot, event) {
+  var _a, _b;
+  const category = snapshot.categories.find((item) => item.category === event.category);
+  let impact = (_a = event.impactCents) != null ? _a : 0;
+  if (event.type === "stable") impact = 0;
+  if (event.type === "salary-pace") impact = snapshot.forecastCents;
+  let metric;
+  if (category) {
+    if (event.type === "spending-spike") impact = category.currentCents - category.baselineProgressCents;
+    if (event.type === "frequency-spike") metric = category.currentCount - category.baselineProgressCount;
+    if (event.type === "ticket-spike") metric = category.currentCents / Math.max(1, category.currentCount) - category.baselineProgressCents / Math.max(1, category.baselineProgressCount);
+    if (event.type === "mix-shift") metric = category.currentShare - category.baselineShare;
+  }
+  return {
+    id: event.id,
+    type: event.type,
+    priority: event.priority,
+    impact,
+    metric,
+    group: event.category ? `category:${event.category}` : event.type.startsWith("salary-") ? "salary-cycle" : "status",
+    // Keep only hashes of the bounded transaction samples, not extra copies of private notes.
+    notes: [...new Set(((_b = event.evidence) != null ? _b : []).filter((text) => text.startsWith("\u4EA4\u6613\u6837\u672C\uFF08")).map(stableTextHash))].sort()
+  };
+}
+function financeAdviceBasis(snapshot) {
+  var _a;
+  return {
+    version: 1,
+    cycle: snapshot.currentRange.start,
+    context: stableTextHash(JSON.stringify({
+      salary: snapshot.salaryCents,
+      history: snapshot.historyCycleCount,
+      historicalAverage: snapshot.historicalAverageSpentCents,
+      available: snapshot.forecastAvailable,
+      confidence: snapshot.forecastConfidence,
+      month: snapshot.currentRange.end.slice(0, 7),
+      fixed: snapshot.fixedExpenses,
+      status: (_a = snapshot.events.find((event) => event.type === "stable")) == null ? void 0 : _a.detail
+    })),
+    events: snapshot.events.map((event) => signal(snapshot, event)),
+    categories: snapshot.categories.map((category) => ({ ...category }))
+  };
+}
+function changedAmount(current, previous, minimum = 5e3) {
+  return Math.abs(current - previous) >= Math.max(minimum, Math.abs(previous) * 0.2);
+}
+function materiallyChanged(current, previous) {
+  const minimum = current.type === "frequency-spike" ? 3 : current.type === "mix-shift" ? 0.1 : 1e3;
+  return changedAmount(current.impact, previous.impact) || current.metric !== void 0 && previous.metric !== void 0 && changedAmount(current.metric, previous.metric, minimum);
+}
+function categoryChanged(current, previous) {
+  if (!current || !previous) return true;
+  return changedAmount(current.currentCents, previous.currentCents) || changedAmount(current.currentCount, previous.currentCount, 3) || changedAmount(current.currentCents / Math.max(1, current.currentCount), previous.currentCents / Math.max(1, previous.currentCount), 1e3) || changedAmount(current.currentShare, previous.currentShare, 0.1);
+}
+function createFinanceAdviceCache(snapshot, advice, updatedAt = (/* @__PURE__ */ new Date()).toISOString()) {
+  const basis = financeAdviceBasis(snapshot);
+  basis.supportingNotes = financeAiEvidence(snapshot).filter((evidence) => evidence.untrustedNote && advice.evidenceIds.includes(evidence.id)).map((evidence) => stableTextHash(evidence.text));
+  return { date: snapshot.currentRange.end, fingerprint: financeSnapshotFingerprint(snapshot), advice, updatedAt, basis };
+}
+function assessFinanceAdvice(snapshot, cache) {
+  var _a;
+  const current = financeAdviceBasis(snapshot);
+  const refreshKey = stableTextHash(JSON.stringify(current));
+  const result = (advice, needsRefresh, reason) => ({ advice, needsRefresh, reason, refreshKey });
+  if (!cache) return result(null, true, "\u5C1A\u672A\u751F\u6210\u6D1E\u5BDF");
+  const selected = current.events.find((event) => event.id === cache.advice.primaryEventId);
+  if (!selected) return result(null, true, "\u539F\u5224\u65AD\u5BF9\u5E94\u7684\u4E8B\u4EF6\u5DF2\u4E0D\u518D\u6210\u7ACB");
+  const previous = cache.basis;
+  if (!previous || previous.version !== 1) {
+    return cache.date === snapshot.currentRange.end && cache.fingerprint === financeSnapshotFingerprint(snapshot) ? result(cache.advice, false, "\u5F53\u524D\u5224\u65AD\u4ECD\u6709\u6548") : result(null, true, "\u65E7\u7248\u5224\u65AD\u9700\u8981\u6309\u65B0\u7684\u4FDD\u7559\u89C4\u5219\u91CD\u65B0\u6838\u5BF9");
+  }
+  if (previous.cycle !== current.cycle) return result(null, true, "\u5DF2\u8FDB\u5165\u65B0\u7684\u5DE5\u8D44\u5468\u671F");
+  if (cache.date > snapshot.currentRange.end || previous.context !== current.context) {
+    return result(null, true, "\u7EDF\u8BA1\u4F9D\u636E\u6216\u65F6\u95F4\u80CC\u666F\u5DF2\u53D8\u5316");
+  }
+  const original = previous.events.find((event) => event.id === selected.id);
+  if (!original) return result(null, true, "\u539F\u5224\u65AD\u7F3A\u5C11\u53EF\u6838\u5BF9\u7684\u4F9D\u636E");
+  const currentNotes = new Set(current.events.flatMap((event) => event.notes));
+  if ([...original.notes, ...(_a = previous.supportingNotes) != null ? _a : []].some((note) => !currentNotes.has(note))) {
+    return result(null, true, "\u539F\u5224\u65AD\u6240\u4F9D\u636E\u7684\u4EA4\u6613\u6837\u672C\u5DF2\u53D8\u5316");
+  }
+  for (const line of cache.advice.categoryLines) {
+    const before = previous.categories.find((category) => category.category === line.category);
+    const after = current.categories.find((category) => category.category === line.category);
+    if (!before || !after || before.remainingReferenceCents > 0 !== after.remainingReferenceCents > 0 || changedAmount(after.currentCents, before.currentCents) || changedAmount(after.baselineCycleCents, before.baselineCycleCents)) {
+      return result(null, true, "\u5206\u7C7B\u610F\u89C1\u6240\u4F9D\u636E\u7684\u6570\u636E\u5DF2\u660E\u663E\u53D8\u5316");
+    }
+  }
+  if (materiallyChanged(selected, original)) return result(cache.advice, true, "\u539F\u4E8B\u9879\u5DF2\u51FA\u73B0\u660E\u663E\u53D8\u5316\uFF0C\u9700\u91CD\u65B0\u8BC4\u4F30");
+  const challenger = current.events.find((event) => {
+    if (event.id === selected.id || event.type === "stable") return false;
+    const before = previous.events.find((item) => item.id === event.id);
+    if (before && !materiallyChanged(event, before)) return false;
+    if (!before && event.group === selected.group && event.type !== "large-expense" && event.type !== "salary-pressure") {
+      const name = event.group.slice("category:".length);
+      if (!categoryChanged(current.categories.find((category) => category.category === name), previous.categories.find((category) => category.category === name))) return false;
+    }
+    return event.priority > selected.priority || event.priority === selected.priority && event.impact > selected.impact && changedAmount(event.impact, selected.impact);
+  });
+  return challenger ? result(cache.advice, true, "\u51FA\u73B0\u66F4\u503C\u5F97\u5173\u6CE8\u7684\u53D8\u5316\uFF0C\u9700\u91CD\u65B0\u8BC4\u4F30") : result(cache.advice, false, "\u5F53\u524D\u5224\u65AD\u4ECD\u6709\u6548\uFF0C\u6301\u7EED\u5173\u6CE8\u4E2D");
+}
 
 // src/ui.ts
 var import_obsidian5 = require("obsidian");
@@ -2251,8 +2339,8 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
   for (const line of (_j = event.evidence) != null ? _j : [event.detail]) evidenceList.createEl("li", { text: line });
   if ((_k = snapshot.repeatedEvents) == null ? void 0 : _k.length) {
     const repeated = infoPanel.createDiv({ cls: "ledger-advisor-info-section" });
-    repeated.createEl("h5", { text: `\u5DF2\u63D0\u9192\u4E8B\u9879 \xB7 ${snapshot.repeatedEvents.length}` });
-    repeated.createEl("p", { text: "\u540C\u4E00\u5468\u671F\u5185\uFF0C\u91D1\u989D\u5F71\u54CD\u589E\u52A0\u81F3\u5C11 20% \u4E14\u4E0D\u5C11\u4E8E \xA550 \u65F6\u91CD\u65B0\u63D0\u9192\uFF1B\u9891\u6B21\u3001\u5BA2\u5355\u4EF7\u6216\u5360\u6BD4\u7EE7\u7EED\u660E\u663E\u589E\u52A0\u4E5F\u4F1A\u91CD\u63D0\u9192\u3002\u5DE5\u8D44\u8D85\u652F\u98CE\u9669\u6301\u7EED\u663E\u793A\u3002" });
+    repeated.createEl("h5", { text: `\u5DF2\u5173\u6CE8\u4E14\u4ECD\u6709\u6548 \xB7 ${snapshot.repeatedEvents.length}` });
+    repeated.createEl("p", { text: "\u5DF2\u7ECF\u770B\u8FC7\u4E0D\u4EE3\u8868\u4E8B\u9879\u5DF2\u89E3\u51B3\u3002\u5F53\u524D\u4ECD\u6709\u6548\u7684\u5224\u65AD\u4F1A\u8DE8\u65E5\u4FDD\u7559\uFF1B\u51FA\u73B0\u66F4\u503C\u5F97\u5173\u6CE8\u7684\u4E8B\u4EF6\u6216\u660E\u663E\u53D8\u5316\u65F6\u91CD\u65B0\u8BC4\u4F30\uFF0C\u539F\u4E8B\u4EF6\u4E0D\u518D\u6210\u7ACB\u65F6\u64A4\u4E0B\u3002" });
     for (const item of snapshot.repeatedEvents) {
       repeated.createEl("strong", { text: item.title });
       repeated.createEl("p", { text: item.detail });
@@ -2477,7 +2565,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian6.
     this.financeAutoTimer = null;
     this.financeAdviceLoading = false;
     this.financeAdviceError = "";
-    this.financeAdviceAttemptedDate = "";
+    this.financeAdviceAttemptedKey = "";
     this.filtersExpanded = !import_obsidian6.Platform.isMobile;
     this.drillContext = null;
     this.pullEligible = false;
@@ -2544,7 +2632,11 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian6.
   }
   refreshDate(now = /* @__PURE__ */ new Date()) {
     const date = isoFromDate(now);
-    if (this.closed || date === this.lastDate) return;
+    if (this.closed) return;
+    if (date === this.lastDate) {
+      this.scheduleFinanceAdviceUpdate();
+      return;
+    }
     this.lastDate = date;
     this.cancelFinanceRequest();
     if (this.periodOffset === 0 && this.preset !== "custom" && this.preset !== "previous") {
@@ -2772,11 +2864,10 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian6.
     }
     renderStarredExpenses(parent, this.starredRecords(), (record) => void this.openRecord(record));
   }
-  renderFinanceSection(parent, animate = true) {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
+  currentFinanceSnapshot(now = /* @__PURE__ */ new Date()) {
+    var _a, _b;
     const files = [...this.plugin.repository.files.values()];
-    const now = /* @__PURE__ */ new Date();
-    const financeSnapshot = prioritizeFreshInsights(buildFinanceAdvisorSnapshot(
+    return withInsightHistory(buildFinanceAdvisorSnapshot(
       flattenRecords(files),
       now,
       this.plugin.settings.salaryCents,
@@ -2784,10 +2875,38 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian6.
       financeCompleteDates(files, now),
       (_a = this.plugin.settings.fixedExpenses) != null ? _a : []
     ), (_b = this.plugin.settings.insightHistory) != null ? _b : []);
-    const cached = ((_c = this.plugin.settings.financeAdviceCache) == null ? void 0 : _c.date) === financeSnapshot.currentRange.end ? this.plugin.settings.financeAdviceCache.advice : null;
-    const stale = Boolean(cached && ((_d = this.plugin.settings.financeAdviceCache) == null ? void 0 : _d.fingerprint) !== financeSnapshotFingerprint(financeSnapshot));
-    const updatedAt = (_e = this.plugin.settings.financeAdviceCache) == null ? void 0 : _e.updatedAt;
+  }
+  financeSectionVisible() {
+    const host2 = this.contentEl.querySelector(".ledger-advisor-host");
+    if (!host2 || !this.containerEl.isConnected) return false;
+    const card = host2.getBoundingClientRect();
+    const view = this.contentEl.getBoundingClientRect();
+    return !host2.ownerDocument.hidden && !host2.ownerDocument.querySelector(".modal-container") && this.app.workspace.getActiveViewOfType(_LedgerStatisticsView) === this && card.bottom > view.top && card.top < view.bottom;
+  }
+  scheduleFinanceAdviceUpdate(snapshot) {
+    var _a, _b;
+    if (this.closed || !((_b = (_a = this.plugin) == null ? void 0 : _a.repository) == null ? void 0 : _b.loaded) || this.financeAdviceLoading || this.financeAutoTimer !== null) return;
+    const settings = this.plugin.settings;
+    if (!settings.financeAiEnabled || !settings.financeAiEndpoint.trim() || !settings.financeAiModel.trim() || !settings.financeAdviceCache || !this.financeSectionVisible()) return;
+    const current = snapshot != null ? snapshot : this.currentFinanceSnapshot();
+    if (current.salaryCents <= 0) return;
+    const assessment = assessFinanceAdvice(current, settings.financeAdviceCache);
+    if (!assessment.needsRefresh || this.financeAdviceAttemptedKey === assessment.refreshKey) return;
+    this.financeAutoTimer = window.setTimeout(() => {
+      this.financeAutoTimer = null;
+      if (!this.closed && this.financeSectionVisible()) void this.loadFinanceAdvice(this.currentFinanceSnapshot(), false);
+    }, 300);
+  }
+  renderFinanceSection(parent, animate = true) {
+    var _a, _b, _c;
+    const files = [...this.plugin.repository.files.values()];
+    const now = /* @__PURE__ */ new Date();
+    const financeSnapshot = this.currentFinanceSnapshot(now);
+    const cache = this.plugin.settings.financeAdviceCache;
+    const assessment = assessFinanceAdvice(financeSnapshot, cache);
+    const updatedAt = cache == null ? void 0 : cache.updatedAt;
     const cacheTime = updatedAt && Number.isFinite(Date.parse(updatedAt)) ? new Date(updatedAt).toLocaleString() : "\u65F6\u95F4\u672A\u77E5";
+    const generated = cache ? `\u751F\u6210\u4E8E\uFF1A${cacheTime}\u3002` : "";
     const configured = this.plugin.settings.financeAiEnabled && Boolean(this.plugin.settings.financeAiEndpoint.trim()) && Boolean(this.plugin.settings.financeAiModel.trim());
     let financeState;
     if (!this.plugin.settings.financeAiEnabled) {
@@ -2795,19 +2914,21 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian6.
     } else if (!configured) {
       financeState = { status: "unconfigured", advice: null, message: "\u8BF7\u5148\u5728\u8BBE\u7F6E\u4E2D\u586B\u5199 AI \u63A5\u53E3\u548C\u6A21\u578B\u3002", canRefresh: false };
     } else if (this.financeAdviceLoading) {
-      financeState = { status: "loading", advice: stale ? null : cached, message: "\u6B63\u5728\u5224\u65AD\u6700\u503C\u5F97\u5173\u6CE8\u7684\u53D8\u5316\uFF0C\u6700\u957F\u7B49\u5F85 60 \u79D2\u2026", canRefresh: true };
-    } else if (cached) {
-      financeState = { status: this.financeAdviceError ? "error" : "ready", advice: stale ? null : cached, message: `${this.financeAdviceError ? `\u672C\u6B21\u5237\u65B0\u5931\u8D25\uFF1A${this.financeAdviceError}\u3002` : ""}${stale ? "\u8D26\u76EE\u6216\u7EDF\u8BA1\u4F9D\u636E\u5DF2\u53D8\u5316\uFF0CAI \u5224\u65AD\u5F85\u66F4\u65B0\uFF1B\u5F53\u524D\u663E\u793A\u672C\u5730\u5224\u65AD\u3002" : this.financeAdviceError ? "\u6B63\u5728\u663E\u793A\u4E0A\u6B21\u7ED3\u679C\u3002" : "\u4ECA\u65E5\u5224\u65AD\u5DF2\u7F13\u5B58\u3002"}\u4E0A\u6B21\u751F\u6210\uFF1A${cacheTime}\u3002`, canRefresh: true };
+      financeState = { status: "loading", advice: assessment.advice, message: `\u6B63\u5728\u8BC4\u4F30\u53D8\u5316\uFF0C\u6700\u957F\u7B49\u5F85 60 \u79D2\u2026${assessment.advice ? "\u539F\u5224\u65AD\u4ECD\u6709\u6548\uFF0C\u6682\u65F6\u4FDD\u7559\u3002" + generated : ""}`, canRefresh: true };
+    } else if (assessment.advice) {
+      financeState = { status: this.financeAdviceError ? "error" : "ready", advice: assessment.advice, message: `${this.financeAdviceError ? `\u672C\u6B21\u66F4\u65B0\u5931\u8D25\uFF1A${this.financeAdviceError}\u3002\u539F\u5224\u65AD\u4ECD\u6709\u6548\uFF0C\u7EE7\u7EED\u4FDD\u7559\u3002` : `${assessment.reason}\u3002`}${generated}`, canRefresh: true };
+    } else if (cache) {
+      financeState = { status: this.financeAdviceError ? "error" : "local", advice: null, message: `${assessment.reason}\uFF0C\u5DF2\u64A4\u4E0B\u65E7\u5224\u65AD\uFF1B\u5F53\u524D\u663E\u793A\u672C\u5730\u5224\u65AD\u3002${this.financeAdviceError ? `\u672C\u6B21\u66F4\u65B0\u5931\u8D25\uFF1A${this.financeAdviceError}\u3002` : "\u7B49\u5F85\u66F4\u65B0\u3002"}`, canRefresh: true };
     } else if (this.financeAdviceError) {
       financeState = { status: "error", advice: null, message: `${this.financeAdviceError}\uFF0C\u5DF2\u56DE\u9000\u4E3A\u672C\u5730\u5224\u65AD\u3002`, canRefresh: true };
     } else {
-      financeState = { status: "local", advice: null, message: "\u70B9\u51FB\u201C\u5237\u65B0\u5224\u65AD\u201D\u751F\u6210\u9996\u6B21\u7ED3\u679C\uFF1B\u4EE5\u540E\u6BCF\u5929\u81EA\u52A8\u66F4\u65B0\u4E00\u6B21\u3002", canRefresh: true };
+      financeState = { status: "local", advice: null, message: "\u70B9\u51FB\u201C\u5237\u65B0\u5224\u65AD\u201D\u751F\u6210\u9996\u6B21\u7ED3\u679C\uFF1B\u6709\u6548\u5224\u65AD\u6301\u7EED\u4FDD\u7559\uFF0C\u91CD\u8981\u53D8\u5316\u65F6\u518D\u66F4\u65B0\u3002", canRefresh: true };
     }
     renderFinanceAdvisor(
       parent,
       financeSnapshot,
       financeState,
-      () => void this.loadFinanceAdvice(financeSnapshot, true),
+      () => void this.loadFinanceAdvice(this.currentFinanceSnapshot(), true),
       animate,
       financeCoverageReport(files, now),
       (path) => void this.app.workspace.openLinkText(path, "", false),
@@ -2818,20 +2939,16 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian6.
     const viewRect = this.contentEl.getBoundingClientRect();
     const visible = !ownerDocument.hidden && !ownerDocument.querySelector(".modal-container") && cardRect.bottom > viewRect.top && cardRect.top < viewRect.bottom;
     if (visible && !this.financeAdviceLoading && this.app.workspace.getActiveViewOfType(_LedgerStatisticsView) === this && financeSnapshot.salaryCents > 0) {
-      const history = (_f = this.plugin.settings.insightHistory) != null ? _f : [];
-      const next = markInsightSeen(history, financeSnapshot, (_h = (_g = financeState.advice) == null ? void 0 : _g.primaryEventId) != null ? _h : financeSnapshot.events[0].id);
+      const history = (_a = this.plugin.settings.insightHistory) != null ? _a : [];
+      const next = markInsightSeen(history, financeSnapshot, (_c = (_b = financeState.advice) == null ? void 0 : _b.primaryEventId) != null ? _c : financeSnapshot.events[0].id);
       if (next !== history) {
         this.plugin.settings.insightHistory = next;
         void this.plugin.saveSettings(false, false).catch(() => new import_obsidian6.Notice("\u63D0\u9192\u9605\u8BFB\u72B6\u6001\u4FDD\u5B58\u5931\u8D25"));
       }
     }
-    if (configured && financeSnapshot.salaryCents > 0 && this.plugin.settings.financeAdviceCache && (!cached || stale) && !this.financeAdviceLoading && this.financeAdviceAttemptedDate !== financeSnapshot.currentRange.end) {
-      this.financeAdviceAttemptedDate = financeSnapshot.currentRange.end;
-      this.financeAutoTimer = window.setTimeout(() => {
-        this.financeAutoTimer = null;
-        if (!this.closed) void this.loadFinanceAdvice(financeSnapshot, false);
-      }, 0);
-    }
+    if (this.financeAutoTimer !== null) window.clearTimeout(this.financeAutoTimer);
+    this.financeAutoTimer = null;
+    this.scheduleFinanceAdviceUpdate(financeSnapshot);
   }
   refreshFinanceSection() {
     var _a;
@@ -2850,12 +2967,15 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian6.
       if (manual) new import_obsidian6.Notice("\u8BF7\u5148\u5728\u63D2\u4EF6\u8BBE\u7F6E\u4E2D\u586B\u5199\u6BCF\u4E2A\u5DE5\u8D44\u5468\u671F\u5230\u8D26\u5DE5\u8D44");
       return;
     }
-    const fingerprint = financeSnapshotFingerprint(snapshot);
-    const cached = this.plugin.settings.financeAdviceCache;
-    if ((cached == null ? void 0 : cached.date) === snapshot.currentRange.end && cached.fingerprint === fingerprint) {
-      if (manual) new import_obsidian6.Notice("\u8D26\u76EE\u6CA1\u6709\u65B0\u53D8\u5316\uFF0C\u5F53\u524D\u5224\u65AD\u4FDD\u6301\u4E0D\u53D8");
+    const assessment = assessFinanceAdvice(snapshot, this.plugin.settings.financeAdviceCache);
+    if (!assessment.needsRefresh) {
+      if (manual) new import_obsidian6.Notice("\u5F53\u524D\u5224\u65AD\u4ECD\u6709\u6548\uFF0C\u6CA1\u6709\u9700\u8981\u91CD\u65B0\u5206\u6790\u7684\u91CD\u8981\u53D8\u5316");
       return;
     }
+    if (!manual && this.financeAdviceAttemptedKey === assessment.refreshKey) return;
+    if (this.financeAutoTimer !== null) window.clearTimeout(this.financeAutoTimer);
+    this.financeAutoTimer = null;
+    this.financeAdviceAttemptedKey = assessment.refreshKey;
     this.financeAdviceLoading = true;
     const controller = new AbortController();
     this.financeController = controller;
@@ -2868,12 +2988,11 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian6.
       if (config.endpoint !== this.plugin.settings.financeAiEndpoint || config.model !== this.plugin.settings.financeAiModel || config.apiKey !== this.plugin.settings.financeAiApiKey) {
         throw new Error("AI \u914D\u7F6E\u5DF2\u53D8\u5316\uFF0C\u672C\u6B21\u7ED3\u679C\u5DF2\u5E9F\u5F03\uFF0C\u8BF7\u91CD\u65B0\u5224\u65AD");
       }
-      this.plugin.settings.financeAdviceCache = {
-        date: snapshot.currentRange.end,
-        fingerprint,
-        advice,
-        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-      };
+      const nextCache = createFinanceAdviceCache(snapshot, advice);
+      if (assessFinanceAdvice(this.currentFinanceSnapshot(), nextCache).needsRefresh) {
+        throw new Error("\u5206\u6790\u671F\u95F4\u76F8\u5173\u4F9D\u636E\u5DF2\u53D8\u5316\uFF0C\u672C\u6B21\u7ED3\u679C\u5DF2\u5E9F\u5F03\uFF0C\u7B49\u5F85\u91CD\u65B0\u5224\u65AD");
+      }
+      this.plugin.settings.financeAdviceCache = nextCache;
       await this.plugin.saveSettings(false, false);
       if (manual) new import_obsidian6.Notice("\u8D22\u52A1\u5224\u65AD\u5DF2\u66F4\u65B0");
     } catch (error) {

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 global.window = global;
 const core = require('../dist/core.cjs');
 const { assessFixedExpenses } = require('../dist/fixed-expenses.cjs');
-const { prioritizeFreshInsights, markInsightSeen, eventAdvice, unmatchedStarIds, relinkStar } = require('../dist/insights.cjs');
+const { withInsightHistory, markInsightSeen, eventAdvice, unmatchedStarIds, relinkStar } = require('../dist/insights.cjs');
 const { testFinanceConnection } = require('../dist/ai.cjs');
 const { RequestGate } = require('../dist/request-gate.cjs');
 const dates = [];
@@ -94,23 +94,25 @@ test('new salary cycle requires fresh payment confirmation, salary day remains f
 });
 const event = { id: 'frequency:餐饮', type: 'frequency-spike', priority: 90, title: '次数增加', detail: '消费次数变化', impactCents: 10000 };
 const base = () => ({ ...snapshot(), events: [event, { id: 'stable', type: 'stable', priority: 10, title: '暂未发现明显变化', detail: '' }] });
-test('same-day rendering is stable; next-day repeats collapse; material worsening resurfaces', () => {
+test('reading a valid insight never removes it on the next day or invents a stable state', () => {
   const first = base(), history = markInsightSeen([], first, event.id);
-  assert.equal(prioritizeFreshInsights(first, history).events[0].id, event.id);
+  assert.equal(withInsightHistory(first, history).events[0].id, event.id);
   const next = { ...first, currentRange: { ...first.currentRange, end: '2026-09-23' } };
-  const filtered = prioritizeFreshInsights(next, history);
-  assert.equal(filtered.events[0].title, '暂无新的明显变化');
+  const filtered = withInsightHistory(next, history);
+  assert.equal(filtered.events[0].id, event.id);
+  assert.deepEqual(filtered.events, next.events);
   assert.equal(filtered.repeatedEvents.length, 1);
   const worse = { ...next, events: [{ ...event, impactCents: 16000 }, next.events[1]] };
-  assert.equal(prioritizeFreshInsights(worse, history).events[0].id, event.id);
+  assert.equal(withInsightHistory(worse, history).events[0].id, event.id);
   const newCycle = { ...next, currentRange: { start: '2026-10-15', end: '2026-10-16' } };
-  assert.equal(prioritizeFreshInsights(newCycle, history).events[0].id, event.id);
+  assert.equal(withInsightHistory(newCycle, history).events[0].id, event.id);
+  assert.equal(withInsightHistory(newCycle, history).repeatedEvents.length, 0);
 });
 test('urgent salary pressure is not silenced; history is bounded', () => {
   const pressure = { ...base(), events: [{ ...event, id: 'salary-pressure', type: 'salary-pressure' }] };
   const history = markInsightSeen([], pressure, 'salary-pressure');
   pressure.currentRange = { ...pressure.currentRange, end: '2026-09-23' };
-  assert.equal(prioritizeFreshInsights(pressure, history).events.length, 1);
+  assert.equal(withInsightHistory(pressure, history).events.length, 1);
   assert.equal(markInsightSeen(Array.from({ length: 210 }, (_, i) => ({ id: String(i), cycle: '', date: '', impact: 0 })), base(), event.id).length, 200);
 });
 test('event-specific advice distinguishes frequency, ticket price and composition', () => {
@@ -122,7 +124,7 @@ test('small-amount but significant frequency changes resurface; same-day high wa
   const first = { ...base(), events: [{ ...event, category: '餐饮' }, base().events[1]], categories: [{ category: '餐饮', currentCount: 5, currentCents: 10000, currentShare: 0.2 }] };
   const seen = markInsightSeen([], first, event.id);
   const next = { ...first, currentRange: { ...first.currentRange, end: '2026-09-23' }, categories: [{ ...first.categories[0], currentCount: 8 }] };
-  assert.equal(prioritizeFreshInsights(next, seen).events[0].id, event.id);
+  assert.equal(withInsightHistory(next, seen).events[0].id, event.id);
   const rising = { ...first, events: [{ ...first.events[0], impactCents: 20000 }, first.events[1]] };
   const updated = markInsightSeen(seen, rising, event.id);
   assert.equal(updated[0].impact, 20000);

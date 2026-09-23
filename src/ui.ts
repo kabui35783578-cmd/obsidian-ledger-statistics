@@ -605,8 +605,8 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
 
   if (snapshot.repeatedEvents?.length) {
     const repeated = infoPanel.createDiv({ cls: "ledger-advisor-info-section" });
-    repeated.createEl("h5", { text: `已提醒事项 · ${snapshot.repeatedEvents.length}` });
-    repeated.createEl("p", { text: "同一周期内，金额影响增加至少 20% 且不少于 ¥50 时重新提醒；频次、客单价或占比继续明显增加也会重提醒。工资超支风险持续显示。" });
+    repeated.createEl("h5", { text: `已关注且仍有效 · ${snapshot.repeatedEvents.length}` });
+    repeated.createEl("p", { text: "已经看过不代表事项已解决。当前仍有效的判断会跨日保留；出现更值得关注的事件或明显变化时重新评估，原事件不再成立时撤下。" });
     for (const item of snapshot.repeatedEvents) {
       repeated.createEl("strong", { text: item.title });
       repeated.createEl("p", { text: item.detail });
