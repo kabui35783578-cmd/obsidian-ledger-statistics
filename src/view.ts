@@ -5,6 +5,7 @@ import { requestFinanceAdvice } from "./ai";
 import { assessFinanceAdvice, createFinanceAdviceCache } from "./advice-lifecycle";
 import { markInsightSeen, withInsightHistory, unmatchedStarIds } from "./insights";
 import { FixedExpenseModal, StarRepairModal } from "./management";
+import { balanceStatus } from "./balance";
 import {
   AccountingScope,
   CategorySummary,
@@ -128,6 +129,7 @@ export class LedgerStatisticsView extends ItemView {
   private financeAdviceLoading = false;
   private financeAdviceError = "";
   private financeAdviceAttemptedKey = "";
+  private advisorDetailsExpanded = false;
   private filtersExpanded = !Platform.isMobile;
   private drillContext: DrillContext | null = null;
   private pullEligible = false;
@@ -511,7 +513,9 @@ export class LedgerStatisticsView extends ItemView {
     }
     renderFinanceAdvisor(parent, financeSnapshot, financeState, () => void this.loadFinanceAdvice(this.currentFinanceSnapshot(), true), animate,
       financeCoverageReport(files, now), (path) => void this.app.workspace.openLinkText(path, "", false),
-      () => new FixedExpenseModal(this.plugin).open());
+      () => new FixedExpenseModal(this.plugin).open(), this.advisorDetailsExpanded,
+      (expanded) => { this.advisorDetailsExpanded = expanded; },
+      balanceStatus(flattenRecords(files), now, this.plugin.settings.salaryCents, this.plugin.settings.balanceCalibration));
     const ownerDocument = parent.ownerDocument;
     const cardRect = parent.getBoundingClientRect();
     const viewRect = this.contentEl.getBoundingClientRect();

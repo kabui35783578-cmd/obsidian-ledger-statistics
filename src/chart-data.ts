@@ -30,7 +30,7 @@ export function salaryWaterfall(records: LedgerRecord[], range: DateRange, salar
     steps.push({ label: group.label, deltaCents: -group.cents, fromCents: balance, toCents: balance - group.cents, categories: group.categories, kind: "expense" });
     balance -= group.cents;
   }
-  steps.push({ label: "当前剩余", deltaCents: balance, fromCents: 0, toCents: balance, categories: [], kind: "remaining" });
+  steps.push({ label: "账面剩余", deltaCents: balance, fromCents: 0, toCents: balance, categories: [], kind: "remaining" });
   return steps;
 }
 

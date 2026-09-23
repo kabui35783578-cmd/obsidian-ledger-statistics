@@ -5,6 +5,7 @@ import { eventAdvice } from "./insights";
 import { prepareDonut } from "./donut";
 import type { DonutSegment } from "./donut";
 import type { BoxReference, WaterfallStep } from "./chart-data";
+import type { BalanceStatus } from "./balance";
 
 export interface FinanceAdviceViewState {
   status: "local" | "loading" | "ready" | "error" | "unconfigured";
@@ -505,7 +506,7 @@ export function renderSalaryWaterfall(parent: HTMLElement, steps: WaterfallStep[
   const scale = (value: number): number => bottom - (value - low) / (high - low) * (bottom - top);
   const xAt = (index: number): number => 74 + index * (width - 148) / Math.max(1, steps.length - 1);
   const unit = niceCurrencyUnit(Math.max(...steps.map((step) => Math.abs(step.deltaCents))), 25);
-  const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": `工资周期瀑布图，已支出 ${formatCents(spent)}，当前剩余 ${formatCents(remaining)}` });
+  const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": `工资周期瀑布图，已支出 ${formatCents(spent)}，账面剩余 ${formatCents(remaining)}` });
   svg.classList.add("ledger-svg", "ledger-waterfall-svg", "ledger-waterfall-desktop");
   svg.append(svgEl("line", { x1: 32, y1: scale(0), x2: width - 30, y2: scale(0), stroke: GRID, "stroke-width": 1, class: "ledger-fade" }));
   steps.forEach((step, index) => {
@@ -555,7 +556,7 @@ export function renderSalaryWaterfall(parent: HTMLElement, steps: WaterfallStep[
       row.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onCategory(step.categories[0]); } });
     }
   });
-  shell.createDiv({ cls: "ledger-waterfall-note", text: "只扣除已记录的交易；固定支出如已入账，不会再次扣除。当前剩余不等于银行账户余额。" });
+  shell.createDiv({ cls: "ledger-waterfall-note", text: "只扣除已记录的交易；固定支出如已入账，不会再次扣除。账面剩余不包含余额校准，与洞察卡片显示的当前余额可能不同。" });
   sourceLine(shell, "RUNG WATERFALL · WIRE · CURRENT SALARY CYCLE · LOCAL LEDGER");
 }
 
@@ -698,7 +699,7 @@ export function renderEmpty(parent: HTMLElement, message: string): void {
   parent.createDiv({ cls: "ledger-empty", text: message });
 }
 
-export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvisorSnapshot, state: FinanceAdviceViewState, onRefresh: () => void, animate = true, coverage?: FinanceCoverageReport, onOpenFile?: (path: string) => void, onManageFixed?: () => void): void {
+export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvisorSnapshot, state: FinanceAdviceViewState, onRefresh: () => void, animate = true, coverage?: FinanceCoverageReport, onOpenFile?: (path: string) => void, onManageFixed?: () => void, detailsExpanded = false, onDetailsExpandedChange?: (expanded: boolean) => void, balance?: BalanceStatus): void {
   const card = parent.createDiv({ cls: `ledger-advisor-card${animate ? " ledger-reveal" : ""}` });
   card.setAttribute("aria-busy", String(state.status === "loading"));
   const heading = card.createDiv({ cls: "ledger-advisor-heading" });
@@ -719,27 +720,16 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
     card.addClass("is-empty");
     const empty = card.createDiv({ cls: "ledger-advisor-empty" });
     empty.createEl("strong", { text: state.canRefresh ? "AI 已配置，还差工资金额" : "填写工资后启用洞察" });
-    empty.createSpan({ text: "请在插件设置中填写“每个工资周期到账工资”。余额、周期预测和 AI 判断都依赖这项数据。" });
+    empty.createSpan({ text: "请在插件设置的“余额校准”中填写每个工资周期到账工资。周期预测和 AI 判断依赖此项。" });
     if (state.message) empty.createDiv({ cls: `ledger-advisor-ai-status is-${state.status}`, text: state.message });
     card.createDiv({ cls: "ledger-advisor-source", text: "SALARY CYCLE · TWO-CYCLE BASELINE · LOCAL LEDGER" });
     return;
   }
 
-  const remaining = heading.createDiv({ cls: `ledger-advisor-remaining${snapshot.remainingSalaryCents < 0 ? " is-negative" : ""}` });
-  remaining.createSpan({ text: snapshot.remainingSalaryCents < 0 ? "已超出工资" : "目前还剩" });
-  remaining.createEl("strong", { text: formatCents(Math.abs(snapshot.remainingSalaryCents)) });
-
-  const summary = card.createDiv({ cls: "ledger-advisor-summary" });
-  const spent = summary.createDiv({ cls: "ledger-advisor-summary-item" });
-  spent.createSpan({ text: "本次自工资日支出" });
-  spent.createEl("strong", { text: formatCents(snapshot.currentSpentCents) });
-  const average = summary.createDiv({ cls: "ledger-advisor-summary-item" });
-  average.createSpan({ text: snapshot.historyCycleCount === 2 ? "前两个完整周期平均" : `可用历史周期 ${snapshot.historyCycleCount}/2` });
-  average.createEl("strong", { text: snapshot.historyCycleCount > 0 ? formatCents(snapshot.historicalAverageSpentCents) : "参考数据不足" });
-  const forecast = summary.createDiv({ cls: "ledger-advisor-summary-item ledger-advisor-forecast" });
-  forecast.createSpan({ text: `周期末支出参考${snapshot.forecastAvailable && snapshot.forecastConfidence === "low" ? " · 低置信度" : ""}` });
-  forecast.createEl("strong", { text: snapshot.forecastAvailable ? formatCents(snapshot.forecastCents) : snapshot.fixedExpenses?.available === false ? "固定支出待确认" : "数据不足，暂不预测" });
-  forecast.createEl("small", { text: snapshot.fixedExpenses?.items.length ? "已花＋历史剩余支出（剔除已确认固定项）＋本期未付固定项" : "已花金额＋历史剩余阶段平均支出" });
+  const remainingCents = balance?.remainingCents ?? snapshot.remainingSalaryCents;
+  const remaining = heading.createDiv({ cls: `ledger-advisor-remaining${remainingCents < 0 ? " is-negative" : ""}` });
+  remaining.createSpan({ text: remainingCents < 0 ? "当前余额不足" : balance?.calibrated ? "目前还剩 · 已校准" : "目前还剩" });
+  remaining.createEl("strong", { text: formatCents(Math.abs(remainingCents)) });
 
   const event = snapshot.events.find((item) => item.id === state.advice?.primaryEventId) ?? snapshot.events[0];
   const observation = card.createDiv({ cls: `ledger-advisor-observation is-${event.type}${state.advice?.tone === "warning" ? " is-warning" : ""}` });
@@ -826,6 +816,32 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
     }
   }
 
+  const extra = card.createDiv({ cls: `ledger-advisor-extra${detailsExpanded ? " is-open" : ""}` });
+  const extraToggle = extra.createEl("button", { cls: "ledger-advisor-extra-toggle", attr: { type: "button", "aria-expanded": String(detailsExpanded) } });
+  extraToggle.createSpan({ cls: "ledger-advisor-extra-title", text: "周期数据与分类参考" });
+  const extraAction = extraToggle.createSpan({ cls: "ledger-advisor-extra-action", text: detailsExpanded ? "收起" : "展开" });
+  const extraIcon = extraToggle.createSpan({ cls: "ledger-advisor-extra-icon" });
+  setIcon(extraIcon, "chevron-down");
+  extraToggle.addEventListener("click", () => {
+    const expanded = !extra.hasClass("is-open");
+    extra.toggleClass("is-open", expanded);
+    extraToggle.setAttribute("aria-expanded", String(expanded));
+    extraAction.setText(expanded ? "收起" : "展开");
+    onDetailsExpandedChange?.(expanded);
+  });
+  const extraBody = extra.createDiv({ cls: "ledger-advisor-extra-body" });
+  const summary = extraBody.createDiv({ cls: "ledger-advisor-summary" });
+  const spent = summary.createDiv({ cls: "ledger-advisor-summary-item" });
+  spent.createSpan({ text: "本次自工资日支出" });
+  spent.createEl("strong", { text: formatCents(snapshot.currentSpentCents) });
+  const average = summary.createDiv({ cls: "ledger-advisor-summary-item" });
+  average.createSpan({ text: snapshot.historyCycleCount === 2 ? "前两个完整周期平均" : `可用历史周期 ${snapshot.historyCycleCount}/2` });
+  average.createEl("strong", { text: snapshot.historyCycleCount > 0 ? formatCents(snapshot.historicalAverageSpentCents) : "参考数据不足" });
+  const forecast = summary.createDiv({ cls: "ledger-advisor-summary-item ledger-advisor-forecast" });
+  forecast.createSpan({ text: `周期末支出参考${snapshot.forecastAvailable && snapshot.forecastConfidence === "low" ? " · 低置信度" : ""}` });
+  forecast.createEl("strong", { text: snapshot.forecastAvailable ? formatCents(snapshot.forecastCents) : snapshot.fixedExpenses?.available === false ? "固定支出待确认" : "数据不足，暂不预测" });
+  forecast.createEl("small", { text: snapshot.fixedExpenses?.items.length ? "已花＋历史剩余支出（剔除已确认固定项）＋本期未付固定项" : "已花金额＋历史剩余阶段平均支出" });
+
   const adviceCategories = new Map(state.advice?.categoryLines.map((line) => [line.category, line.text]) ?? []);
   const references = state.advice && adviceCategories.size > 0
     ? snapshot.categories.filter((item) => adviceCategories.has(item.category)).slice(0, 3)
@@ -834,7 +850,7 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
       .sort((a, b) => b.remainingReferenceCents - a.remainingReferenceCents || b.baselineCycleCents - a.baselineCycleCents)
       .slice(0, 3);
   if (references.length > 0 && snapshot.historyCycleCount > 0) {
-    const section = card.createDiv({ cls: "ledger-advisor-categories" });
+    const section = extraBody.createDiv({ cls: "ledger-advisor-categories" });
     const sectionHeading = section.createDiv({ cls: "ledger-advisor-section-heading" });
     sectionHeading.createSpan({ text: snapshot.historyCycleCount === 2 ? "分类参考余量" : "分类参考余量 · 仅一个历史周期" });
     sectionHeading.createEl("small", { text: `已扫描 ${snapshot.categories.length} 个分类` });
@@ -847,7 +863,7 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
       value.createEl("small", { text: adviceCategories.get(item.category) ?? `过往周期均值 ${formatCents(item.baselineCycleCents)}` });
     }
   }
-  card.createDiv({ cls: "ledger-advisor-source", text: "CURRENT SALARY CYCLE · PREVIOUS 2 FULL CYCLES · ALL CATEGORIES SCANNED · LOCAL LEDGER" });
+  extraBody.createDiv({ cls: "ledger-advisor-source", text: "CURRENT SALARY CYCLE · PREVIOUS 2 FULL CYCLES · ALL CATEGORIES SCANNED · LOCAL LEDGER" });
 }
 
 export function renderLiquidBudget(parent: HTMLElement, spentCents: number, budgetCents: number, dateLabel: string, currentCycleCents: number, budgetCategory: string, includeStarred: boolean): void {

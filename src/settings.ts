@@ -1,6 +1,7 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type LedgerStatisticsPlugin from "./main";
-import { parseMoneyToCents } from "./core";
+import { flattenRecords, formatCents, parseMoneyToCents, salaryDayRange } from "./core";
+import { BalanceCalibration, balanceStatus, createBalanceCalibration } from "./balance";
 import type { FinanceAdviceCache } from "./ai";
 import { testFinanceConnection } from "./ai";
 import { sharedRequestGate } from "./request-gate";
@@ -19,6 +20,7 @@ export interface LedgerSettings {
   defaultDatePreset: DefaultDatePreset;
   excludedCategories: string[];
   salaryCents: number;
+  balanceCalibration: BalanceCalibration | null;
   financeAiEnabled: boolean;
   financeAiEndpoint: string;
   financeAiModel: string;
@@ -40,6 +42,7 @@ export const DEFAULT_SETTINGS: LedgerSettings = {
   defaultDatePreset: "month",
   excludedCategories: ["债务/还款"],
   salaryCents: 0,
+  balanceCalibration: null,
   financeAiEnabled: false,
   financeAiEndpoint: "https://api.openai.com/v1/chat/completions",
   financeAiModel: "",
@@ -65,22 +68,26 @@ const VIEW_NAMES: Record<LedgerViewId, string> = {
 const OPENAI_CHAT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
 const MIMO_CHAT_ENDPOINT = "https://api.xiaomimimo.com/v1/chat/completions";
 
-type SettingsSection = "ledger" | "salary" | "ai" | "budget";
+type SettingsSection = "ledger" | "salary" | "balance" | "ai" | "budget";
 
 const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string }[] = [
   { id: "ledger", label: "账本与显示", description: "账本来源、统计口径、默认视图与星标核对。" },
-  { id: "salary", label: "工资周期", description: "设置到账工资，核对固定支出与周期末参考。" },
-  { id: "ai", label: "AI 洞察", description: "控制洞察判断及其接口连接。使用前需在“工资周期”设置到账工资。" },
+  { id: "salary", label: "工资周期", description: "管理固定支出及其周期末参考。" },
+  { id: "balance", label: "余额校准", description: "按实际余额校准本周期剩余金额，并查看账面与实际的净差额。" },
+  { id: "ai", label: "AI 洞察", description: "控制洞察判断及其接口连接。使用前需在“余额校准”设置到账工资。" },
   { id: "budget", label: "预算与提醒", description: "设置今日预算、统计范围与超额提醒。" }
 ];
 
 export class LedgerSettingTab extends PluginSettingTab {
   private connectionController?: AbortController;
   private activeSection: SettingsSection = "ledger";
-  hide(): void { this.connectionController?.abort(); }
+  private balanceSummaryRefresh?: () => void;
+  hide(): void { this.connectionController?.abort(); this.balanceSummaryRefresh = undefined; }
   constructor(app: App, private plugin: LedgerStatisticsPlugin) {
     super(app, plugin);
   }
+
+  refreshBalanceSummary(): void { this.balanceSummaryRefresh?.(); }
 
   display(): void {
     this.connectionController?.abort();
@@ -117,6 +124,7 @@ export class LedgerSettingTab extends PluginSettingTab {
 
     const ledgerPanel = panels.get("ledger")!;
     const salaryPanel = panels.get("salary")!;
+    const balancePanel = panels.get("balance")!;
     const aiPanel = panels.get("ai")!;
     const budgetPanel = panels.get("budget")!;
 
@@ -168,9 +176,10 @@ export class LedgerSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings(false);
         }));
 
-    new Setting(salaryPanel)
+    let refreshBalanceSummary = (): void => {};
+    new Setting(balancePanel)
       .setName("每个工资周期到账工资")
-      .setDesc("工资日固定每月 15 日。余额＝工资减本周期全部支出，不代表银行实际余额；数据保存在本地。")
+      .setDesc("工资日固定每月 15 日。填写实际到账金额；用于周期参考和洞察判断。余额校准不会改动此数。")
       .addText((text) => {
         text
           .setPlaceholder("例如 8000")
@@ -181,6 +190,7 @@ export class LedgerSettingTab extends PluginSettingTab {
               this.plugin.settings.salaryCents = 0;
               this.plugin.settings.financeAdviceCache = null;
               await this.plugin.saveSettings(false);
+              refreshBalanceSummary();
               return;
             }
             const cents = parseMoneyToCents(trimmed);
@@ -188,10 +198,68 @@ export class LedgerSettingTab extends PluginSettingTab {
             this.plugin.settings.salaryCents = cents;
             this.plugin.settings.financeAdviceCache = null;
             await this.plugin.saveSettings(false);
+            refreshBalanceSummary();
           });
         text.inputEl.setAttribute("inputmode", "decimal");
         return text;
       });
+
+    const calibrationSetting = new Setting(balancePanel)
+      .setName("校准当前余额")
+      .setDesc("填写此刻实际还剩的金额，再点击“校准”。仅对当前工资周期生效；之后新发生的记账消费继续扣减。校准前的补记不会重复扣款。")
+      .addText((text) => {
+        text.setPlaceholder("例如 3500");
+        text.inputEl.setAttribute("inputmode", "decimal");
+        text.inputEl.setAttribute("aria-label", "当前实际余额");
+        return text;
+      });
+    const calibrationInput = calibrationSetting.controlEl.querySelector("input")!;
+    calibrationSetting.addButton((button) => button.setButtonText("校准余额").setCta().onClick(async () => {
+      const cents = parseMoneyToCents(calibrationInput.value);
+      if (cents === null) {
+        calibrationSetting.setDesc("请输入有效的非负金额，最多两位小数；输入 0 也可以校准。");
+        return;
+      }
+      this.plugin.settings.balanceCalibration = createBalanceCalibration(flattenRecords(this.plugin.repository.files.values()), new Date(), cents);
+      await this.plugin.saveSettings(false);
+      calibrationInput.value = "";
+      calibrationSetting.setDesc("余额已校准。新记账消费继续扣减；校准前的补记不会重复扣款。");
+      refreshBalanceSummary();
+    }));
+    calibrationSetting.addButton((button) => button.setButtonText("取消校准").onClick(async () => {
+      this.plugin.settings.balanceCalibration = null;
+      await this.plugin.saveSettings(false);
+      calibrationInput.value = "";
+      refreshBalanceSummary();
+    }));
+
+    const balanceSummary = balancePanel.createDiv({ cls: "ledger-balance-summary", attr: { "aria-live": "polite" } });
+    refreshBalanceSummary = () => {
+      balanceSummary.empty();
+      const now = new Date();
+      const cycle = salaryDayRange(now);
+      const status = balanceStatus(flattenRecords(this.plugin.repository.files.values()), now, this.plugin.settings.salaryCents, this.plugin.settings.balanceCalibration);
+      balanceSummary.createEl("strong", { text: `本周期 ${cycle.start} — ${cycle.end}` });
+      const addRow = (label: string, amount: number) => {
+        const row = balanceSummary.createDiv({ cls: "ledger-balance-summary-row" });
+        row.createSpan({ text: label });
+        row.createEl("strong", { text: formatCents(amount) });
+      };
+      addRow("到账工资", this.plugin.settings.salaryCents);
+      addRow("已记账支出", status.recordedSpentCents);
+      addRow(status.calibrated ? "当前余额 · 已校准" : "当前余额 · 账面推算", status.remainingCents);
+      if (status.calibrated) {
+        addRow("未记账净差额", status.unrecordedNetCents);
+        balanceSummary.createEl("small", { text: status.unrecordedNetCents >= 0
+          ? "正数表示实际余额低于账面推算；可能有未记录的支出等，并不等同于垫付。"
+          : "负数表示实际余额高于账面推算；可能有其他收入或上期结余。" });
+      } else {
+        balanceSummary.createEl("small", { text: "尚未校准。当前余额只是工资减已记账支出的推算值；上次校准不会跨工资周期沿用。" });
+      }
+      balanceSummary.createEl("p", { text: "余额与差额仅用于对账，不进入消费异常、历史均值或 AI 判断。校准后补记较早交易不会二次扣款；如有未记账资金变化，请再次校准。" });
+    };
+    refreshBalanceSummary();
+    this.balanceSummaryRefresh = refreshBalanceSummary;
 
     new Setting(salaryPanel).setName("固定支出")
       .setDesc("手动确认本周期及前两个周期的支付记录，减少付款日期变化对预测的影响。")

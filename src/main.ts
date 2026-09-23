@@ -3,6 +3,7 @@ import { BudgetMonitor } from "./budget-monitor";
 import { sharedRequestGate } from "./request-gate";
 import { flattenRecords, migrateStarredIds, renameStarredIds } from "./core";
 import { LedgerRepository } from "./repository";
+import { isBalanceCalibration } from "./balance";
 import { DEFAULT_SETTINGS, LedgerSettingTab, LedgerSettings } from "./settings";
 import { LedgerStatisticsView, LEDGER_VIEW_TYPE } from "./view";
 
@@ -10,22 +11,26 @@ export default class LedgerStatisticsPlugin extends Plugin {
   settings: LedgerSettings = DEFAULT_SETTINGS;
   repository!: LedgerRepository;
   private budgetMonitor!: BudgetMonitor;
+  private settingTab?: LedgerSettingTab;
   private saveQueue: Promise<void> = Promise.resolve();
 
   async onload(): Promise<void> {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<LedgerSettings> | null);
     this.settings.fixedExpenses = Array.isArray(this.settings.fixedExpenses) ? this.settings.fixedExpenses.filter((item) => item && typeof item.name === "string" && typeof item.id === "string" && item.payments && typeof item.payments === "object") : [];
     this.settings.insightHistory = Array.isArray(this.settings.insightHistory) ? this.settings.insightHistory.filter((item) => item && typeof item.id === "string" && typeof item.cycle === "string" && typeof item.date === "string" && Number.isFinite(item.impact)) : [];
+    if (!isBalanceCalibration(this.settings.balanceCalibration)) this.settings.balanceCalibration = null;
     this.budgetMonitor = new BudgetMonitor(() => this.settings, (url) => requestUrl({ url, method: "GET", throw: true }),
       () => this.saveSettings(false, false), (message) => new Notice(message), sharedRequestGate(`bark:${this.app.vault.getName()}`));
     this.repository = new LedgerRepository(this.app, this.settings.ledgerFolder, () => {
       this.refreshViews();
+      this.settingTab?.refreshBalanceSummary();
       this.checkBudget();
     });
     this.registerView(LEDGER_VIEW_TYPE, (leaf) => new LedgerStatisticsView(leaf, this));
     this.addRibbonIcon("chart-pie", "打开记账统计", () => void this.activateView());
     this.addCommand({ id: "open-ledger-statistics", name: "打开记账统计", callback: () => void this.activateView() });
-    this.addSettingTab(new LedgerSettingTab(this.app, this));
+    this.settingTab = new LedgerSettingTab(this.app, this);
+    this.addSettingTab(this.settingTab);
     await this.repository.start();
     const migrated = migrateStarredIds(this.settings.starredRecordIds, flattenRecords(this.repository.files.values()));
     if (JSON.stringify(migrated) !== JSON.stringify(this.settings.starredRecordIds)) {
@@ -78,6 +83,7 @@ export default class LedgerStatisticsPlugin extends Plugin {
     for (const leaf of this.app.workspace.getLeavesOfType(LEDGER_VIEW_TYPE)) {
       if (leaf.view instanceof LedgerStatisticsView) leaf.view.refreshDate();
     }
+    this.settingTab?.refreshBalanceSummary();
     this.checkBudget();
   }
 

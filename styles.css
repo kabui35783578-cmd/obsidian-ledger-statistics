@@ -629,6 +629,15 @@ button.ledger-metric:active {
   gap: 10px 12px;
 }
 
+.ledger-advisor-extra,
+.ledger-advisor-extra-body {
+  display: contents;
+}
+
+button.ledger-advisor-extra-toggle {
+  display: none;
+}
+
 .ledger-advisor-heading {
   grid-area: advisor-heading;
   display: flex;
@@ -2262,6 +2271,97 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
 }
 
 @container (max-width: 540px) {
+  .ledger-advisor-card:not(.is-empty) {
+    grid-template-areas:
+      "advisor-heading"
+      "advisor-observation"
+      "advisor-extra";
+  }
+
+  .ledger-advisor-extra {
+    grid-area: advisor-extra;
+    display: block;
+    min-width: 0;
+    margin-top: 2px;
+  }
+
+  button.ledger-advisor-extra-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    min-height: 48px;
+    padding: 10px 14px;
+    border: 0;
+    border-radius: 15px;
+    box-shadow: none;
+    background: var(--mono-paper);
+    color: var(--mono-ink);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  button.ledger-advisor-extra-toggle:hover {
+    background: var(--mono-paper);
+    color: var(--mono-ink);
+  }
+
+  button.ledger-advisor-extra-toggle:focus-visible {
+    outline: 2px solid var(--ledger-accent);
+    outline-offset: 2px;
+  }
+
+  .ledger-advisor-extra-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .ledger-advisor-extra-action {
+    color: var(--mono-3);
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .ledger-advisor-extra-icon {
+    display: inline-flex;
+    color: var(--mono-3);
+    transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .ledger-advisor-extra-icon svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .ledger-advisor-extra.is-open .ledger-advisor-extra-icon {
+    transform: rotate(180deg);
+  }
+
+  .ledger-advisor-extra-body {
+    display: none;
+  }
+
+  .ledger-advisor-extra.is-open .ledger-advisor-extra-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    padding-top: 12px;
+  }
+
+  .ledger-advisor-extra-body > .ledger-advisor-summary,
+  .ledger-advisor-extra-body > .ledger-advisor-categories,
+  .ledger-advisor-extra-body > .ledger-advisor-source {
+    grid-area: auto;
+  }
+
+  .ledger-advisor-extra-body > .ledger-advisor-summary,
+  .ledger-advisor-extra-body > .ledger-advisor-source {
+    margin-top: 0;
+  }
+
   .ledger-tick-donut.is-desktop {
     display: none;
   }
@@ -2879,7 +2979,7 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
 .ledger-settings-panel-description,
 .ledger-settings-footnote { color: var(--text-muted); }
 .ledger-settings-intro { margin: -2px 0 18px; font-size: 13px; }
-.ledger-settings-navigation { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; padding: 5px; margin-bottom: 22px; border-radius: 14px; background: var(--background-secondary); }
+.ledger-settings-navigation { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; padding: 5px; margin-bottom: 22px; border-radius: 14px; background: var(--background-secondary); }
 .ledger-settings-navigation-button { min-width: 0; min-height: 42px; padding: 8px 10px; border: 0; border-radius: 10px; box-shadow: none; background: transparent; color: var(--text-muted); font-size: 13px; font-weight: 650; cursor: pointer; }
 .ledger-settings-navigation-button:hover { background: var(--background-modifier-hover); color: var(--text-normal); box-shadow: none; }
 .ledger-settings-navigation-button.is-active,
@@ -2889,6 +2989,11 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
 .ledger-settings-panel > h3 { margin: 0 0 4px; font-size: 18px; }
 .ledger-settings-panel-description { margin: 0 0 12px; font-size: 13px; line-height: 1.5; }
 .ledger-settings-footnote { margin: 20px 0 0; font-size: 12px; line-height: 1.5; }
+.ledger-balance-summary { display: grid; gap: 10px; margin-top: 18px; padding: 16px; border-radius: 18px; background: var(--background-secondary); color: var(--text-normal); }
+.ledger-balance-summary > strong { font-size: 14px; }
+.ledger-balance-summary-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 13px; }
+.ledger-balance-summary-row strong { font-variant-numeric: tabular-nums; text-align: right; }
+.ledger-balance-summary small, .ledger-balance-summary p { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.55; }
 @media (max-width: 600px) {
   .ledger-settings-navigation { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ledger-settings-panel .setting-item { flex-wrap: wrap; gap: 8px; }

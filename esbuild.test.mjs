@@ -10,7 +10,7 @@ await esbuild.build({
 });
 
 await esbuild.build({
-  entryPoints: ["src/ai.ts", "src/advice-lifecycle.ts", "src/repository.ts", "src/request-gate.ts", "src/budget-monitor.ts", "src/view.ts", "src/insights.ts", "src/fixed-expenses.ts", "src/donut.ts", "src/chart-data.ts"],
+  entryPoints: ["src/ai.ts", "src/advice-lifecycle.ts", "src/repository.ts", "src/request-gate.ts", "src/budget-monitor.ts", "src/view.ts", "src/insights.ts", "src/fixed-expenses.ts", "src/donut.ts", "src/chart-data.ts", "src/balance.ts"],
   bundle: true,
   platform: "node",
   format: "cjs",
