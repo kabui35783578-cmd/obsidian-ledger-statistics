@@ -32,7 +32,8 @@ import {
   weekRange
 } from "./core";
 import { DefaultDatePreset, LedgerViewId } from "./settings";
-import { createButton, FinanceAdviceViewState, renderDonut, renderDumbbell, renderEmpty, renderFinanceAdvisor, renderHorizontalBars, renderLiquidBudget, renderStarredExpenses, renderTrendChart } from "./ui";
+import { categoryBoxReference, salaryWaterfall } from "./chart-data";
+import { createButton, FinanceAdviceViewState, renderCategoryBox, renderDonut, renderDumbbell, renderEmpty, renderFinanceAdvisor, renderHorizontalBars, renderLiquidBudget, renderSalaryWaterfall, renderStarredExpenses, renderTrendChart } from "./ui";
 
 export const LEDGER_VIEW_TYPE = "ledger-statistics-view";
 
@@ -430,6 +431,9 @@ export class LedgerStatisticsView extends ItemView {
     this.metric(metrics, "笔数", String(stats.count), "点击查看全部明细", () => this.goDetails());
     this.metric(metrics, "日均", formatCents(stats.averagePerRecordedDayCents), `分母：${stats.recordedDays} 个有日记账文件的日期`, () => this.goDetails());
     this.metric(metrics, "最大单笔", stats.maxRecord ? formatCents(stats.maxRecord.cents) : "—", stats.maxRecord ? `${stats.maxRecord.category} · ${stats.maxRecord.date}` : "暂无记录", () => this.goDetails());
+    const currentCycle = salaryDayRange(new Date());
+    const waterfall = salaryWaterfall(flattenRecords(files), currentCycle, this.plugin.settings.salaryCents);
+    renderSalaryWaterfall(parent, waterfall, currentCycle, (category) => this.drillCategoryInRange(category, currentCycle));
     if (records.length === 0) {
       renderEmpty(parent, "当前筛选条件下没有记录。缺少文件的日期不会按零消费处理。");
     } else {
@@ -589,10 +593,12 @@ export class LedgerStatisticsView extends ItemView {
       this.categoryChart = value as "bar" | "donut" | "table";
       this.render();
     });
-    addSelect(controls, "排序", this.categorySort, [["amount", "按金额"], ["count", "按笔数"]], (value) => {
-      this.categorySort = value as "amount" | "count";
-      this.render();
-    });
+    if (this.categoryChart !== "donut") {
+      addSelect(controls, "排序", this.categorySort, [["amount", "按金额"], ["count", "按笔数"]], (value) => {
+        this.categorySort = value as "amount" | "count";
+        this.render();
+      });
+    }
     const records = filteredRecords(this.plugin.repository.files.values(), this.filter);
     const summaries = categorySummaries(records, this.categorySort);
     if (this.categoryChart === "bar") renderHorizontalBars(parent, summaries, (category) => this.drillCategory(category));
@@ -692,6 +698,11 @@ export class LedgerStatisticsView extends ItemView {
     records = this.sortDetails(records);
     parent.createDiv({ cls: "ledger-results-count", text: `共 ${records.length} 笔` });
     if (records.length === 0) return renderEmpty(parent, this.filter.keyword || this.filter.categories.length ? "筛选后没有匹配记录" : "所选期间没有可解析记录");
+    if (this.filter.categories.length === 1 && !this.filter.keyword && daysInclusive(this.filter.range) <= 35) {
+      const reference = categoryBoxReference(flattenRecords(this.plugin.repository.files.values()), records, this.filter.categories[0], this.filter.range.start);
+      if (reference) renderCategoryBox(parent, reference, (record) => void this.openRecord(record));
+      else parent.createDiv({ cls: "ledger-box-unavailable", text: "单笔分布：此前两个已结束工资周期少于 8 笔同类交易，暂不绘制箱线图。" });
+    }
     const tableWrap = parent.createDiv({ cls: "ledger-table-wrap ledger-details-table" });
     const table = tableWrap.createEl("table", { cls: "ledger-table" });
     const head = table.createTHead().insertRow();
@@ -877,6 +888,17 @@ export class LedgerStatisticsView extends ItemView {
   private drillCategory(category: string): void {
     this.captureDrillContext();
     this.filter.categories = [category];
+    this.activeView = "details";
+    this.render();
+  }
+
+  private drillCategoryInRange(category: string, range: DateRange): void {
+    this.captureDrillContext();
+    this.filter.range = { ...range };
+    this.filter.categories = [category];
+    this.filter.keyword = "";
+    this.preset = "custom";
+    this.periodOffset = 0;
     this.activeView = "details";
     this.render();
   }

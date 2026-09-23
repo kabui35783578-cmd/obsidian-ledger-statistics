@@ -2,6 +2,9 @@ import { setIcon } from "obsidian";
 import { BudgetProgress, CategorySummary, FinanceAdvisorSnapshot, FinanceCoverageReport, LedgerRecord, TrendPoint, budgetProgress, formatCents } from "./core";
 import type { FinanceAdvice } from "./ai";
 import { eventAdvice } from "./insights";
+import { prepareDonut } from "./donut";
+import type { DonutSegment } from "./donut";
+import type { BoxReference, WaterfallStep } from "./chart-data";
 
 export interface FinanceAdviceViewState {
   status: "local" | "loading" | "ready" | "error" | "unconfigured";
@@ -120,10 +123,6 @@ function interactiveTrendTarget(
   });
 }
 
-function strongestCategory(data: CategorySummary[]): string {
-  return data[0]?.category ?? "暂无分类";
-}
-
 function pctText(cents: number, total: number): string {
   return total === 0 ? "占比 0.0%" : `占比 ${(cents / total * 100).toFixed(1)}%`;
 }
@@ -218,64 +217,109 @@ function polar(cx: number, cy: number, radius: number, angle: number): { x: numb
   return { x: cx + radius * Math.cos(radians), y: cy + radius * Math.sin(radians) };
 }
 
-function allocateHundred(data: CategorySummary[]): number[] {
-  const exact = data.map((item) => item.share * 100);
-  const allocated = exact.map(Math.floor);
-  let remainder = 100 - allocated.reduce((sum, value) => sum + value, 0);
-  const order = exact.map((value, index) => ({ index, fraction: value - Math.floor(value) })).sort((a, b) => b.fraction - a.fraction);
-  for (let index = 0; index < order.length && remainder > 0; index += 1, remainder -= 1) allocated[order[index].index] += 1;
-  return allocated;
-}
-
 export function renderDonut(parent: HTMLElement, data: CategorySummary[], onClick: (category: string) => void): void {
-  const total = data.reduce((sum, item) => sum + item.cents, 0);
+  const segments = prepareDonut(data);
+  const total = segments.reduce((sum, item) => sum + item.cents, 0);
   const { shell, chart } = monoCard(
     parent,
     "LUPI BASICS · F4 TICK DONUT",
-    data.length ? `${strongestCategory(data)}占据最大的表盘区段` : "表盘等待第一笔支出",
-    "一根刻线 = 约 1 个百分点 · 精确占比见图例 · 顺时针读取"
+    segments.length ? `${segments[0].category}占据最大的表盘区段` : "表盘等待第一笔支出",
+    "一根刻线 ≈ 1 个百分点 · 橙色为最大分类 · 精确占比见图例"
   );
-  if (data.length === 0 || total === 0) return renderEmpty(chart, "合计为零，无法计算占比");
+  if (segments.length === 0 || total === 0) return renderEmpty(chart, "合计为零，无法计算占比");
   const wrap = chart.createDiv({ cls: "ledger-donut-wrap" });
-  const svg = svgEl("svg", { viewBox: "0 0 340 320", role: "img", "aria-label": "分类支出百分比刻线环" });
-  svg.classList.add("ledger-svg", "ledger-tick-donut");
-  const allocation = allocateHundred(data);
-  let cursor = 0;
-  data.forEach((item, categoryIndex) => {
-    const group = svgEl("g");
-    accessibleTarget(group, `${item.category} ${(item.share * 100).toFixed(1)}%，${formatCents(item.cents)}`, () => onClick(item.category));
-    for (let local = 0; local < allocation[categoryIndex]; local += 1) {
-      const tick = cursor + local;
-      const angle = tick * 3.6 - 90;
-      const inner = polar(170, 145, 70, angle);
-      const length = 11 + deterministic(tick + 1, categoryIndex + 2) * 7;
-      const outer = polar(170, 145, 70 + length, angle);
-      group.append(svgEl("line", {
-        x1: inner.x, y1: inner.y, x2: outer.x, y2: outer.y,
-        stroke: categoryIndex === 0 ? HERO : LADDER[Math.min(categoryIndex, LADDER.length - 1)], "stroke-width": categoryIndex === 0 ? 1.8 : 1,
-        class: "ledger-fade", style: `animation-delay:${tick * 0.012}s`
-      }));
-      if (tick % 10 === 0) {
-        const dot = polar(170, 145, 63, angle);
-        group.append(svgEl("circle", { cx: dot.x, cy: dot.y, r: 1, fill: FAINT }));
+  const createDial = (mobile: boolean): SVGSVGElement => {
+    const cx = mobile ? 170 : 280;
+    const cy = mobile ? 145 : 184;
+    const radius = mobile ? 70 : 103;
+    const svg = svgEl("svg", { viewBox: `0 0 ${mobile ? 340 : 560} ${mobile ? 320 : 380}`, role: "img", "aria-label": "分类支出百分比刻线环" });
+    svg.classList.add("ledger-svg", "ledger-tick-donut", mobile ? "is-mobile" : "is-desktop");
+    let cursor = 0;
+    const labels: Array<{ group: SVGGElement; item: DonutSegment; angle: number; side: "left" | "right"; idealY: number; y: number }> = [];
+    segments.forEach((item, index) => {
+      const group = svgEl("g", { class: `ledger-donut-segment ledger-donut-tone-${index}` });
+      if (item.members.length === 1) {
+        accessibleTarget(group, `${item.category} ${(item.share * 100).toFixed(1)}%，${formatCents(item.cents)}`, () => onClick(item.category));
+      } else {
+        const title = svgEl("title");
+        title.textContent = `${item.category} ${(item.share * 100).toFixed(1)}%，详见图例`;
+        group.append(title);
+      }
+      for (let local = 0; local < item.ticks; local += 1) {
+        const tick = cursor + local;
+        const angle = tick * 3.6 - 90;
+        const inner = polar(cx, cy, radius, angle);
+        const length = (mobile ? 12 : 15) + deterministic(tick + 1, index + 2) * (mobile ? 6 : 8);
+        const outer = polar(cx, cy, radius + length, angle);
+        group.append(svgEl("line", {
+          x1: inner.x, y1: inner.y, x2: outer.x, y2: outer.y,
+          "stroke-width": 1.8, class: "ledger-donut-tick ledger-fade", style: `animation-delay:${tick * 0.012}s`
+        }));
+        if (tick % 10 === 0) {
+          const dot = polar(cx, cy, radius - 7, angle);
+          group.append(svgEl("circle", { cx: dot.x, cy: dot.y, r: 1, fill: FAINT }));
+        }
+      }
+      if (!mobile) {
+        const angle = (cursor + item.ticks / 2) * 3.6 - 90;
+        const side = Math.cos(angle * Math.PI / 180) < 0 ? "left" : "right";
+        labels.push({ group, item, angle, side, idealY: polar(cx, cy, radius + 40, angle).y, y: 0 });
+      }
+      cursor += item.ticks;
+      svg.append(group);
+    });
+    if (!mobile) {
+      for (const side of ["left", "right"] as const) {
+        const column = labels.filter((label) => label.side === side).sort((a, b) => a.idealY - b.idealY);
+        column.forEach((label, index) => {
+          label.y = Math.max(label.idealY, 28 + index * 26, index === 0 ? 28 : column[index - 1].y + 26);
+        });
+        const overflow = column.length ? Math.max(0, column[column.length - 1].y - 352) : 0;
+        column.forEach((label) => {
+          const y = label.y - overflow;
+          const from = polar(cx, cy, radius + 31, label.angle);
+          const endX = side === "left" ? 122 : 438;
+          const elbowX = side === "left" ? 132 : 428;
+          label.group.append(svgEl("path", {
+            d: `M ${from.x} ${from.y} L ${elbowX} ${y} L ${endX} ${y}`,
+            class: "ledger-donut-leader"
+          }));
+          const marker = svgEl("circle", { cx: side === "left" ? 119 : 441, cy: y, r: 2.2, class: "ledger-donut-label-dot" });
+          const text = svgEl("text", { x: side === "left" ? 114 : 446, y: y + 3.5, "text-anchor": side === "left" ? "end" : "start", class: "ledger-donut-label" });
+          const name = Array.from(label.item.category);
+          const displayName = label.item.members.length > 1 ? `其余${label.item.members.length}类` : name.length > 5 ? `${name.slice(0, 5).join("")}…` : label.item.category;
+          text.textContent = `${displayName} · ${(label.item.share * 100).toFixed(1)}%`;
+          label.group.append(marker, text);
+        });
       }
     }
-    cursor += allocation[categoryIndex];
-    svg.append(group);
-  });
-  const center = svgEl("text", { x: 170, y: 140, "text-anchor": "middle", class: "ledger-donut-total" });
-  center.textContent = formatCents(total);
-  const centerSub = svgEl("text", { x: 170, y: 160, "text-anchor": "middle", class: "ledger-foot-label" });
-  centerSub.textContent = "100 TICKS · LOCAL TOTAL";
-  svg.append(center, centerSub);
-  wrap.append(svg);
-  const legend = wrap.createDiv({ cls: "ledger-legend" });
-  data.forEach((item, index) => {
-    const button = legend.createEl("button", { cls: "ledger-legend-item" });
-    const swatch = button.createSpan({ cls: "ledger-swatch" });
-    swatch.style.backgroundColor = LADDER[Math.min(index, LADDER.length - 1)];
-    button.createSpan({ text: `${item.category} · ${(item.share * 100).toFixed(1)}%` });
-    button.addEventListener("click", () => onClick(item.category));
+    const center = svgEl("text", { x: cx, y: cy - 5, "text-anchor": "middle", class: "ledger-donut-total" });
+    center.textContent = formatCents(total);
+    const centerSub = svgEl("text", { x: cx, y: cy + 15, "text-anchor": "middle", class: "ledger-foot-label" });
+    centerSub.textContent = "100 TICKS · LOCAL TOTAL";
+    svg.append(center, centerSub);
+    return svg;
+  };
+  wrap.append(createDial(false), createDial(true));
+  const leftLegend = wrap.createDiv({ cls: "ledger-legend ledger-legend-left" });
+  const rightLegend = wrap.createDiv({ cls: "ledger-legend ledger-legend-right" });
+  const leftCount = Math.ceil(segments.length / 2);
+  segments.forEach((item, index) => {
+    const legend = index < leftCount ? leftLegend : rightLegend;
+    const row = item.members.length === 1
+      ? legend.createEl("button", { cls: `ledger-legend-item ledger-donut-tone-${index}` })
+      : legend.createEl("details", { cls: `ledger-donut-other ledger-donut-tone-${index}` }).createEl("summary", { cls: "ledger-legend-item" });
+    row.createSpan({ cls: "ledger-swatch" });
+    row.createSpan({ text: `${item.category} · ${(item.share * 100).toFixed(1)}%` });
+    if (item.members.length === 1) {
+      row.addEventListener("click", () => onClick(item.category));
+    } else {
+      const details = row.parentElement as HTMLDetailsElement;
+      for (const member of item.members) {
+        const button = details.createEl("button", { cls: "ledger-donut-other-item", text: `${member.category} · ${(member.cents / total * 100).toFixed(1)}%` });
+        button.addEventListener("click", () => onClick(member.category));
+      }
+    }
   });
   sourceLine(shell, "TICK DONUT · MONO-BASIC · LOCAL LEDGER");
 }
@@ -436,6 +480,139 @@ export function renderTrendChart(parent: HTMLElement, points: TrendPoint[], type
   chart.append(svg);
   renderMobileTrend(chart, points, isLine, onClick);
   sourceLine(shell, `${isLine ? "HAIRLINE LINE" : "HAIRLINE AREA"} · MONO-BASIC · LOCAL LEDGER`);
+}
+
+export function renderSalaryWaterfall(parent: HTMLElement, steps: WaterfallStep[], range: { start: string; end: string }, onCategory: (category: string) => void): void {
+  const spent = -steps.filter((step) => step.kind === "expense").reduce((sum, step) => sum + step.deltaCents, 0);
+  const remaining = steps.at(-1)?.toCents ?? 0;
+  const { shell, chart } = monoCard(
+    parent,
+    "LUPI BASICS · F9 RUNG WATERFALL",
+    remaining < 0 ? `本工资周期支出超出工资 ${formatCents(-remaining)}` : `本工资周期已支出 ${formatCents(spent)}`,
+    `${range.start} — ${range.end} · 工资为设置值 · 扣减全部已入账支出，与顶部筛选无关`
+  );
+  if (!steps.length) {
+    renderEmpty(chart, "请先在设置中填写每个工资周期到账工资");
+    return;
+  }
+  const width = 840;
+  const height = 348;
+  const top = 34;
+  const bottom = 263;
+  const values = steps.flatMap((step) => [step.fromCents, step.toCents]);
+  const low = Math.min(0, ...values);
+  const high = Math.max(1, ...values);
+  const scale = (value: number): number => bottom - (value - low) / (high - low) * (bottom - top);
+  const xAt = (index: number): number => 74 + index * (width - 148) / Math.max(1, steps.length - 1);
+  const unit = niceCurrencyUnit(Math.max(...steps.map((step) => Math.abs(step.deltaCents))), 25);
+  const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": `工资周期瀑布图，已支出 ${formatCents(spent)}，当前剩余 ${formatCents(remaining)}` });
+  svg.classList.add("ledger-svg", "ledger-waterfall-svg", "ledger-waterfall-desktop");
+  svg.append(svgEl("line", { x1: 32, y1: scale(0), x2: width - 30, y2: scale(0), stroke: GRID, "stroke-width": 1, class: "ledger-fade" }));
+  steps.forEach((step, index) => {
+    const x = xAt(index);
+    const a = step.kind === "expense" ? step.toCents : 0;
+    const b = step.kind === "expense" ? step.fromCents : step.toCents;
+    const count = step.deltaCents === 0 ? 1 : Math.min(34, Math.max(1, Math.ceil(Math.abs(b - a) / unit)));
+    const group = svgEl("g", { class: "ledger-waterfall-step" });
+    const title = svgEl("title");
+    title.textContent = `${step.label}：${step.kind === "expense" ? "支出 " + formatCents(-step.deltaCents) : formatCents(step.toCents)}`;
+    group.append(title);
+    for (let rung = 0; rung < count; rung += 1) {
+      const value = a + (rung + 0.5) / count * (b - a);
+      group.append(svgEl("line", {
+        x1: x - 12, y1: scale(value), x2: x + 12, y2: scale(value),
+        stroke: step.kind === "expense" ? MUTED : step.kind === "remaining" ? HERO : INK,
+        "stroke-width": 1.3, ...(step.kind === "expense" ? { "stroke-dasharray": "3 3" } : {}),
+        class: "ledger-fade", style: `animation-delay:${index * 0.08 + rung * 0.008}s`
+      }));
+    }
+    if (index < steps.length - 1) {
+      group.append(svgEl("line", { x1: x + 15, y1: scale(step.toCents), x2: xAt(index + 1) - 15, y2: scale(step.toCents), stroke: FAINT, "stroke-width": 1, "stroke-dasharray": "2 4" }));
+    }
+    const value = svgEl("text", { x, y: Math.max(19, scale(Math.max(a, b)) - 11), "text-anchor": "middle", class: "ledger-waterfall-value" });
+    value.textContent = step.kind === "expense" ? `−${formatCents(-step.deltaCents)}` : formatCents(step.toCents);
+    const label = svgEl("text", { x, y: 298, "text-anchor": "middle", class: "ledger-waterfall-label" });
+    label.textContent = step.label;
+    group.append(value, label);
+    if (step.categories.length === 1) accessibleTarget(group, `${step.label}支出 ${formatCents(-step.deltaCents)}，打开分类明细`, () => onCategory(step.categories[0]));
+    svg.append(group);
+  });
+  const foot = svgEl("text", { x: width / 2, y: height - 9, "text-anchor": "middle", class: "ledger-foot-label" });
+  foot.textContent = `SOLID = SET SALARY / REMAINING · DASHED = POSTED SPENDING · ONE RUNG ≈ ${formatCents(unit)}`;
+  svg.append(foot);
+  chart.append(svg);
+  const mobile = chart.createDiv({ cls: "ledger-waterfall-mobile" });
+  steps.forEach((step) => {
+    const row = mobile.createDiv({ cls: `ledger-waterfall-mobile-step is-${step.kind}` });
+    const head = row.createDiv({ cls: "ledger-waterfall-mobile-head" });
+    head.createSpan({ text: step.label });
+    head.createEl("strong", { text: step.kind === "expense" ? `−${formatCents(-step.deltaCents)}` : formatCents(step.toCents) });
+    if (step.kind === "expense") row.createDiv({ cls: "ledger-waterfall-mobile-balance", text: `扣除后剩余 ${formatCents(step.toCents)}` });
+    if (step.categories.length === 1) {
+      row.setAttribute("role", "button");
+      row.setAttribute("tabindex", "0");
+      row.addEventListener("click", () => onCategory(step.categories[0]));
+      row.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onCategory(step.categories[0]); } });
+    }
+  });
+  shell.createDiv({ cls: "ledger-waterfall-note", text: "只扣除已记录的交易；固定支出如已入账，不会再次扣除。当前剩余不等于银行账户余额。" });
+  sourceLine(shell, "RUNG WATERFALL · WIRE · CURRENT SALARY CYCLE · LOCAL LEDGER");
+}
+
+export function renderCategoryBox(parent: HTMLElement, data: BoxReference, onOpenRecord: (record: LedgerRecord) => void): void {
+  const high = data.largestCurrent.cents > data.upperFenceCents;
+  const { shell, chart } = monoCard(
+    parent,
+    "LUPI BASICS · F15 TICK BOX",
+    high ? `${data.category}本期最大单笔高于历史统计上界` : `${data.category}单笔支出与历史分布对照`,
+    `此前两个已结束工资周期 · ${data.sampleCount} 笔历史交易 · 箱体表示中间一半，橙点为所选期间最大单笔`
+  );
+  const makeSvg = (width: number, mobile: boolean): SVGSVGElement => {
+    const height = mobile ? 268 : 300;
+    const plotTop = 32;
+    const plotBottom = mobile ? 210 : 238;
+    const maxValue = Math.max(data.maxCents, ...data.outlierCents, data.largestCurrent.cents, 100) * 1.12;
+    const y = (cents: number): number => plotBottom - cents / maxValue * (plotBottom - plotTop);
+    const boxX = mobile ? 132 : 210;
+    const currentX = mobile ? 244 : 375;
+    const boxWidth = mobile ? 35 : 42;
+    const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": `${data.category}历史单笔中位数 ${formatCents(data.medianCents)}，本期最大单笔 ${formatCents(data.largestCurrent.cents)}` });
+    svg.classList.add("ledger-svg", "ledger-box-svg", mobile ? "is-mobile" : "is-desktop");
+    for (let index = 0; index <= 4; index += 1) {
+      const value = maxValue * index / 4;
+      svg.append(svgEl("line", { x1: mobile ? 55 : 70, y1: y(value), x2: width - 28, y2: y(value), stroke: GRID, "stroke-width": 0.8 }));
+      const tick = svgEl("text", { x: mobile ? 50 : 64, y: y(value) + 3, "text-anchor": "end", class: "ledger-box-axis" });
+      tick.textContent = formatCents(Math.round(value));
+      svg.append(tick);
+    }
+    svg.append(svgEl("line", { x1: boxX, y1: y(data.minCents), x2: boxX, y2: y(data.maxCents), stroke: MUTED, "stroke-width": 1.2, class: "ledger-draw" }));
+    for (const cents of [data.minCents, data.maxCents]) svg.append(svgEl("line", { x1: boxX - 10, y1: y(cents), x2: boxX + 10, y2: y(cents), stroke: MUTED, "stroke-width": 1.2 }));
+    const box = svgEl("rect", { x: boxX - boxWidth / 2, y: y(data.q3Cents), width: boxWidth, height: Math.max(2, y(data.q1Cents) - y(data.q3Cents)), rx: 9, fill: INK, class: "ledger-pop" });
+    svg.append(box);
+    svg.append(svgEl("line", { x1: boxX - boxWidth / 2 + 4, y1: y(data.medianCents), x2: boxX + boxWidth / 2 - 4, y2: y(data.medianCents), stroke: PAPER, "stroke-width": 2.4 }));
+    data.outlierCents.forEach((cents, index) => svg.append(svgEl("circle", { cx: boxX + (deterministic(index + 1, 11) - 0.5) * 13, cy: y(cents), r: 3, fill: PAPER, stroke: MUTED, "stroke-width": 1.2, class: "ledger-pop" })));
+    const current = svgEl("g", { role: "button", tabindex: 0, "aria-label": `打开本期最大单笔，${data.largestCurrent.date}，${formatCents(data.largestCurrent.cents)}` });
+    current.append(svgEl("line", { x1: currentX, y1: y(0), x2: currentX, y2: y(data.largestCurrent.cents), stroke: FAINT, "stroke-width": 1, "stroke-dasharray": "2 4" }));
+    current.append(svgEl("circle", { cx: currentX, cy: y(data.largestCurrent.cents), r: 6, fill: HERO, class: "ledger-pop" }));
+    current.addEventListener("click", () => onOpenRecord(data.largestCurrent));
+    current.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenRecord(data.largestCurrent); } });
+    svg.append(current);
+    for (const [x, label] of [[boxX, "历史单笔"], [currentX, "本期最大"]] as Array<[number, string]>) {
+      const text = svgEl("text", { x, y: plotBottom + 20, "text-anchor": "middle", class: "ledger-box-label" });
+      text.textContent = label;
+      svg.append(text);
+    }
+    return svg;
+  };
+  chart.append(makeSvg(540, false), makeSvg(340, true));
+  const stats = shell.createDiv({ cls: "ledger-box-stats" });
+  stats.createSpan({ text: `历史中位数 ${formatCents(data.medianCents)}` });
+  stats.createSpan({ text: `中间一半 ${formatCents(data.q1Cents)}–${formatCents(data.q3Cents)}` });
+  const current = stats.createEl("button", { text: `本期最大 ${formatCents(data.largestCurrent.cents)} · 打开账目` });
+  current.type = "button";
+  current.addEventListener("click", () => onOpenRecord(data.largestCurrent));
+  shell.createDiv({ cls: "ledger-box-note", text: "仅按分类比较单笔金额；分类内用途可能不同，位置偏高不等于已查明原因。空心点为历史统计离群值。" });
+  sourceLine(shell, "TICK BOX · WIRE · TWO PREVIOUS FULL SALARY CYCLES · LOCAL LEDGER");
 }
 
 export interface DumbbellDatum {

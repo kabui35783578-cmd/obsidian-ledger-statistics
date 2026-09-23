@@ -1797,8 +1797,103 @@ function assessFinanceAdvice(snapshot, cache) {
   return challenger ? result(cache.advice, true, "\u51FA\u73B0\u66F4\u503C\u5F97\u5173\u6CE8\u7684\u53D8\u5316\uFF0C\u9700\u91CD\u65B0\u8BC4\u4F30") : result(cache.advice, false, "\u5F53\u524D\u5224\u65AD\u4ECD\u6709\u6548\uFF0C\u6301\u7EED\u5173\u6CE8\u4E2D");
 }
 
+// src/chart-data.ts
+function salaryWaterfall(records, range, salaryCents) {
+  var _a;
+  if (salaryCents <= 0) return [];
+  const amounts = /* @__PURE__ */ new Map();
+  for (const record of records) {
+    if (record.date < range.start || record.date > range.end) continue;
+    amounts.set(record.category, ((_a = amounts.get(record.category)) != null ? _a : 0) + record.cents);
+  }
+  const ranked = [...amounts].filter(([, cents]) => cents > 0).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "zh-CN"));
+  const groups = ranked.length <= 4 ? ranked.map(([label, cents]) => ({ label, cents, categories: [label] })) : [
+    ...ranked.slice(0, 3).map(([label, cents]) => ({ label, cents, categories: [label] })),
+    { label: `\u5176\u4F59 ${ranked.length - 3} \u7C7B`, cents: ranked.slice(3).reduce((sum, [, cents]) => sum + cents, 0), categories: ranked.slice(3).map(([name]) => name) }
+  ];
+  const steps = [{ label: "\u5468\u671F\u5DE5\u8D44", deltaCents: salaryCents, fromCents: 0, toCents: salaryCents, categories: [], kind: "salary" }];
+  let balance = salaryCents;
+  for (const group of groups) {
+    steps.push({ label: group.label, deltaCents: -group.cents, fromCents: balance, toCents: balance - group.cents, categories: group.categories, kind: "expense" });
+    balance -= group.cents;
+  }
+  steps.push({ label: "\u5F53\u524D\u5269\u4F59", deltaCents: balance, fromCents: 0, toCents: balance, categories: [], kind: "remaining" });
+  return steps;
+}
+function median2(sorted) {
+  const center = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[center] : Math.round((sorted[center - 1] + sorted[center]) / 2);
+}
+function categoryBoxReference(allRecords, selectedRecords, category, selectedStart) {
+  var _a, _b;
+  const anchor = /* @__PURE__ */ new Date(`${selectedStart}T12:00:00`);
+  if (!Number.isFinite(anchor.getTime())) return null;
+  const historyRanges = [salaryCycleFullRange(anchor, 1), salaryCycleFullRange(anchor, 2)];
+  const history = allRecords.filter((record) => record.category === category && record.cents > 0 && historyRanges.some((range) => record.date >= range.start && record.date <= range.end)).map((record) => record.cents).sort((a, b) => a - b);
+  const current = selectedRecords.filter((record) => record.category === category && record.cents > 0).sort((a, b) => b.cents - a.cents || b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
+  if (history.length < 8 || current.length === 0) return null;
+  const mid = Math.floor(history.length / 2);
+  const q1Cents = median2(history.slice(0, mid));
+  const medianCents = median2(history);
+  const q3Cents = median2(history.slice(history.length % 2 ? mid + 1 : mid));
+  const iqr = q3Cents - q1Cents;
+  const lowerFenceCents = Math.max(0, q1Cents - Math.round(iqr * 1.5));
+  const upperFenceCents = q3Cents + Math.round(iqr * 1.5);
+  const regular = history.filter((value) => value >= lowerFenceCents && value <= upperFenceCents);
+  return {
+    category,
+    sampleCount: history.length,
+    minCents: (_a = regular[0]) != null ? _a : history[0],
+    q1Cents,
+    medianCents,
+    q3Cents,
+    maxCents: (_b = regular[regular.length - 1]) != null ? _b : history[history.length - 1],
+    lowerFenceCents,
+    upperFenceCents,
+    outlierCents: history.filter((value) => value < lowerFenceCents || value > upperFenceCents),
+    largestCurrent: current[0],
+    historyRanges
+  };
+}
+
 // src/ui.ts
 var import_obsidian5 = require("obsidian");
+
+// src/donut.ts
+function prepareDonut(data) {
+  const sorted = [...data].filter((item) => item.cents > 0).sort((a, b) => b.cents - a.cents || a.category.localeCompare(b.category));
+  const total = sorted.reduce((sum, item) => sum + item.cents, 0);
+  if (total === 0) return [];
+  const leading = sorted.length > 6 ? sorted.slice(0, 5) : sorted;
+  const rest = sorted.length > 6 ? sorted.slice(5) : [];
+  const parts = leading.map((item) => ({ category: item.category, cents: item.cents, count: item.count, members: [item] }));
+  if (rest.length > 0) {
+    parts.push({
+      category: `\u5176\u4F59 ${rest.length} \u7C7B`,
+      cents: rest.reduce((sum, item) => sum + item.cents, 0),
+      count: rest.reduce((sum, item) => sum + item.count, 0),
+      members: rest
+    });
+  }
+  const exact = parts.map((part) => part.cents / total * 100);
+  const ticks = exact.map((value) => Math.max(1, Math.floor(value)));
+  let difference = 100 - ticks.reduce((sum, value) => sum + value, 0);
+  const fractions = exact.map((value, index) => ({ index, fraction: value - Math.floor(value) }));
+  if (difference > 0) {
+    fractions.sort((a, b) => b.fraction - a.fraction || a.index - b.index);
+    for (let i = 0; i < difference; i += 1) ticks[fractions[i % fractions.length].index] += 1;
+  } else if (difference < 0) {
+    while (difference < 0) {
+      const index = ticks.reduce((best, value, current) => value > 1 && (best < 0 || value - exact[current] > ticks[best] - exact[best]) ? current : best, -1);
+      if (index < 0) break;
+      ticks[index] -= 1;
+      difference += 1;
+    }
+  }
+  return parts.map((part, index) => ({ ...part, share: part.cents / total, ticks: ticks[index] }));
+}
+
+// src/ui.ts
 var SVG_NS = "http://www.w3.org/2000/svg";
 var INK = "#1F1E1C";
 var PAPER = "#F0F0EE";
@@ -1891,10 +1986,6 @@ function interactiveTrendTarget(svg, group, target, label, activate, previewOnFi
       activate();
     }
   });
-}
-function strongestCategory(data) {
-  var _a, _b;
-  return (_b = (_a = data[0]) == null ? void 0 : _a.category) != null ? _b : "\u6682\u65E0\u5206\u7C7B";
 }
 function pctText(cents, total) {
   return total === 0 ? "\u5360\u6BD4 0.0%" : `\u5360\u6BD4 ${(cents / total * 100).toFixed(1)}%`;
@@ -1997,68 +2088,112 @@ function polar(cx, cy, radius, angle) {
   const radians = angle * Math.PI / 180;
   return { x: cx + radius * Math.cos(radians), y: cy + radius * Math.sin(radians) };
 }
-function allocateHundred(data) {
-  const exact = data.map((item) => item.share * 100);
-  const allocated = exact.map(Math.floor);
-  let remainder = 100 - allocated.reduce((sum, value) => sum + value, 0);
-  const order = exact.map((value, index) => ({ index, fraction: value - Math.floor(value) })).sort((a, b) => b.fraction - a.fraction);
-  for (let index = 0; index < order.length && remainder > 0; index += 1, remainder -= 1) allocated[order[index].index] += 1;
-  return allocated;
-}
 function renderDonut(parent, data, onClick) {
-  const total = data.reduce((sum, item) => sum + item.cents, 0);
+  const segments = prepareDonut(data);
+  const total = segments.reduce((sum, item) => sum + item.cents, 0);
   const { shell, chart } = monoCard(
     parent,
     "LUPI BASICS \xB7 F4 TICK DONUT",
-    data.length ? `${strongestCategory(data)}\u5360\u636E\u6700\u5927\u7684\u8868\u76D8\u533A\u6BB5` : "\u8868\u76D8\u7B49\u5F85\u7B2C\u4E00\u7B14\u652F\u51FA",
-    "\u4E00\u6839\u523B\u7EBF = \u7EA6 1 \u4E2A\u767E\u5206\u70B9 \xB7 \u7CBE\u786E\u5360\u6BD4\u89C1\u56FE\u4F8B \xB7 \u987A\u65F6\u9488\u8BFB\u53D6"
+    segments.length ? `${segments[0].category}\u5360\u636E\u6700\u5927\u7684\u8868\u76D8\u533A\u6BB5` : "\u8868\u76D8\u7B49\u5F85\u7B2C\u4E00\u7B14\u652F\u51FA",
+    "\u4E00\u6839\u523B\u7EBF \u2248 1 \u4E2A\u767E\u5206\u70B9 \xB7 \u6A59\u8272\u4E3A\u6700\u5927\u5206\u7C7B \xB7 \u7CBE\u786E\u5360\u6BD4\u89C1\u56FE\u4F8B"
   );
-  if (data.length === 0 || total === 0) return renderEmpty(chart, "\u5408\u8BA1\u4E3A\u96F6\uFF0C\u65E0\u6CD5\u8BA1\u7B97\u5360\u6BD4");
+  if (segments.length === 0 || total === 0) return renderEmpty(chart, "\u5408\u8BA1\u4E3A\u96F6\uFF0C\u65E0\u6CD5\u8BA1\u7B97\u5360\u6BD4");
   const wrap = chart.createDiv({ cls: "ledger-donut-wrap" });
-  const svg = svgEl("svg", { viewBox: "0 0 340 320", role: "img", "aria-label": "\u5206\u7C7B\u652F\u51FA\u767E\u5206\u6BD4\u523B\u7EBF\u73AF" });
-  svg.classList.add("ledger-svg", "ledger-tick-donut");
-  const allocation = allocateHundred(data);
-  let cursor = 0;
-  data.forEach((item, categoryIndex) => {
-    const group = svgEl("g");
-    accessibleTarget(group, `${item.category} ${(item.share * 100).toFixed(1)}%\uFF0C${formatCents(item.cents)}`, () => onClick(item.category));
-    for (let local = 0; local < allocation[categoryIndex]; local += 1) {
-      const tick = cursor + local;
-      const angle = tick * 3.6 - 90;
-      const inner = polar(170, 145, 70, angle);
-      const length = 11 + deterministic(tick + 1, categoryIndex + 2) * 7;
-      const outer = polar(170, 145, 70 + length, angle);
-      group.append(svgEl("line", {
-        x1: inner.x,
-        y1: inner.y,
-        x2: outer.x,
-        y2: outer.y,
-        stroke: categoryIndex === 0 ? HERO : LADDER[Math.min(categoryIndex, LADDER.length - 1)],
-        "stroke-width": categoryIndex === 0 ? 1.8 : 1,
-        class: "ledger-fade",
-        style: `animation-delay:${tick * 0.012}s`
-      }));
-      if (tick % 10 === 0) {
-        const dot = polar(170, 145, 63, angle);
-        group.append(svgEl("circle", { cx: dot.x, cy: dot.y, r: 1, fill: FAINT }));
+  const createDial = (mobile) => {
+    const cx = mobile ? 170 : 280;
+    const cy = mobile ? 145 : 184;
+    const radius = mobile ? 70 : 103;
+    const svg = svgEl("svg", { viewBox: `0 0 ${mobile ? 340 : 560} ${mobile ? 320 : 380}`, role: "img", "aria-label": "\u5206\u7C7B\u652F\u51FA\u767E\u5206\u6BD4\u523B\u7EBF\u73AF" });
+    svg.classList.add("ledger-svg", "ledger-tick-donut", mobile ? "is-mobile" : "is-desktop");
+    let cursor = 0;
+    const labels = [];
+    segments.forEach((item, index) => {
+      const group = svgEl("g", { class: `ledger-donut-segment ledger-donut-tone-${index}` });
+      if (item.members.length === 1) {
+        accessibleTarget(group, `${item.category} ${(item.share * 100).toFixed(1)}%\uFF0C${formatCents(item.cents)}`, () => onClick(item.category));
+      } else {
+        const title = svgEl("title");
+        title.textContent = `${item.category} ${(item.share * 100).toFixed(1)}%\uFF0C\u8BE6\u89C1\u56FE\u4F8B`;
+        group.append(title);
+      }
+      for (let local = 0; local < item.ticks; local += 1) {
+        const tick = cursor + local;
+        const angle = tick * 3.6 - 90;
+        const inner = polar(cx, cy, radius, angle);
+        const length = (mobile ? 12 : 15) + deterministic(tick + 1, index + 2) * (mobile ? 6 : 8);
+        const outer = polar(cx, cy, radius + length, angle);
+        group.append(svgEl("line", {
+          x1: inner.x,
+          y1: inner.y,
+          x2: outer.x,
+          y2: outer.y,
+          "stroke-width": 1.8,
+          class: "ledger-donut-tick ledger-fade",
+          style: `animation-delay:${tick * 0.012}s`
+        }));
+        if (tick % 10 === 0) {
+          const dot = polar(cx, cy, radius - 7, angle);
+          group.append(svgEl("circle", { cx: dot.x, cy: dot.y, r: 1, fill: FAINT }));
+        }
+      }
+      if (!mobile) {
+        const angle = (cursor + item.ticks / 2) * 3.6 - 90;
+        const side = Math.cos(angle * Math.PI / 180) < 0 ? "left" : "right";
+        labels.push({ group, item, angle, side, idealY: polar(cx, cy, radius + 40, angle).y, y: 0 });
+      }
+      cursor += item.ticks;
+      svg.append(group);
+    });
+    if (!mobile) {
+      for (const side of ["left", "right"]) {
+        const column = labels.filter((label) => label.side === side).sort((a, b) => a.idealY - b.idealY);
+        column.forEach((label, index) => {
+          label.y = Math.max(label.idealY, 28 + index * 26, index === 0 ? 28 : column[index - 1].y + 26);
+        });
+        const overflow = column.length ? Math.max(0, column[column.length - 1].y - 352) : 0;
+        column.forEach((label) => {
+          const y = label.y - overflow;
+          const from = polar(cx, cy, radius + 31, label.angle);
+          const endX = side === "left" ? 122 : 438;
+          const elbowX = side === "left" ? 132 : 428;
+          label.group.append(svgEl("path", {
+            d: `M ${from.x} ${from.y} L ${elbowX} ${y} L ${endX} ${y}`,
+            class: "ledger-donut-leader"
+          }));
+          const marker = svgEl("circle", { cx: side === "left" ? 119 : 441, cy: y, r: 2.2, class: "ledger-donut-label-dot" });
+          const text = svgEl("text", { x: side === "left" ? 114 : 446, y: y + 3.5, "text-anchor": side === "left" ? "end" : "start", class: "ledger-donut-label" });
+          const name = Array.from(label.item.category);
+          const displayName = label.item.members.length > 1 ? `\u5176\u4F59${label.item.members.length}\u7C7B` : name.length > 5 ? `${name.slice(0, 5).join("")}\u2026` : label.item.category;
+          text.textContent = `${displayName} \xB7 ${(label.item.share * 100).toFixed(1)}%`;
+          label.group.append(marker, text);
+        });
       }
     }
-    cursor += allocation[categoryIndex];
-    svg.append(group);
-  });
-  const center = svgEl("text", { x: 170, y: 140, "text-anchor": "middle", class: "ledger-donut-total" });
-  center.textContent = formatCents(total);
-  const centerSub = svgEl("text", { x: 170, y: 160, "text-anchor": "middle", class: "ledger-foot-label" });
-  centerSub.textContent = "100 TICKS \xB7 LOCAL TOTAL";
-  svg.append(center, centerSub);
-  wrap.append(svg);
-  const legend = wrap.createDiv({ cls: "ledger-legend" });
-  data.forEach((item, index) => {
-    const button = legend.createEl("button", { cls: "ledger-legend-item" });
-    const swatch = button.createSpan({ cls: "ledger-swatch" });
-    swatch.style.backgroundColor = LADDER[Math.min(index, LADDER.length - 1)];
-    button.createSpan({ text: `${item.category} \xB7 ${(item.share * 100).toFixed(1)}%` });
-    button.addEventListener("click", () => onClick(item.category));
+    const center = svgEl("text", { x: cx, y: cy - 5, "text-anchor": "middle", class: "ledger-donut-total" });
+    center.textContent = formatCents(total);
+    const centerSub = svgEl("text", { x: cx, y: cy + 15, "text-anchor": "middle", class: "ledger-foot-label" });
+    centerSub.textContent = "100 TICKS \xB7 LOCAL TOTAL";
+    svg.append(center, centerSub);
+    return svg;
+  };
+  wrap.append(createDial(false), createDial(true));
+  const leftLegend = wrap.createDiv({ cls: "ledger-legend ledger-legend-left" });
+  const rightLegend = wrap.createDiv({ cls: "ledger-legend ledger-legend-right" });
+  const leftCount = Math.ceil(segments.length / 2);
+  segments.forEach((item, index) => {
+    const legend = index < leftCount ? leftLegend : rightLegend;
+    const row = item.members.length === 1 ? legend.createEl("button", { cls: `ledger-legend-item ledger-donut-tone-${index}` }) : legend.createEl("details", { cls: `ledger-donut-other ledger-donut-tone-${index}` }).createEl("summary", { cls: "ledger-legend-item" });
+    row.createSpan({ cls: "ledger-swatch" });
+    row.createSpan({ text: `${item.category} \xB7 ${(item.share * 100).toFixed(1)}%` });
+    if (item.members.length === 1) {
+      row.addEventListener("click", () => onClick(item.category));
+    } else {
+      const details = row.parentElement;
+      for (const member of item.members) {
+        const button = details.createEl("button", { cls: "ledger-donut-other-item", text: `${member.category} \xB7 ${(member.cents / total * 100).toFixed(1)}%` });
+        button.addEventListener("click", () => onClick(member.category));
+      }
+    }
   });
   sourceLine(shell, "TICK DONUT \xB7 MONO-BASIC \xB7 LOCAL LEDGER");
 }
@@ -2221,6 +2356,153 @@ function renderTrendChart(parent, points, type, onClick) {
   chart.append(svg);
   renderMobileTrend(chart, points, isLine, onClick);
   sourceLine(shell, `${isLine ? "HAIRLINE LINE" : "HAIRLINE AREA"} \xB7 MONO-BASIC \xB7 LOCAL LEDGER`);
+}
+function renderSalaryWaterfall(parent, steps, range, onCategory) {
+  var _a, _b;
+  const spent = -steps.filter((step) => step.kind === "expense").reduce((sum, step) => sum + step.deltaCents, 0);
+  const remaining = (_b = (_a = steps.at(-1)) == null ? void 0 : _a.toCents) != null ? _b : 0;
+  const { shell, chart } = monoCard(
+    parent,
+    "LUPI BASICS \xB7 F9 RUNG WATERFALL",
+    remaining < 0 ? `\u672C\u5DE5\u8D44\u5468\u671F\u652F\u51FA\u8D85\u51FA\u5DE5\u8D44 ${formatCents(-remaining)}` : `\u672C\u5DE5\u8D44\u5468\u671F\u5DF2\u652F\u51FA ${formatCents(spent)}`,
+    `${range.start} \u2014 ${range.end} \xB7 \u5DE5\u8D44\u4E3A\u8BBE\u7F6E\u503C \xB7 \u6263\u51CF\u5168\u90E8\u5DF2\u5165\u8D26\u652F\u51FA\uFF0C\u4E0E\u9876\u90E8\u7B5B\u9009\u65E0\u5173`
+  );
+  if (!steps.length) {
+    renderEmpty(chart, "\u8BF7\u5148\u5728\u8BBE\u7F6E\u4E2D\u586B\u5199\u6BCF\u4E2A\u5DE5\u8D44\u5468\u671F\u5230\u8D26\u5DE5\u8D44");
+    return;
+  }
+  const width = 840;
+  const height = 348;
+  const top = 34;
+  const bottom = 263;
+  const values = steps.flatMap((step) => [step.fromCents, step.toCents]);
+  const low = Math.min(0, ...values);
+  const high = Math.max(1, ...values);
+  const scale = (value) => bottom - (value - low) / (high - low) * (bottom - top);
+  const xAt = (index) => 74 + index * (width - 148) / Math.max(1, steps.length - 1);
+  const unit = niceCurrencyUnit(Math.max(...steps.map((step) => Math.abs(step.deltaCents))), 25);
+  const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": `\u5DE5\u8D44\u5468\u671F\u7011\u5E03\u56FE\uFF0C\u5DF2\u652F\u51FA ${formatCents(spent)}\uFF0C\u5F53\u524D\u5269\u4F59 ${formatCents(remaining)}` });
+  svg.classList.add("ledger-svg", "ledger-waterfall-svg", "ledger-waterfall-desktop");
+  svg.append(svgEl("line", { x1: 32, y1: scale(0), x2: width - 30, y2: scale(0), stroke: GRID, "stroke-width": 1, class: "ledger-fade" }));
+  steps.forEach((step, index) => {
+    const x = xAt(index);
+    const a = step.kind === "expense" ? step.toCents : 0;
+    const b = step.kind === "expense" ? step.fromCents : step.toCents;
+    const count = step.deltaCents === 0 ? 1 : Math.min(34, Math.max(1, Math.ceil(Math.abs(b - a) / unit)));
+    const group = svgEl("g", { class: "ledger-waterfall-step" });
+    const title = svgEl("title");
+    title.textContent = `${step.label}\uFF1A${step.kind === "expense" ? "\u652F\u51FA " + formatCents(-step.deltaCents) : formatCents(step.toCents)}`;
+    group.append(title);
+    for (let rung = 0; rung < count; rung += 1) {
+      const value2 = a + (rung + 0.5) / count * (b - a);
+      group.append(svgEl("line", {
+        x1: x - 12,
+        y1: scale(value2),
+        x2: x + 12,
+        y2: scale(value2),
+        stroke: step.kind === "expense" ? MUTED : step.kind === "remaining" ? HERO : INK,
+        "stroke-width": 1.3,
+        ...step.kind === "expense" ? { "stroke-dasharray": "3 3" } : {},
+        class: "ledger-fade",
+        style: `animation-delay:${index * 0.08 + rung * 8e-3}s`
+      }));
+    }
+    if (index < steps.length - 1) {
+      group.append(svgEl("line", { x1: x + 15, y1: scale(step.toCents), x2: xAt(index + 1) - 15, y2: scale(step.toCents), stroke: FAINT, "stroke-width": 1, "stroke-dasharray": "2 4" }));
+    }
+    const value = svgEl("text", { x, y: Math.max(19, scale(Math.max(a, b)) - 11), "text-anchor": "middle", class: "ledger-waterfall-value" });
+    value.textContent = step.kind === "expense" ? `\u2212${formatCents(-step.deltaCents)}` : formatCents(step.toCents);
+    const label = svgEl("text", { x, y: 298, "text-anchor": "middle", class: "ledger-waterfall-label" });
+    label.textContent = step.label;
+    group.append(value, label);
+    if (step.categories.length === 1) accessibleTarget(group, `${step.label}\u652F\u51FA ${formatCents(-step.deltaCents)}\uFF0C\u6253\u5F00\u5206\u7C7B\u660E\u7EC6`, () => onCategory(step.categories[0]));
+    svg.append(group);
+  });
+  const foot = svgEl("text", { x: width / 2, y: height - 9, "text-anchor": "middle", class: "ledger-foot-label" });
+  foot.textContent = `SOLID = SET SALARY / REMAINING \xB7 DASHED = POSTED SPENDING \xB7 ONE RUNG \u2248 ${formatCents(unit)}`;
+  svg.append(foot);
+  chart.append(svg);
+  const mobile = chart.createDiv({ cls: "ledger-waterfall-mobile" });
+  steps.forEach((step) => {
+    const row = mobile.createDiv({ cls: `ledger-waterfall-mobile-step is-${step.kind}` });
+    const head = row.createDiv({ cls: "ledger-waterfall-mobile-head" });
+    head.createSpan({ text: step.label });
+    head.createEl("strong", { text: step.kind === "expense" ? `\u2212${formatCents(-step.deltaCents)}` : formatCents(step.toCents) });
+    if (step.kind === "expense") row.createDiv({ cls: "ledger-waterfall-mobile-balance", text: `\u6263\u9664\u540E\u5269\u4F59 ${formatCents(step.toCents)}` });
+    if (step.categories.length === 1) {
+      row.setAttribute("role", "button");
+      row.setAttribute("tabindex", "0");
+      row.addEventListener("click", () => onCategory(step.categories[0]));
+      row.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onCategory(step.categories[0]);
+        }
+      });
+    }
+  });
+  shell.createDiv({ cls: "ledger-waterfall-note", text: "\u53EA\u6263\u9664\u5DF2\u8BB0\u5F55\u7684\u4EA4\u6613\uFF1B\u56FA\u5B9A\u652F\u51FA\u5982\u5DF2\u5165\u8D26\uFF0C\u4E0D\u4F1A\u518D\u6B21\u6263\u9664\u3002\u5F53\u524D\u5269\u4F59\u4E0D\u7B49\u4E8E\u94F6\u884C\u8D26\u6237\u4F59\u989D\u3002" });
+  sourceLine(shell, "RUNG WATERFALL \xB7 WIRE \xB7 CURRENT SALARY CYCLE \xB7 LOCAL LEDGER");
+}
+function renderCategoryBox(parent, data, onOpenRecord) {
+  const high = data.largestCurrent.cents > data.upperFenceCents;
+  const { shell, chart } = monoCard(
+    parent,
+    "LUPI BASICS \xB7 F15 TICK BOX",
+    high ? `${data.category}\u672C\u671F\u6700\u5927\u5355\u7B14\u9AD8\u4E8E\u5386\u53F2\u7EDF\u8BA1\u4E0A\u754C` : `${data.category}\u5355\u7B14\u652F\u51FA\u4E0E\u5386\u53F2\u5206\u5E03\u5BF9\u7167`,
+    `\u6B64\u524D\u4E24\u4E2A\u5DF2\u7ED3\u675F\u5DE5\u8D44\u5468\u671F \xB7 ${data.sampleCount} \u7B14\u5386\u53F2\u4EA4\u6613 \xB7 \u7BB1\u4F53\u8868\u793A\u4E2D\u95F4\u4E00\u534A\uFF0C\u6A59\u70B9\u4E3A\u6240\u9009\u671F\u95F4\u6700\u5927\u5355\u7B14`
+  );
+  const makeSvg = (width, mobile) => {
+    const height = mobile ? 268 : 300;
+    const plotTop = 32;
+    const plotBottom = mobile ? 210 : 238;
+    const maxValue = Math.max(data.maxCents, ...data.outlierCents, data.largestCurrent.cents, 100) * 1.12;
+    const y = (cents) => plotBottom - cents / maxValue * (plotBottom - plotTop);
+    const boxX = mobile ? 132 : 210;
+    const currentX = mobile ? 244 : 375;
+    const boxWidth = mobile ? 35 : 42;
+    const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": `${data.category}\u5386\u53F2\u5355\u7B14\u4E2D\u4F4D\u6570 ${formatCents(data.medianCents)}\uFF0C\u672C\u671F\u6700\u5927\u5355\u7B14 ${formatCents(data.largestCurrent.cents)}` });
+    svg.classList.add("ledger-svg", "ledger-box-svg", mobile ? "is-mobile" : "is-desktop");
+    for (let index = 0; index <= 4; index += 1) {
+      const value = maxValue * index / 4;
+      svg.append(svgEl("line", { x1: mobile ? 55 : 70, y1: y(value), x2: width - 28, y2: y(value), stroke: GRID, "stroke-width": 0.8 }));
+      const tick = svgEl("text", { x: mobile ? 50 : 64, y: y(value) + 3, "text-anchor": "end", class: "ledger-box-axis" });
+      tick.textContent = formatCents(Math.round(value));
+      svg.append(tick);
+    }
+    svg.append(svgEl("line", { x1: boxX, y1: y(data.minCents), x2: boxX, y2: y(data.maxCents), stroke: MUTED, "stroke-width": 1.2, class: "ledger-draw" }));
+    for (const cents of [data.minCents, data.maxCents]) svg.append(svgEl("line", { x1: boxX - 10, y1: y(cents), x2: boxX + 10, y2: y(cents), stroke: MUTED, "stroke-width": 1.2 }));
+    const box = svgEl("rect", { x: boxX - boxWidth / 2, y: y(data.q3Cents), width: boxWidth, height: Math.max(2, y(data.q1Cents) - y(data.q3Cents)), rx: 9, fill: INK, class: "ledger-pop" });
+    svg.append(box);
+    svg.append(svgEl("line", { x1: boxX - boxWidth / 2 + 4, y1: y(data.medianCents), x2: boxX + boxWidth / 2 - 4, y2: y(data.medianCents), stroke: PAPER, "stroke-width": 2.4 }));
+    data.outlierCents.forEach((cents, index) => svg.append(svgEl("circle", { cx: boxX + (deterministic(index + 1, 11) - 0.5) * 13, cy: y(cents), r: 3, fill: PAPER, stroke: MUTED, "stroke-width": 1.2, class: "ledger-pop" })));
+    const current2 = svgEl("g", { role: "button", tabindex: 0, "aria-label": `\u6253\u5F00\u672C\u671F\u6700\u5927\u5355\u7B14\uFF0C${data.largestCurrent.date}\uFF0C${formatCents(data.largestCurrent.cents)}` });
+    current2.append(svgEl("line", { x1: currentX, y1: y(0), x2: currentX, y2: y(data.largestCurrent.cents), stroke: FAINT, "stroke-width": 1, "stroke-dasharray": "2 4" }));
+    current2.append(svgEl("circle", { cx: currentX, cy: y(data.largestCurrent.cents), r: 6, fill: HERO, class: "ledger-pop" }));
+    current2.addEventListener("click", () => onOpenRecord(data.largestCurrent));
+    current2.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        onOpenRecord(data.largestCurrent);
+      }
+    });
+    svg.append(current2);
+    for (const [x, label] of [[boxX, "\u5386\u53F2\u5355\u7B14"], [currentX, "\u672C\u671F\u6700\u5927"]]) {
+      const text = svgEl("text", { x, y: plotBottom + 20, "text-anchor": "middle", class: "ledger-box-label" });
+      text.textContent = label;
+      svg.append(text);
+    }
+    return svg;
+  };
+  chart.append(makeSvg(540, false), makeSvg(340, true));
+  const stats = shell.createDiv({ cls: "ledger-box-stats" });
+  stats.createSpan({ text: `\u5386\u53F2\u4E2D\u4F4D\u6570 ${formatCents(data.medianCents)}` });
+  stats.createSpan({ text: `\u4E2D\u95F4\u4E00\u534A ${formatCents(data.q1Cents)}\u2013${formatCents(data.q3Cents)}` });
+  const current = stats.createEl("button", { text: `\u672C\u671F\u6700\u5927 ${formatCents(data.largestCurrent.cents)} \xB7 \u6253\u5F00\u8D26\u76EE` });
+  current.type = "button";
+  current.addEventListener("click", () => onOpenRecord(data.largestCurrent));
+  shell.createDiv({ cls: "ledger-box-note", text: "\u4EC5\u6309\u5206\u7C7B\u6BD4\u8F83\u5355\u7B14\u91D1\u989D\uFF1B\u5206\u7C7B\u5185\u7528\u9014\u53EF\u80FD\u4E0D\u540C\uFF0C\u4F4D\u7F6E\u504F\u9AD8\u4E0D\u7B49\u4E8E\u5DF2\u67E5\u660E\u539F\u56E0\u3002\u7A7A\u5FC3\u70B9\u4E3A\u5386\u53F2\u7EDF\u8BA1\u79BB\u7FA4\u503C\u3002" });
+  sourceLine(shell, "TICK BOX \xB7 WIRE \xB7 TWO PREVIOUS FULL SALARY CYCLES \xB7 LOCAL LEDGER");
 }
 function renderDumbbell(parent, data, currentLabel, previousLabel, onClick) {
   const changed = [...data].filter((item) => item.currentCents !== item.previousCents);
@@ -2898,6 +3180,9 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian6.
     this.metric(metrics, "\u7B14\u6570", String(stats.count), "\u70B9\u51FB\u67E5\u770B\u5168\u90E8\u660E\u7EC6", () => this.goDetails());
     this.metric(metrics, "\u65E5\u5747", formatCents(stats.averagePerRecordedDayCents), `\u5206\u6BCD\uFF1A${stats.recordedDays} \u4E2A\u6709\u65E5\u8BB0\u8D26\u6587\u4EF6\u7684\u65E5\u671F`, () => this.goDetails());
     this.metric(metrics, "\u6700\u5927\u5355\u7B14", stats.maxRecord ? formatCents(stats.maxRecord.cents) : "\u2014", stats.maxRecord ? `${stats.maxRecord.category} \xB7 ${stats.maxRecord.date}` : "\u6682\u65E0\u8BB0\u5F55", () => this.goDetails());
+    const currentCycle = salaryDayRange(/* @__PURE__ */ new Date());
+    const waterfall = salaryWaterfall(flattenRecords(files), currentCycle, this.plugin.settings.salaryCents);
+    renderSalaryWaterfall(parent, waterfall, currentCycle, (category) => this.drillCategoryInRange(category, currentCycle));
     if (records.length === 0) {
       renderEmpty(parent, "\u5F53\u524D\u7B5B\u9009\u6761\u4EF6\u4E0B\u6CA1\u6709\u8BB0\u5F55\u3002\u7F3A\u5C11\u6587\u4EF6\u7684\u65E5\u671F\u4E0D\u4F1A\u6309\u96F6\u6D88\u8D39\u5904\u7406\u3002");
     } else {
@@ -3055,10 +3340,12 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian6.
       this.categoryChart = value;
       this.render();
     });
-    addSelect(controls, "\u6392\u5E8F", this.categorySort, [["amount", "\u6309\u91D1\u989D"], ["count", "\u6309\u7B14\u6570"]], (value) => {
-      this.categorySort = value;
-      this.render();
-    });
+    if (this.categoryChart !== "donut") {
+      addSelect(controls, "\u6392\u5E8F", this.categorySort, [["amount", "\u6309\u91D1\u989D"], ["count", "\u6309\u7B14\u6570"]], (value) => {
+        this.categorySort = value;
+        this.render();
+      });
+    }
     const records = filteredRecords(this.plugin.repository.files.values(), this.filter);
     const summaries = categorySummaries(records, this.categorySort);
     if (this.categoryChart === "bar") renderHorizontalBars(parent, summaries, (category) => this.drillCategory(category));
@@ -3157,6 +3444,11 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian6.
     records = this.sortDetails(records);
     parent.createDiv({ cls: "ledger-results-count", text: `\u5171 ${records.length} \u7B14` });
     if (records.length === 0) return renderEmpty(parent, this.filter.keyword || this.filter.categories.length ? "\u7B5B\u9009\u540E\u6CA1\u6709\u5339\u914D\u8BB0\u5F55" : "\u6240\u9009\u671F\u95F4\u6CA1\u6709\u53EF\u89E3\u6790\u8BB0\u5F55");
+    if (this.filter.categories.length === 1 && !this.filter.keyword && daysInclusive2(this.filter.range) <= 35) {
+      const reference = categoryBoxReference(flattenRecords(this.plugin.repository.files.values()), records, this.filter.categories[0], this.filter.range.start);
+      if (reference) renderCategoryBox(parent, reference, (record) => void this.openRecord(record));
+      else parent.createDiv({ cls: "ledger-box-unavailable", text: "\u5355\u7B14\u5206\u5E03\uFF1A\u6B64\u524D\u4E24\u4E2A\u5DF2\u7ED3\u675F\u5DE5\u8D44\u5468\u671F\u5C11\u4E8E 8 \u7B14\u540C\u7C7B\u4EA4\u6613\uFF0C\u6682\u4E0D\u7ED8\u5236\u7BB1\u7EBF\u56FE\u3002" });
+    }
     const tableWrap = parent.createDiv({ cls: "ledger-table-wrap ledger-details-table" });
     const table = tableWrap.createEl("table", { cls: "ledger-table" });
     const head = table.createTHead().insertRow();
@@ -3363,6 +3655,16 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian6.
   drillCategory(category) {
     this.captureDrillContext();
     this.filter.categories = [category];
+    this.activeView = "details";
+    this.render();
+  }
+  drillCategoryInRange(category, range) {
+    this.captureDrillContext();
+    this.filter.range = { ...range };
+    this.filter.categories = [category];
+    this.filter.keyword = "";
+    this.preset = "custom";
+    this.periodOffset = 0;
     this.activeView = "details";
     this.render();
   }
