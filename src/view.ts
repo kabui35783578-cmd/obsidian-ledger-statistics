@@ -11,6 +11,7 @@ import {
   DateRange,
   FilterState,
   LedgerRecord,
+  ParsedLedgerFile,
   addDays,
   buildFinanceAdvisorSnapshot,
   financeCompleteDates,
@@ -219,12 +220,13 @@ export class LedgerStatisticsView extends ItemView {
       root.createDiv({ cls: "ledger-loading", text: "正在读取记账文件…" });
       return;
     }
+    const files = [...this.plugin.repository.files.values()];
     this.renderHeader(root);
+    if (this.activeView === "overview" && files.length > 0) this.renderCoreCards(root, files);
     this.renderToolbar(root);
     this.renderTabs(root);
     this.renderDrillBack(root);
     const content = root.createDiv({ cls: "ledger-content" });
-    const files = [...this.plugin.repository.files.values()];
     const orphanCount = unmatchedStarIds(this.plugin.settings.starredRecordIds, flattenRecords(files)).length;
     if (orphanCount) {
       const warning = content.createDiv({ cls: "ledger-star-warning" });
@@ -255,7 +257,7 @@ export class LedgerStatisticsView extends ItemView {
     title.createEl("h2", { text: "记账统计" });
     title.createDiv({ cls: "ledger-subtitle", text: "本地只读 · 正文逐笔记录为统计来源" });
     const scope = header.createDiv({ cls: `ledger-scope-badge is-${this.filter.scope}` });
-    scope.setText(this.filter.scope === "consumption" ? "当前口径：消费支出" : "当前口径：全部支出");
+    scope.setText(this.filter.scope === "consumption" ? "筛选口径：消费支出" : "筛选口径：全部支出");
   }
 
   private renderToolbar(root: HTMLElement): void {
@@ -391,10 +393,9 @@ export class LedgerStatisticsView extends ItemView {
     back.addEventListener("click", () => this.restoreDrillContext());
   }
 
-  private renderOverview(parent: HTMLElement): void {
-    const files = [...this.plugin.repository.files.values()];
-    const records = filteredRecords(files, this.filter);
-    const stats = summarize(files, records, this.filter.range);
+  private renderCoreCards(parent: HTMLElement, files: ParsedLedgerFile[]): void {
+    const core = parent.createDiv({ cls: "ledger-core-cards" });
+    core.createDiv({ cls: "ledger-core-caption", text: "实时概览 · 洞察与今日预算不受下方筛选影响" });
     const today = todayIso();
     const budgetCategory = this.plugin.settings.budgetCategory;
     const includeStarred = this.plugin.settings.includeStarredInBudget;
@@ -415,9 +416,15 @@ export class LedgerStatisticsView extends ItemView {
       keyword: ""
     }), includeStarred, this.plugin.settings.starredRecordIds);
     const currentCycleCents = currentCycleRecords.reduce((sum, record) => sum + record.cents, 0);
-    const advisorHost = parent.createDiv({ cls: "ledger-advisor-host" });
+    const advisorHost = core.createDiv({ cls: "ledger-advisor-host" });
     this.renderFinanceSection(advisorHost);
-    renderLiquidBudget(parent, todayCents, this.plugin.settings.dailyBudgetCents, today.replace(/-/g, "."), currentCycleCents, budgetCategory, includeStarred);
+    renderLiquidBudget(core, todayCents, this.plugin.settings.dailyBudgetCents, today.replace(/-/g, "."), currentCycleCents, budgetCategory, includeStarred);
+  }
+
+  private renderOverview(parent: HTMLElement): void {
+    const files = [...this.plugin.repository.files.values()];
+    const records = filteredRecords(files, this.filter);
+    const stats = summarize(files, records, this.filter.range);
     const metrics = parent.createDiv({ cls: "ledger-metrics" });
     this.metric(metrics, "所选期间总额", formatCents(stats.cents), `${stats.count} 笔`, () => this.goDetails());
     this.metric(metrics, "笔数", String(stats.count), "点击查看全部明细", () => this.goDetails());

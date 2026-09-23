@@ -2694,12 +2694,13 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian6.
       root.createDiv({ cls: "ledger-loading", text: "\u6B63\u5728\u8BFB\u53D6\u8BB0\u8D26\u6587\u4EF6\u2026" });
       return;
     }
+    const files = [...this.plugin.repository.files.values()];
     this.renderHeader(root);
+    if (this.activeView === "overview" && files.length > 0) this.renderCoreCards(root, files);
     this.renderToolbar(root);
     this.renderTabs(root);
     this.renderDrillBack(root);
     const content = root.createDiv({ cls: "ledger-content" });
-    const files = [...this.plugin.repository.files.values()];
     const orphanCount = unmatchedStarIds(this.plugin.settings.starredRecordIds, flattenRecords(files)).length;
     if (orphanCount) {
       const warning = content.createDiv({ cls: "ledger-star-warning" });
@@ -2729,7 +2730,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian6.
     title.createEl("h2", { text: "\u8BB0\u8D26\u7EDF\u8BA1" });
     title.createDiv({ cls: "ledger-subtitle", text: "\u672C\u5730\u53EA\u8BFB \xB7 \u6B63\u6587\u9010\u7B14\u8BB0\u5F55\u4E3A\u7EDF\u8BA1\u6765\u6E90" });
     const scope = header.createDiv({ cls: `ledger-scope-badge is-${this.filter.scope}` });
-    scope.setText(this.filter.scope === "consumption" ? "\u5F53\u524D\u53E3\u5F84\uFF1A\u6D88\u8D39\u652F\u51FA" : "\u5F53\u524D\u53E3\u5F84\uFF1A\u5168\u90E8\u652F\u51FA");
+    scope.setText(this.filter.scope === "consumption" ? "\u7B5B\u9009\u53E3\u5F84\uFF1A\u6D88\u8D39\u652F\u51FA" : "\u7B5B\u9009\u53E3\u5F84\uFF1A\u5168\u90E8\u652F\u51FA");
   }
   renderToolbar(root) {
     var _a, _b, _c;
@@ -2861,10 +2862,9 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian6.
     (0, import_obsidian6.setIcon)(back.createSpan({ cls: "ledger-drill-back-icon" }), "arrow-left");
     back.addEventListener("click", () => this.restoreDrillContext());
   }
-  renderOverview(parent) {
-    const files = [...this.plugin.repository.files.values()];
-    const records = filteredRecords(files, this.filter);
-    const stats = summarize(files, records, this.filter.range);
+  renderCoreCards(parent, files) {
+    const core = parent.createDiv({ cls: "ledger-core-cards" });
+    core.createDiv({ cls: "ledger-core-caption", text: "\u5B9E\u65F6\u6982\u89C8 \xB7 \u6D1E\u5BDF\u4E0E\u4ECA\u65E5\u9884\u7B97\u4E0D\u53D7\u4E0B\u65B9\u7B5B\u9009\u5F71\u54CD" });
     const today = todayIso();
     const budgetCategory = this.plugin.settings.budgetCategory;
     const includeStarred = this.plugin.settings.includeStarredInBudget;
@@ -2885,9 +2885,14 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian6.
       keyword: ""
     }), includeStarred, this.plugin.settings.starredRecordIds);
     const currentCycleCents = currentCycleRecords.reduce((sum, record) => sum + record.cents, 0);
-    const advisorHost = parent.createDiv({ cls: "ledger-advisor-host" });
+    const advisorHost = core.createDiv({ cls: "ledger-advisor-host" });
     this.renderFinanceSection(advisorHost);
-    renderLiquidBudget(parent, todayCents, this.plugin.settings.dailyBudgetCents, today.replace(/-/g, "."), currentCycleCents, budgetCategory, includeStarred);
+    renderLiquidBudget(core, todayCents, this.plugin.settings.dailyBudgetCents, today.replace(/-/g, "."), currentCycleCents, budgetCategory, includeStarred);
+  }
+  renderOverview(parent) {
+    const files = [...this.plugin.repository.files.values()];
+    const records = filteredRecords(files, this.filter);
+    const stats = summarize(files, records, this.filter.range);
     const metrics = parent.createDiv({ cls: "ledger-metrics" });
     this.metric(metrics, "\u6240\u9009\u671F\u95F4\u603B\u989D", formatCents(stats.cents), `${stats.count} \u7B14`, () => this.goDetails());
     this.metric(metrics, "\u7B14\u6570", String(stats.count), "\u70B9\u51FB\u67E5\u770B\u5168\u90E8\u660E\u7EC6", () => this.goDetails());
