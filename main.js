@@ -1487,10 +1487,17 @@ var VIEW_NAMES = {
 };
 var OPENAI_CHAT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
 var MIMO_CHAT_ENDPOINT = "https://api.xiaomimimo.com/v1/chat/completions";
+var SETTINGS_SECTIONS = [
+  { id: "ledger", label: "\u8D26\u672C\u4E0E\u663E\u793A", description: "\u8D26\u672C\u6765\u6E90\u3001\u7EDF\u8BA1\u53E3\u5F84\u3001\u9ED8\u8BA4\u89C6\u56FE\u4E0E\u661F\u6807\u6838\u5BF9\u3002" },
+  { id: "salary", label: "\u5DE5\u8D44\u5468\u671F", description: "\u8BBE\u7F6E\u5230\u8D26\u5DE5\u8D44\uFF0C\u6838\u5BF9\u56FA\u5B9A\u652F\u51FA\u4E0E\u5468\u671F\u672B\u53C2\u8003\u3002" },
+  { id: "ai", label: "AI \u6D1E\u5BDF", description: "\u63A7\u5236\u6D1E\u5BDF\u5224\u65AD\u53CA\u5176\u63A5\u53E3\u8FDE\u63A5\u3002\u4F7F\u7528\u524D\u9700\u5728\u201C\u5DE5\u8D44\u5468\u671F\u201D\u8BBE\u7F6E\u5230\u8D26\u5DE5\u8D44\u3002" },
+  { id: "budget", label: "\u9884\u7B97\u4E0E\u63D0\u9192", description: "\u8BBE\u7F6E\u4ECA\u65E5\u9884\u7B97\u3001\u7EDF\u8BA1\u8303\u56F4\u4E0E\u8D85\u989D\u63D0\u9192\u3002" }
+];
 var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
+    this.activeSection = "ledger";
   }
   hide() {
     var _a;
@@ -1500,27 +1507,58 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
     var _a;
     (_a = this.connectionController) == null ? void 0 : _a.abort();
     this.containerEl.empty();
+    this.containerEl.addClass("ledger-settings");
     this.containerEl.createEl("h2", { text: "\u8BB0\u8D26\u7EDF\u8BA1\u8BBE\u7F6E" });
-    new import_obsidian4.Setting(this.containerEl).setName("\u8BB0\u8D26\u6587\u4EF6\u5939").setDesc("\u4ED3\u5E93\u6839\u76EE\u5F55\u4E0B\u7684\u76F8\u5BF9\u8DEF\u5F84\u3002\u63D2\u4EF6\u53EA\u8BFB\u53D6\u5176\u4E2D\u7684 Markdown \u6587\u4EF6\u3002").addText((text) => text.setPlaceholder("\u8BB0\u8D26").setValue(this.plugin.settings.ledgerFolder).onChange(async (value) => {
+    this.containerEl.createEl("p", { cls: "ledger-settings-intro", text: "\u6309\u4E3B\u9898\u67E5\u627E\u8BBE\u7F6E\u3002\u5207\u6362\u4E3B\u9898\u4E0D\u4F1A\u6539\u52A8\u5DF2\u4FDD\u5B58\u7684\u5185\u5BB9\u3002" });
+    const navigation = this.containerEl.createDiv({ cls: "ledger-settings-navigation" });
+    navigation.setAttribute("aria-label", "\u8BBE\u7F6E\u4E3B\u9898");
+    const panels = /* @__PURE__ */ new Map();
+    const buttons = /* @__PURE__ */ new Map();
+    for (const section of SETTINGS_SECTIONS) {
+      const button = navigation.createEl("button", { cls: "ledger-settings-navigation-button", text: section.label });
+      button.type = "button";
+      button.setAttribute("aria-controls", `ledger-settings-${section.id}`);
+      buttons.set(section.id, button);
+      const panel = this.containerEl.createDiv({ cls: "ledger-settings-panel" });
+      panel.id = `ledger-settings-${section.id}`;
+      panel.createEl("h3", { text: section.label });
+      panel.createEl("p", { cls: "ledger-settings-panel-description", text: section.description });
+      panels.set(section.id, panel);
+      button.addEventListener("click", () => showSection(section.id));
+    }
+    const showSection = (section) => {
+      this.activeSection = section;
+      for (const [id, panel] of panels) panel.hidden = id !== section;
+      for (const [id, button] of buttons) {
+        button.setAttribute("aria-pressed", String(id === section));
+        button.classList.toggle("is-active", id === section);
+      }
+    };
+    showSection(this.activeSection);
+    const ledgerPanel = panels.get("ledger");
+    const salaryPanel = panels.get("salary");
+    const aiPanel = panels.get("ai");
+    const budgetPanel = panels.get("budget");
+    new import_obsidian4.Setting(ledgerPanel).setName("\u8BB0\u8D26\u6587\u4EF6\u5939").setDesc("\u4ED3\u5E93\u6839\u76EE\u5F55\u4E0B\u7684\u76F8\u5BF9\u8DEF\u5F84\u3002\u63D2\u4EF6\u53EA\u8BFB\u53D6\u5176\u4E2D\u7684 Markdown \u6587\u4EF6\u3002").addText((text) => text.setPlaceholder("\u8BB0\u8D26").setValue(this.plugin.settings.ledgerFolder).onChange(async (value) => {
       this.plugin.settings.ledgerFolder = value.trim().replace(/^\/+|\/+$/g, "") || "\u8BB0\u8D26";
       await this.plugin.saveSettings(true);
     }));
-    new import_obsidian4.Setting(this.containerEl).setName("\u9ED8\u8BA4\u89C6\u56FE").setDesc("\u9996\u6B21\u6253\u5F00\u7EDF\u8BA1\u9762\u677F\u65F6\u663E\u793A\u7684\u9875\u9762\u3002").addDropdown((dropdown) => {
+    new import_obsidian4.Setting(ledgerPanel).setName("\u9ED8\u8BA4\u89C6\u56FE").setDesc("\u9996\u6B21\u6253\u5F00\u7EDF\u8BA1\u9762\u677F\u65F6\u663E\u793A\u7684\u9875\u9762\u3002").addDropdown((dropdown) => {
       for (const [id, name] of Object.entries(VIEW_NAMES)) dropdown.addOption(id, name);
       dropdown.setValue(this.plugin.settings.defaultView).onChange(async (value) => {
         this.plugin.settings.defaultView = value;
         await this.plugin.saveSettings(false);
       });
     });
-    new import_obsidian4.Setting(this.containerEl).setName("\u9ED8\u8BA4\u65F6\u95F4\u7B5B\u9009").setDesc("\u4E0B\u6B21\u91CD\u65B0\u6253\u5F00\u7EDF\u8BA1\u9762\u677F\u65F6\u4F7F\u7528\u7684\u65F6\u95F4\u8303\u56F4\u3002\u5F53\u524D\u5468\u4E0E\u5F53\u524D\u5DE5\u8D44\u5468\u671F\u5747\u622A\u6B62\u4ECA\u5929\u3002").addDropdown((dropdown) => dropdown.addOption("today", "\u4ECA\u5929").addOption("week", "\u672C\u5468").addOption("month", "\u672C\u6708").addOption("salary", "\u5DE5\u8D44\u65E5").addOption("year", "\u4ECA\u5E74").setValue(this.plugin.settings.defaultDatePreset).onChange(async (value) => {
+    new import_obsidian4.Setting(ledgerPanel).setName("\u9ED8\u8BA4\u65F6\u95F4\u7B5B\u9009").setDesc("\u4E0B\u6B21\u91CD\u65B0\u6253\u5F00\u7EDF\u8BA1\u9762\u677F\u65F6\u4F7F\u7528\u7684\u65F6\u95F4\u8303\u56F4\u3002\u5F53\u524D\u5468\u4E0E\u5F53\u524D\u5DE5\u8D44\u5468\u671F\u5747\u622A\u6B62\u4ECA\u5929\u3002").addDropdown((dropdown) => dropdown.addOption("today", "\u4ECA\u5929").addOption("week", "\u672C\u5468").addOption("month", "\u672C\u6708").addOption("salary", "\u5DE5\u8D44\u65E5").addOption("year", "\u4ECA\u5E74").setValue(this.plugin.settings.defaultDatePreset).onChange(async (value) => {
       this.plugin.settings.defaultDatePreset = value;
       await this.plugin.saveSettings(false);
     }));
-    new import_obsidian4.Setting(this.containerEl).setName("\u6D88\u8D39\u53E3\u5F84\u6392\u9664\u5206\u7C7B").setDesc("\u4EE5\u4E2D\u6587\u9017\u53F7\u6216\u82F1\u6587\u9017\u53F7\u5206\u9694\u3002\u2018\u5168\u90E8\u652F\u51FA\u2019\u53E3\u5F84\u4E0D\u4F1A\u6392\u9664\u8FD9\u4E9B\u5206\u7C7B\u3002").addTextArea((text) => text.setPlaceholder("\u503A\u52A1/\u8FD8\u6B3E").setValue(this.plugin.settings.excludedCategories.join("\uFF0C")).onChange(async (value) => {
+    new import_obsidian4.Setting(ledgerPanel).setName("\u6D88\u8D39\u53E3\u5F84\u6392\u9664\u5206\u7C7B").setDesc("\u4EE5\u4E2D\u6587\u9017\u53F7\u6216\u82F1\u6587\u9017\u53F7\u5206\u9694\u3002\u2018\u5168\u90E8\u652F\u51FA\u2019\u53E3\u5F84\u4E0D\u4F1A\u6392\u9664\u8FD9\u4E9B\u5206\u7C7B\u3002").addTextArea((text) => text.setPlaceholder("\u503A\u52A1/\u8FD8\u6B3E").setValue(this.plugin.settings.excludedCategories.join("\uFF0C")).onChange(async (value) => {
       this.plugin.settings.excludedCategories = [...new Set(value.split(/[,，]/).map((item) => item.trim()).filter(Boolean))];
       await this.plugin.saveSettings(false);
     }));
-    new import_obsidian4.Setting(this.containerEl).setName("\u6BCF\u4E2A\u5DE5\u8D44\u5468\u671F\u5230\u8D26\u5DE5\u8D44").setDesc("\u5DE5\u8D44\u65E5\u56FA\u5B9A\u6BCF\u6708 15 \u65E5\u3002\u4F59\u989D\uFF1D\u5DE5\u8D44\u51CF\u672C\u5468\u671F\u5168\u90E8\u652F\u51FA\uFF0C\u4E0D\u4EE3\u8868\u94F6\u884C\u5B9E\u9645\u4F59\u989D\uFF1B\u6570\u636E\u4FDD\u5B58\u5728\u672C\u5730\u3002").addText((text) => {
+    new import_obsidian4.Setting(salaryPanel).setName("\u6BCF\u4E2A\u5DE5\u8D44\u5468\u671F\u5230\u8D26\u5DE5\u8D44").setDesc("\u5DE5\u8D44\u65E5\u56FA\u5B9A\u6BCF\u6708 15 \u65E5\u3002\u4F59\u989D\uFF1D\u5DE5\u8D44\u51CF\u672C\u5468\u671F\u5168\u90E8\u652F\u51FA\uFF0C\u4E0D\u4EE3\u8868\u94F6\u884C\u5B9E\u9645\u4F59\u989D\uFF1B\u6570\u636E\u4FDD\u5B58\u5728\u672C\u5730\u3002").addText((text) => {
       text.setPlaceholder("\u4F8B\u5982 8000").setValue(this.moneyValue(this.plugin.settings.salaryCents)).onChange(async (value) => {
         const trimmed = value.trim();
         if (!trimmed) {
@@ -1538,20 +1576,20 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
       text.inputEl.setAttribute("inputmode", "decimal");
       return text;
     });
-    new import_obsidian4.Setting(this.containerEl).setName("\u56FA\u5B9A\u652F\u51FA").setDesc("\u624B\u52A8\u786E\u8BA4\u672C\u5468\u671F\u53CA\u524D\u4E24\u4E2A\u5468\u671F\u7684\u652F\u4ED8\u8BB0\u5F55\uFF0C\u51CF\u5C11\u4ED8\u6B3E\u65E5\u671F\u53D8\u5316\u5BF9\u9884\u6D4B\u7684\u5F71\u54CD\u3002").addButton((button) => button.setButtonText("\u7BA1\u7406\u56FA\u5B9A\u652F\u51FA").onClick(() => new FixedExpenseModal(this.plugin).open()));
-    new import_obsidian4.Setting(this.containerEl).setName("\u661F\u6807\u6838\u5BF9").setDesc("\u68C0\u67E5\u4FEE\u6539\u3001\u5220\u9664\u6216\u79BB\u7EBF\u79FB\u52A8\u540E\u65E0\u6CD5\u5339\u914D\u7684\u661F\u6807\u3002").addButton((button) => button.setButtonText("\u6838\u5BF9\u661F\u6807").onClick(() => new StarRepairModal(this.plugin).open()));
-    new import_obsidian4.Setting(this.containerEl).setName("\u542F\u7528 AI \u8D22\u52A1\u5224\u65AD").setDesc("\u53D1\u9001\u6C47\u603B\u3001\u5019\u9009\u4E8B\u4EF6\u3001\u5206\u7C7B\u53C2\u8003\u53CA\u6709\u9650\u4EA4\u6613\u5907\u6CE8\uFF0C\u4E0D\u53D1\u9001\u8D26\u672C\u6587\u4EF6\u3001\u8DEF\u5F84\u6216\u5B8C\u6574\u539F\u59CB\u884C\u3002\u6709\u6548\u5224\u65AD\u8DE8\u65E5\u4FDD\u7559\uFF1B\u91CD\u8981\u53D8\u5316\u6216\u539F\u5224\u65AD\u5931\u6548\u65F6\uFF0C\u5728\u67E5\u770B\u6D1E\u5BDF\u65F6\u81EA\u52A8\u66F4\u65B0\uFF0C\u4E5F\u53EF\u624B\u52A8\u5237\u65B0\u3002").addToggle((toggle) => toggle.setValue(this.plugin.settings.financeAiEnabled).onChange(async (value) => {
+    new import_obsidian4.Setting(salaryPanel).setName("\u56FA\u5B9A\u652F\u51FA").setDesc("\u624B\u52A8\u786E\u8BA4\u672C\u5468\u671F\u53CA\u524D\u4E24\u4E2A\u5468\u671F\u7684\u652F\u4ED8\u8BB0\u5F55\uFF0C\u51CF\u5C11\u4ED8\u6B3E\u65E5\u671F\u53D8\u5316\u5BF9\u9884\u6D4B\u7684\u5F71\u54CD\u3002").addButton((button) => button.setButtonText("\u7BA1\u7406\u56FA\u5B9A\u652F\u51FA").onClick(() => new FixedExpenseModal(this.plugin).open()));
+    new import_obsidian4.Setting(ledgerPanel).setName("\u661F\u6807\u6838\u5BF9").setDesc("\u68C0\u67E5\u4FEE\u6539\u3001\u5220\u9664\u6216\u79BB\u7EBF\u79FB\u52A8\u540E\u65E0\u6CD5\u5339\u914D\u7684\u661F\u6807\u3002").addButton((button) => button.setButtonText("\u6838\u5BF9\u661F\u6807").onClick(() => new StarRepairModal(this.plugin).open()));
+    new import_obsidian4.Setting(aiPanel).setName("\u542F\u7528 AI \u8D22\u52A1\u5224\u65AD").setDesc("\u53D1\u9001\u6C47\u603B\u3001\u5019\u9009\u4E8B\u4EF6\u3001\u5206\u7C7B\u53C2\u8003\u53CA\u6709\u9650\u4EA4\u6613\u5907\u6CE8\uFF0C\u4E0D\u53D1\u9001\u8D26\u672C\u6587\u4EF6\u3001\u8DEF\u5F84\u6216\u5B8C\u6574\u539F\u59CB\u884C\u3002\u6709\u6548\u5224\u65AD\u8DE8\u65E5\u4FDD\u7559\uFF1B\u91CD\u8981\u53D8\u5316\u6216\u539F\u5224\u65AD\u5931\u6548\u65F6\uFF0C\u5728\u67E5\u770B\u6D1E\u5BDF\u65F6\u81EA\u52A8\u66F4\u65B0\uFF0C\u4E5F\u53EF\u624B\u52A8\u5237\u65B0\u3002").addToggle((toggle) => toggle.setValue(this.plugin.settings.financeAiEnabled).onChange(async (value) => {
       this.plugin.settings.financeAiEnabled = value;
       await this.plugin.saveSettings(false);
       this.display();
     }));
     if (this.plugin.settings.financeAiEnabled) {
-      new import_obsidian4.Setting(this.containerEl).setName("AI \u63A5\u53E3\u5730\u5740").setDesc("\u517C\u5BB9 OpenAI Chat Completions \u7684\u5B8C\u6574\u63A5\u53E3\u5730\u5740\uFF1B\u975E\u672C\u673A\u5730\u5740\u5FC5\u987B\u4F7F\u7528 HTTPS\u3002").addText((text) => text.setPlaceholder("https://api.openai.com/v1/chat/completions").setValue(this.plugin.settings.financeAiEndpoint).onChange(async (value) => {
+      new import_obsidian4.Setting(aiPanel).setName("AI \u63A5\u53E3\u5730\u5740").setDesc("\u517C\u5BB9 OpenAI Chat Completions \u7684\u5B8C\u6574\u63A5\u53E3\u5730\u5740\uFF1B\u975E\u672C\u673A\u5730\u5740\u5FC5\u987B\u4F7F\u7528 HTTPS\u3002").addText((text) => text.setPlaceholder("https://api.openai.com/v1/chat/completions").setValue(this.plugin.settings.financeAiEndpoint).onChange(async (value) => {
         this.plugin.settings.financeAiEndpoint = value.trim();
         this.plugin.settings.financeAdviceCache = null;
         await this.plugin.saveSettings(false);
       }));
-      new import_obsidian4.Setting(this.containerEl).setName("AI \u6A21\u578B").setDesc("\u586B\u5199\u63A5\u53E3\u670D\u52A1\u5546\u63D0\u4F9B\u7684\u6A21\u578B\u540D\u79F0\u3002").addText((text) => text.setPlaceholder("\u4F8B\u5982\u670D\u52A1\u5546\u63D0\u4F9B\u7684\u6A21\u578B ID").setValue(this.plugin.settings.financeAiModel).onChange(async (value) => {
+      new import_obsidian4.Setting(aiPanel).setName("AI \u6A21\u578B").setDesc("\u586B\u5199\u63A5\u53E3\u670D\u52A1\u5546\u63D0\u4F9B\u7684\u6A21\u578B\u540D\u79F0\u3002").addText((text) => text.setPlaceholder("\u4F8B\u5982\u670D\u52A1\u5546\u63D0\u4F9B\u7684\u6A21\u578B ID").setValue(this.plugin.settings.financeAiModel).onChange(async (value) => {
         this.plugin.settings.financeAiModel = value.trim();
         if (/^mimo-/i.test(this.plugin.settings.financeAiModel)) {
           try {
@@ -1565,7 +1603,7 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
         this.plugin.settings.financeAdviceCache = null;
         await this.plugin.saveSettings(false);
       }));
-      new import_obsidian4.Setting(this.containerEl).setName("AI API Key").setDesc("\u4EC5\u4FDD\u5B58\u5728\u672C\u5730 data.json\uFF0C\u4E0D\u4F1A\u4E0A\u4F20 GitHub\uFF1B\u672C\u673A\u514D\u5BC6\u63A5\u53E3\u53EF\u4EE5\u7559\u7A7A\u3002").addText((text) => {
+      new import_obsidian4.Setting(aiPanel).setName("AI API Key").setDesc("\u4EC5\u4FDD\u5B58\u5728\u672C\u5730 data.json\uFF0C\u4E0D\u4F1A\u4E0A\u4F20 GitHub\uFF1B\u672C\u673A\u514D\u5BC6\u63A5\u53E3\u53EF\u4EE5\u7559\u7A7A\u3002").addText((text) => {
         text.setPlaceholder("sk-\u2026").setValue(this.plugin.settings.financeAiApiKey).onChange(async (value) => {
           this.plugin.settings.financeAiApiKey = value.trim();
           this.plugin.settings.financeAdviceCache = null;
@@ -1575,7 +1613,7 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
         text.inputEl.setAttribute("autocomplete", "off");
         return text;
       });
-      const test = new import_obsidian4.Setting(this.containerEl).setName("\u6D4B\u8BD5 AI \u8FDE\u63A5").setDesc("\u53EA\u53D1\u9001\u7B80\u77ED\u6D4B\u8BD5\u6D88\u606F\uFF0C\u4E0D\u53D1\u9001\u8D26\u76EE\uFF1B\u53EF\u80FD\u4EA7\u751F\u5C11\u91CF\u6A21\u578B\u8C03\u7528\u8D39\u7528\u3002");
+      const test = new import_obsidian4.Setting(aiPanel).setName("\u6D4B\u8BD5 AI \u8FDE\u63A5").setDesc("\u53EA\u53D1\u9001\u7B80\u77ED\u6D4B\u8BD5\u6D88\u606F\uFF0C\u4E0D\u53D1\u9001\u8D26\u76EE\uFF1B\u53EF\u80FD\u4EA7\u751F\u5C11\u91CF\u6A21\u578B\u8C03\u7528\u8D39\u7528\u3002");
       test.descEl.setAttribute("aria-live", "polite");
       test.addButton((button) => button.setButtonText("\u6D4B\u8BD5\u8FDE\u63A5").onClick(async () => {
         const controller = new AbortController();
@@ -1593,7 +1631,7 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
         }
       }));
     }
-    new import_obsidian4.Setting(this.containerEl).setName("\u6BCF\u65E5\u9884\u7B97").setDesc("\u603B\u89C8\u4E2D\u7684\u4ECA\u65E5\u9884\u7B97\u6309\u4E0B\u65B9\u9884\u7B97\u5206\u7C7B\u7EDF\u8BA1\u3002\u7559\u7A7A\u53EF\u5173\u95ED\uFF0C\u6700\u591A\u4FDD\u7559\u4E24\u4F4D\u5C0F\u6570\u3002").addText((text) => {
+    new import_obsidian4.Setting(budgetPanel).setName("\u6BCF\u65E5\u9884\u7B97").setDesc("\u603B\u89C8\u4E2D\u7684\u4ECA\u65E5\u9884\u7B97\u6309\u4E0B\u65B9\u9884\u7B97\u5206\u7C7B\u7EDF\u8BA1\u3002\u7559\u7A7A\u53EF\u5173\u95ED\uFF0C\u6700\u591A\u4FDD\u7559\u4E24\u4F4D\u5C0F\u6570\u3002").addText((text) => {
       text.setPlaceholder("\u4F8B\u5982 100").setValue(this.budgetValue()).onChange(async (value) => {
         const trimmed = value.trim();
         if (!trimmed) {
@@ -1609,7 +1647,7 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
       text.inputEl.setAttribute("inputmode", "decimal");
       return text;
     });
-    new import_obsidian4.Setting(this.containerEl).setName("\u9884\u7B97\u5206\u7C7B").setDesc("\u9ED8\u8BA4\u7EDF\u8BA1\u5168\u90E8\u5206\u7C7B\uFF1B\u9009\u62E9\u540E\uFF0C\u4ECA\u65E5\u9884\u7B97\u3001\u5F53\u524D\u652F\u51FA\u548C Bark \u63D0\u9192\u53EA\u7EDF\u8BA1\u8BE5\u5206\u7C7B\u3002").addDropdown((dropdown) => {
+    new import_obsidian4.Setting(budgetPanel).setName("\u9884\u7B97\u5206\u7C7B").setDesc("\u9ED8\u8BA4\u7EDF\u8BA1\u5168\u90E8\u5206\u7C7B\uFF1B\u9009\u62E9\u540E\uFF0C\u4ECA\u65E5\u9884\u7B97\u3001\u5F53\u524D\u652F\u51FA\u548C Bark \u63D0\u9192\u53EA\u7EDF\u8BA1\u8BE5\u5206\u7C7B\u3002").addDropdown((dropdown) => {
       dropdown.addOption("", "\u5168\u90E8\u5206\u7C7B");
       const categories = this.budgetCategories();
       for (const category of categories) dropdown.addOption(category, category);
@@ -1621,12 +1659,12 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
         await this.plugin.saveSettings(false);
       });
     });
-    new import_obsidian4.Setting(this.containerEl).setName("\u4ECA\u65E5\u9884\u7B97\u661F\u6807\u53E3\u5F84").setDesc("\u63A7\u5236\u4ECA\u65E5\u5DF2\u82B1\u3001\u5F53\u524D\u5DE5\u8D44\u5468\u671F\u652F\u51FA\u548C Bark \u63D0\u9192\u662F\u5426\u7EDF\u8BA1\u5DF2\u6807\u661F\u8BB0\u5F55\u3002").addDropdown((dropdown) => dropdown.addOption("include", "\u5305\u542B\u661F\u6807\u652F\u51FA").addOption("exclude", "\u4E0D\u5305\u542B\u661F\u6807\u652F\u51FA").setValue(this.plugin.settings.includeStarredInBudget ? "include" : "exclude").onChange(async (value) => {
+    new import_obsidian4.Setting(budgetPanel).setName("\u4ECA\u65E5\u9884\u7B97\u661F\u6807\u53E3\u5F84").setDesc("\u63A7\u5236\u4ECA\u65E5\u5DF2\u82B1\u3001\u5F53\u524D\u5DE5\u8D44\u5468\u671F\u652F\u51FA\u548C Bark \u63D0\u9192\u662F\u5426\u7EDF\u8BA1\u5DF2\u6807\u661F\u8BB0\u5F55\u3002").addDropdown((dropdown) => dropdown.addOption("include", "\u5305\u542B\u661F\u6807\u652F\u51FA").addOption("exclude", "\u4E0D\u5305\u542B\u661F\u6807\u652F\u51FA").setValue(this.plugin.settings.includeStarredInBudget ? "include" : "exclude").onChange(async (value) => {
       this.plugin.settings.includeStarredInBudget = value === "include";
       this.plugin.settings.lastBudgetNotificationDate = "";
       await this.plugin.saveSettings(false);
     }));
-    new import_obsidian4.Setting(this.containerEl).setName("Bark \u63A8\u9001\u5730\u5740").setDesc("\u7C98\u8D34 Bark \u5730\u5740\uFF0C\u4F8B\u5982 https://api.day.app/\u4F60\u7684Key\uFF1B\u8FBE\u5230\u6216\u8D85\u8FC7\u4ECA\u65E5\u9884\u7B97\u65F6\u6BCF\u5929\u63D0\u9192\u4E00\u6B21\u3002\u5730\u5740\u53EA\u4FDD\u5B58\u5728\u672C\u5730\uFF0C\u4E0D\u4F1A\u4E0A\u4F20 GitHub\u3002").addText((text) => {
+    new import_obsidian4.Setting(budgetPanel).setName("Bark \u63A8\u9001\u5730\u5740").setDesc("\u7C98\u8D34 Bark \u5730\u5740\uFF0C\u4F8B\u5982 https://api.day.app/\u4F60\u7684Key\uFF1B\u8FBE\u5230\u6216\u8D85\u8FC7\u4ECA\u65E5\u9884\u7B97\u65F6\u6BCF\u5929\u63D0\u9192\u4E00\u6B21\u3002\u5730\u5740\u53EA\u4FDD\u5B58\u5728\u672C\u5730\uFF0C\u4E0D\u4F1A\u4E0A\u4F20 GitHub\u3002").addText((text) => {
       text.setPlaceholder("https://api.day.app/\u4F60\u7684Key").setValue(this.plugin.settings.barkUrl).onChange(async (value) => {
         this.plugin.settings.barkUrl = value.trim();
         this.plugin.settings.lastBudgetNotificationDate = "";
@@ -1636,8 +1674,8 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
       text.inputEl.setAttribute("autocomplete", "off");
       return text;
     });
-    this.containerEl.createEl("p", {
-      cls: "setting-item-description",
+    ledgerPanel.createEl("p", {
+      cls: "ledger-settings-footnote",
       text: "\u63D2\u4EF6\u4E0D\u4F1A\u4FEE\u6539\u8D26\u76EE\u3002\u6B63\u6587\u9010\u7B14\u8BB0\u5F55\u662F\u7EDF\u8BA1\u6765\u6E90\uFF0Cfrontmatter total \u4EC5\u7528\u4E8E\u6838\u5BF9\u3002"
     });
   }
