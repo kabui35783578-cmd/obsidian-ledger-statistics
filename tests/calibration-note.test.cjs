@@ -23,6 +23,7 @@ class Element {
   createSpan(options) { return this.createEl('span', options); }
   empty() { this.children = []; }
   all() { return [this, ...this.children.flatMap(child => child.all())]; }
+  querySelector(selector) { return this.all().find(el => el.classes.has(selector.slice(1))) ?? null; }
 }
 
 const steps = [
@@ -88,4 +89,26 @@ test('note modal displays multiline text literally, rereads edits and guides use
   modal.onOpen();
   assert.match(modal.contentEl.children[0].textContent, /尚未填写备注/);
   assert.equal(modal.contentEl.children.length, 1, 'empty state should not repeat the settings hint');
+});
+
+test('note animation hooks finish immediately without fading or translating the card', async () => {
+  const modal = Object.create(BalanceCalibrationNoteModal.prototype);
+  modal.containerEl = new Element();
+  const backdrop = modal.containerEl.createDiv({ cls: 'modal-bg' });
+  backdrop.style = { opacity: '0' };
+  backdrop.animate = () => assert.fail('No backdrop animation should run');
+  modal.modalEl = new Element();
+  modal.modalEl.animate = () => assert.fail('No native slide should run');
+  modal.contentEl = new Element();
+  const note = modal.contentEl.createDiv({ text: 'Test note' });
+  await modal.animateOpen();
+  assert.equal(backdrop.style.opacity, '0.85');
+  const closing = modal.animateClose();
+  assert.ok(closing instanceof Promise, 'native close expects a thenable');
+  let finished = false;
+  closing.then(() => { finished = true; });
+  await Promise.resolve();
+  assert.equal(finished, true, 'close must finish in the next microtask, not after an animation timer');
+  assert.equal(backdrop.style.opacity, '0.85', 'no flash from fading the backdrop before detaching');
+  assert.equal(modal.contentEl.children[0], note);
 });

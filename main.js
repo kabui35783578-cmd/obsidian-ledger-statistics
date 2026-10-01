@@ -1383,8 +1383,19 @@ var BalanceCalibrationNoteModal = class extends import_obsidian3.Modal {
     });
     if (note) this.contentEl.createEl("p", { cls: "ledger-balance-note-hint", text: "\u4EC5\u4F5C\u8BF4\u660E \xB7 \u53EF\u5728\u4F59\u989D\u6821\u51C6\u8BBE\u7F6E\u4E2D\u4FEE\u6539" });
   }
-  // Keep the card's height stable until Obsidian finishes dismissing it.
-  // Clearing here makes short notes collapse before the mobile close animation.
+  // Obsidian calls these mobile hooks from open()/close(), although they are
+  // absent from the public typings. CSS alone cannot cancel their animation
+  // promises (including the backdrop fade). Keep the native lifecycle, but
+  // skip the slide and its delay for this small, read-only card.
+  animateOpen() {
+    const backdrop = this.containerEl.querySelector(".modal-bg");
+    if (backdrop) backdrop.style.opacity = "0.85";
+    return Promise.resolve();
+  }
+  animateClose() {
+    return Promise.resolve();
+  }
+  // Content is replaced on next open; dismissal does not mutate its layout.
   onClose() {
   }
 };
