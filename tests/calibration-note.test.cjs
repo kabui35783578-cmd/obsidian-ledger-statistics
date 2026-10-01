@@ -13,6 +13,7 @@ class Element {
     this.classes = new Set((options.cls ?? '').split(' '));
     this.classList = { add: (...names) => names.forEach(name => this.classes.add(name)) };
   }
+  addClass(name) { this.classes.add(name); }
   setAttribute(name, value) { this.attributes[name] = value; }
   addEventListener(name, listener) { this.listeners[name] = listener; }
   append(...children) { this.children.push(...children); }
@@ -65,17 +66,26 @@ test('note modal displays multiline text literally, rereads edits and guides use
   const modal = Object.create(BalanceCalibrationNoteModal.prototype);
   modal.plugin = { settings: { balanceCalibrationNote: '还款 2000 元\n转给家人 1000 元\n<script>alert(1)</script>' } };
   modal.contentEl = new Element();
+  modal.containerEl = new Element();
+  modal.modalEl = new Element();
+  modal.setTitle = title => { modal.title = title; };
   modal.onOpen();
-  const content = modal.contentEl.children[1];
+  assert.equal(modal.title, '余额校准差额备注');
+  assert.ok(modal.containerEl.classes.has('ledger-balance-note-container'));
+  assert.ok(modal.modalEl.classes.has('ledger-balance-note-modal'));
+  assert.equal(modal.contentEl.children.length, 2);
+  const content = modal.contentEl.children[0];
   assert.equal(content.textContent, modal.plugin.settings.balanceCalibrationNote);
   assert.equal(content.children.length, 0);
   modal.onClose();
-  assert.equal(modal.contentEl.children.length, 0);
+  assert.equal(modal.contentEl.children[0], content, 'closing must not collapse the card before dismissal finishes');
   modal.plugin.settings.balanceCalibrationNote = '已更新的资金去向';
   modal.onOpen();
-  assert.equal(modal.contentEl.children[1].textContent, '已更新的资金去向');
+  assert.equal(modal.contentEl.children[0].textContent, '已更新的资金去向');
+  assert.equal(modal.contentEl.children.length, 2, 'reopening replaces rather than duplicates content');
   modal.onClose();
   modal.plugin.settings.balanceCalibrationNote = '  \n ';
   modal.onOpen();
-  assert.match(modal.contentEl.children[1].textContent, /尚未填写备注/);
+  assert.match(modal.contentEl.children[0].textContent, /尚未填写备注/);
+  assert.equal(modal.contentEl.children.length, 1, 'empty state should not repeat the settings hint');
 });

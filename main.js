@@ -1372,16 +1372,20 @@ var BalanceCalibrationNoteModal = class extends import_obsidian3.Modal {
     this.plugin = plugin;
   }
   onOpen() {
-    this.contentEl.createEl("h2", { text: "\u4F59\u989D\u6821\u51C6\u5DEE\u989D\u5907\u6CE8" });
+    this.containerEl.addClass("ledger-balance-note-container");
+    this.modalEl.addClass("ledger-balance-note-modal");
+    this.setTitle("\u4F59\u989D\u6821\u51C6\u5DEE\u989D\u5907\u6CE8");
+    this.contentEl.empty();
     const note = this.plugin.settings.balanceCalibrationNote.trim();
     this.contentEl.createDiv({
       cls: "ledger-balance-note-content",
       text: note || "\u5C1A\u672A\u586B\u5199\u5907\u6CE8\u3002\u53EF\u5728\u63D2\u4EF6\u8BBE\u7F6E \u2192 \u4F59\u989D\u6821\u51C6 \u2192 \u4F59\u989D\u6821\u51C6\u5DEE\u989D\u5907\u6CE8\u4E2D\u8BB0\u5F55\u8D44\u91D1\u53BB\u5411\u3002"
     });
-    this.contentEl.createEl("p", { cls: "ledger-balance-note-hint", text: "\u6B64\u5907\u6CE8\u4EC5\u4F5C\u8BF4\u660E\uFF0C\u4E0D\u8BA1\u5165\u6D88\u8D39\u7EDF\u8BA1\u6216 AI \u5224\u65AD\u3002\u53EF\u5728\u4F59\u989D\u6821\u51C6\u8BBE\u7F6E\u4E2D\u4FEE\u6539\u3002" });
+    if (note) this.contentEl.createEl("p", { cls: "ledger-balance-note-hint", text: "\u4EC5\u4F5C\u8BF4\u660E \xB7 \u53EF\u5728\u4F59\u989D\u6821\u51C6\u8BBE\u7F6E\u4E2D\u4FEE\u6539" });
   }
+  // Keep the card's height stable until Obsidian finishes dismissing it.
+  // Clearing here makes short notes collapse before the mobile close animation.
   onClose() {
-    this.contentEl.empty();
   }
 };
 var FixedExpenseModal = class extends import_obsidian3.Modal {

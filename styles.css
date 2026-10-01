@@ -3025,8 +3025,57 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
 .ledger-waterfall-note,
 .ledger-box-note { margin-top: 10px; color: var(--mono-muted); font-size: 11px; line-height: 1.5; }
 .ledger-balance-note-input { width: 100%; min-width: 220px; resize: vertical; }
-.ledger-balance-note-content { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
-.ledger-balance-note-hint { color: var(--text-muted); font-size: var(--font-small); }
+.modal-container.ledger-balance-note-container {
+  /* Override native phone translate animations only for this small note card. */
+  transform: none !important;
+}
+.modal-container .modal.ledger-balance-note-modal {
+  box-sizing: border-box;
+  position: relative;
+  width: min(440px, calc(100% - 24px));
+  max-width: calc(100vw - 24px);
+  height: auto;
+  min-height: 0;
+  max-height: min(70vh, 560px);
+  max-height: min(70dvh, 560px);
+  margin: auto;
+  padding: 16px;
+  border-radius: 14px;
+  overflow: hidden;
+  transform: none !important;
+}
+.ledger-balance-note-modal .modal-header {
+  flex: none;
+  height: auto;
+  min-height: 36px;
+  margin: 0 0 10px;
+  padding: 0 40px 0 0;
+}
+.ledger-balance-note-modal .modal-title {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.5;
+}
+.ledger-balance-note-modal .modal-header-button,
+.ledger-balance-note-modal .modal-close-button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  inset-inline-end: 8px;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+}
+.ledger-balance-note-modal .modal-content {
+  flex: 0 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.ledger-balance-note-content { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; font-size: 14px; }
+.ledger-balance-note-hint { margin: 10px 0 0; color: var(--text-muted); font-size: 11px; line-height: 1.4; }
 .ledger-waterfall-step[role="button"] { cursor: pointer; }
 .ledger-waterfall-step[role="button"]:focus-visible,
 .ledger-box-svg g[role="button"]:focus-visible { outline: 2px solid var(--ledger-accent); outline-offset: 3px; }
