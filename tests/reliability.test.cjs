@@ -111,8 +111,8 @@ test('AI judgment is retained only when event, evidence, categories and number p
   assert.equal(advice.action, payload.action);
   assert.deepEqual(advice.evidenceIds, payload.evidence_ids);
   assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, primary_event_id: 'fake' }), snapshot));
-  assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, headline: '已花999999元' }), snapshot), /具体数字/);
-  assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, cause_hypothesis: '你已经欠款九百万元，需要立刻处理这项没有依据的风险判断。' }), snapshot), /具体数字/);
+  assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, headline: '已花999999元' }), snapshot), /程序未提供/);
+  assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, cause_hypothesis: '你已经欠款九百万元，需要立刻处理这项没有依据的风险判断。' }), snapshot), /程序未提供/);
   assert.equal(ai.parseFinanceAdvice(JSON.stringify({ ...payload, cause_hypothesis: '当前周期大约走过四分之一，现有记录尚未显示需要立即调整安排的可靠变化。' }), snapshot).primaryEventId, 'stable');
   const legacyPayload = { ...payload, judgment: payload.cause_hypothesis };
   delete legacyPayload.cause_hypothesis;

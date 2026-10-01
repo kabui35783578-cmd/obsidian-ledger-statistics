@@ -6,6 +6,7 @@ import { assessFinanceAdvice, createFinanceAdviceCache } from "./advice-lifecycl
 import { markInsightSeen, withInsightHistory, unmatchedStarIds } from "./insights";
 import { BalanceCalibrationNoteModal, FixedExpenseModal, StarRepairModal } from "./management";
 import { balanceStatus } from "./balance";
+import { withDailyInsight } from "./daily-insight";
 import {
   AccountingScope,
   CategorySummary,
@@ -452,14 +453,14 @@ export class LedgerStatisticsView extends ItemView {
 
   private currentFinanceSnapshot(now = new Date()): ReturnType<typeof buildFinanceAdvisorSnapshot> {
     const files = [...this.plugin.repository.files.values()];
-    return withInsightHistory(buildFinanceAdvisorSnapshot(
+    return withInsightHistory(withDailyInsight(buildFinanceAdvisorSnapshot(
       flattenRecords(files),
       now,
       this.plugin.settings.salaryCents,
       this.plugin.settings.excludedCategories,
       financeCompleteDates(files, now),
       this.plugin.settings.fixedExpenses ?? []
-    ), this.plugin.settings.insightHistory ?? []);
+    ), files, now, this.plugin.settings), this.plugin.settings.insightHistory ?? []);
   }
 
   private financeSectionVisible(): boolean {
@@ -476,15 +477,15 @@ export class LedgerStatisticsView extends ItemView {
     if (this.closed || !this.plugin?.repository?.loaded || this.financeAdviceLoading || this.financeAutoTimer !== null) return;
     const settings = this.plugin.settings;
     if (!settings.financeAiEnabled || !settings.financeAiEndpoint.trim() || !settings.financeAiModel.trim()
-      || !settings.financeAdviceCache || !this.financeSectionVisible()) return;
+      || !this.financeSectionVisible()) return;
     const current = snapshot ?? this.currentFinanceSnapshot();
-    if (current.salaryCents <= 0) return;
+    if (current.salaryCents <= 0 && !current.daily) return;
     const assessment = assessFinanceAdvice(current, settings.financeAdviceCache);
     if (!assessment.needsRefresh || this.financeAdviceAttemptedKey === assessment.refreshKey) return;
     this.financeAutoTimer = window.setTimeout(() => {
       this.financeAutoTimer = null;
       if (!this.closed && this.financeSectionVisible()) void this.loadFinanceAdvice(this.currentFinanceSnapshot(), false);
-    }, 300);
+    }, 1500);
   }
 
   private renderFinanceSection(parent: HTMLElement, animate = true): void {
@@ -501,7 +502,7 @@ export class LedgerStatisticsView extends ItemView {
       && Boolean(this.plugin.settings.financeAiModel.trim());
     let financeState: FinanceAdviceViewState;
     if (!this.plugin.settings.financeAiEnabled) {
-      financeState = { status: "local", advice: null, message: "AI 判断未启用，当前显示本地候选结果。", canRefresh: false };
+      financeState = { status: "local", advice: null, message: "AI 未启用，当前显示程序计算的今日简报。", canRefresh: false };
     } else if (!configured) {
       financeState = { status: "unconfigured", advice: null, message: "请先在设置中填写 AI 接口和模型。", canRefresh: false };
     } else if (this.financeAdviceLoading) {
@@ -513,7 +514,7 @@ export class LedgerStatisticsView extends ItemView {
     } else if (this.financeAdviceError) {
       financeState = { status: "error", advice: null, message: `${this.financeAdviceError}，已回退为本地判断。`, canRefresh: true };
     } else {
-      financeState = { status: "local", advice: null, message: "点击“刷新判断”生成首次结果；有效判断持续保留，重要变化时再更新。", canRefresh: true };
+      financeState = { status: "local", advice: null, message: "今日简报已就绪，AI 将自动补充分析；跨天或账目变化后更新。", canRefresh: true };
     }
     renderFinanceAdvisor(parent, financeSnapshot, financeState, () => void this.loadFinanceAdvice(this.currentFinanceSnapshot(), true), animate,
       financeCoverageReport(files, now), (path) => void this.app.workspace.openLinkText(path, "", false),
@@ -550,12 +551,12 @@ export class LedgerStatisticsView extends ItemView {
 
   private async loadFinanceAdvice(snapshot: ReturnType<typeof buildFinanceAdvisorSnapshot>, manual: boolean): Promise<void> {
     if (this.financeAdviceLoading || this.closed || !this.plugin.settings.financeAiEnabled) return;
-    if (snapshot.salaryCents <= 0) {
+    if (snapshot.salaryCents <= 0 && !snapshot.daily) {
       if (manual) new Notice("请先在插件设置中填写每个工资周期到账工资");
       return;
     }
     const assessment = assessFinanceAdvice(snapshot, this.plugin.settings.financeAdviceCache);
-    if (!assessment.needsRefresh) {
+    if (!assessment.needsRefresh && !(manual && snapshot.daily)) {
       if (manual) new Notice("当前判断仍有效，没有需要重新分析的重要变化");
       return;
     }

@@ -96,9 +96,18 @@ export function createFinanceAdviceCache(snapshot: FinanceAdvisorSnapshot, advic
 
 export function assessFinanceAdvice(snapshot: FinanceAdvisorSnapshot, cache: FinanceAdviceCache | null | undefined): FinanceAdviceAssessment {
   const current = financeAdviceBasis(snapshot);
-  const refreshKey = stableTextHash(JSON.stringify(current));
+  const refreshKey = snapshot.daily ? financeSnapshotFingerprint(snapshot) : stableTextHash(JSON.stringify(current));
   const result = (advice: FinanceAdvice | null, needsRefresh: boolean, reason: string): FinanceAdviceAssessment => ({ advice, needsRefresh, reason, refreshKey });
   if (!cache) return result(null, true, "尚未生成洞察");
+  if (snapshot.daily) {
+    const fingerprint = financeSnapshotFingerprint(snapshot);
+    const dailyKey = fingerprint;
+    if (cache.date !== snapshot.daily.date) return { advice: null, needsRefresh: true, reason: "已进入新的一天", refreshKey: dailyKey };
+    if (cache.fingerprint !== fingerprint || cache.advice.primaryEventId !== `daily:${snapshot.daily.date}`) {
+      return { advice: null, needsRefresh: true, reason: "今日账目或判断依据已更新", refreshKey: dailyKey };
+    }
+    return { advice: cache.advice, needsRefresh: false, reason: "今日洞察已更新", refreshKey: dailyKey };
+  }
   const selected = current.events.find((event) => event.id === cache.advice.primaryEventId);
   if (!selected) return result(null, true, "原判断对应的事件已不再成立");
 

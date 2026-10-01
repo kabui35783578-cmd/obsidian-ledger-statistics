@@ -13,14 +13,14 @@ function signalMetric(snapshot: FinanceAdvisorSnapshot, event: FinanceInsightEve
 
 export function withInsightHistory(snapshot: FinanceAdvisorSnapshot, history: SeenInsight[]): FinanceAdvisorSnapshot {
   // Reading an insight does not resolve it. Keep every currently valid candidate selectable.
-  const repeatedEvents = snapshot.events.filter((event) => event.type !== "stable"
+  const repeatedEvents = snapshot.events.filter((event) => event.type !== "stable" && event.type !== "daily"
     && history.some((seen) => seen.cycle === snapshot.currentRange.start && seen.id === event.id));
   return { ...snapshot, repeatedEvents };
 }
 
 export function markInsightSeen(history: SeenInsight[], snapshot: FinanceAdvisorSnapshot, id: string): SeenInsight[] {
   const event = snapshot.events.find((item) => item.id === id);
-  if (!event || event.type === "stable") return history;
+  if (!event || event.type === "stable" || event.type === "daily") return history;
   const old = history.find((item) => item.cycle === snapshot.currentRange.start && item.id === id);
   const metric = signalMetric(snapshot, event);
   if (old?.date === snapshot.currentRange.end && old.impact >= (event.impactCents ?? 0) && (metric === undefined || (old.metric ?? -Infinity) >= metric)) return history;

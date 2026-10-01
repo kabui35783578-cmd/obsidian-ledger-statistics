@@ -91,7 +91,8 @@ export type FinanceInsightType =
   | "ticket-spike"
   | "large-expense"
   | "mix-shift"
-  | "stable";
+  | "stable"
+  | "daily";
 
 export interface FinanceCategorySnapshot {
   category: string;
@@ -121,6 +122,21 @@ export interface FinanceCoverageReport {
   undated: Array<{ path: string; reason: string }>;
 }
 
+export interface DailyFinanceBrief {
+  date: string;
+  status: "unrecorded" | "zero" | "normal" | "near-budget" | "over-budget" | "recorded" | "incomplete";
+  spentCents: number;
+  count: number;
+  budgetSpentCents: number;
+  budgetCents: number;
+  remainingCents: number;
+  overCents: number;
+  budgetCategory: string;
+  includeStarred: boolean;
+  categories: CategorySummary[];
+  action: string;
+}
+
 export interface FinanceAdvisorSnapshot {
   currentRange: DateRange;
   fullCurrentRange: DateRange;
@@ -138,6 +154,7 @@ export interface FinanceAdvisorSnapshot {
   categories: FinanceCategorySnapshot[];
   events: FinanceInsightEvent[];
   repeatedEvents?: FinanceInsightEvent[];
+  daily?: DailyFinanceBrief;
   fixedExpenses?: FixedExpenseAssessment;
 }
 
@@ -555,7 +572,7 @@ export function financeCoverageReport(files: ParsedLedgerFile[], date: Date): Fi
   };
 }
 
-function transactionEvidence(records: LedgerRecord[], limit: number, order: "amount" | "recent" = "amount"): string[] {
+export function transactionEvidence(records: LedgerRecord[], limit: number, order: "amount" | "recent" = "amount"): string[] {
   const sorted = [...records].sort((a, b) => order === "recent"
     ? b.date.localeCompare(a.date) || b.line - a.line || b.cents - a.cents
     : b.cents - a.cents || b.date.localeCompare(a.date) || b.line - a.line);
