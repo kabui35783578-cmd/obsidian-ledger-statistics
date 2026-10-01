@@ -21,6 +21,7 @@ export interface LedgerSettings {
   excludedCategories: string[];
   salaryCents: number;
   balanceCalibration: BalanceCalibration | null;
+  balanceCalibrationNote: string;
   financeAiEnabled: boolean;
   financeAiEndpoint: string;
   financeAiModel: string;
@@ -43,6 +44,7 @@ export const DEFAULT_SETTINGS: LedgerSettings = {
   excludedCategories: ["债务/还款"],
   salaryCents: 0,
   balanceCalibration: null,
+  balanceCalibrationNote: "",
   financeAiEnabled: false,
   financeAiEndpoint: "https://api.openai.com/v1/chat/completions",
   financeAiModel: "",
@@ -232,6 +234,21 @@ export class LedgerSettingTab extends PluginSettingTab {
       calibrationInput.value = "";
       refreshBalanceSummary();
     }));
+
+    new Setting(balancePanel)
+      .setName("余额校准差额备注")
+      .setDesc("记录差额资金的大致去向。点击工资瀑布图的“余额校准差额”查看；只作文字说明，不影响统计或 AI 判断。备注会保留，重新校准或进入新周期后请按需更新。")
+      .addTextArea((text) => {
+        text.setPlaceholder("例如：还款 2000 元、转给家人 1000 元，其余为未逐笔记账的日常支出。")
+          .setValue(this.plugin.settings.balanceCalibrationNote)
+          .onChange(async (value) => {
+            this.plugin.settings.balanceCalibrationNote = value;
+            await this.plugin.saveSettings(false, false);
+          });
+        text.inputEl.rows = 5;
+        text.inputEl.addClass("ledger-balance-note-input");
+        text.inputEl.setAttribute("aria-label", "余额校准差额备注");
+      });
 
     const balanceSummary = balancePanel.createDiv({ cls: "ledger-balance-summary", attr: { "aria-live": "polite" } });
     refreshBalanceSummary = () => {

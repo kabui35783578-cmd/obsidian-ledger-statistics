@@ -15,6 +15,20 @@ class RecordPicker extends FuzzySuggestModal<LedgerRecord> {
   onChooseItem(r: LedgerRecord): void { this.choose(r); }
 }
 
+export class BalanceCalibrationNoteModal extends Modal {
+  constructor(private plugin: LedgerStatisticsPlugin) { super(plugin.app); }
+  onOpen(): void {
+    this.contentEl.createEl("h2", { text: "余额校准差额备注" });
+    const note = this.plugin.settings.balanceCalibrationNote.trim();
+    this.contentEl.createDiv({
+      cls: "ledger-balance-note-content",
+      text: note || "尚未填写备注。可在插件设置 → 余额校准 → 余额校准差额备注中记录资金去向。"
+    });
+    this.contentEl.createEl("p", { cls: "ledger-balance-note-hint", text: "此备注仅作说明，不计入消费统计或 AI 判断。可在余额校准设置中修改。" });
+  }
+  onClose(): void { this.contentEl.empty(); }
+}
+
 export class FixedExpenseModal extends Modal {
   constructor(private plugin: LedgerStatisticsPlugin) { super(plugin.app); }
   onOpen(): void { this.render(); }

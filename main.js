@@ -1366,6 +1366,24 @@ var RecordPicker = class extends import_obsidian3.FuzzySuggestModal {
     this.choose(r);
   }
 };
+var BalanceCalibrationNoteModal = class extends import_obsidian3.Modal {
+  constructor(plugin) {
+    super(plugin.app);
+    this.plugin = plugin;
+  }
+  onOpen() {
+    this.contentEl.createEl("h2", { text: "\u4F59\u989D\u6821\u51C6\u5DEE\u989D\u5907\u6CE8" });
+    const note = this.plugin.settings.balanceCalibrationNote.trim();
+    this.contentEl.createDiv({
+      cls: "ledger-balance-note-content",
+      text: note || "\u5C1A\u672A\u586B\u5199\u5907\u6CE8\u3002\u53EF\u5728\u63D2\u4EF6\u8BBE\u7F6E \u2192 \u4F59\u989D\u6821\u51C6 \u2192 \u4F59\u989D\u6821\u51C6\u5DEE\u989D\u5907\u6CE8\u4E2D\u8BB0\u5F55\u8D44\u91D1\u53BB\u5411\u3002"
+    });
+    this.contentEl.createEl("p", { cls: "ledger-balance-note-hint", text: "\u6B64\u5907\u6CE8\u4EC5\u4F5C\u8BF4\u660E\uFF0C\u4E0D\u8BA1\u5165\u6D88\u8D39\u7EDF\u8BA1\u6216 AI \u5224\u65AD\u3002\u53EF\u5728\u4F59\u989D\u6821\u51C6\u8BBE\u7F6E\u4E2D\u4FEE\u6539\u3002" });
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
 var FixedExpenseModal = class extends import_obsidian3.Modal {
   constructor(plugin) {
     super(plugin.app);
@@ -1507,6 +1525,7 @@ var DEFAULT_SETTINGS = {
   excludedCategories: ["\u503A\u52A1/\u8FD8\u6B3E"],
   salaryCents: 0,
   balanceCalibration: null,
+  balanceCalibrationNote: "",
   financeAiEnabled: false,
   financeAiEndpoint: "https://api.openai.com/v1/chat/completions",
   financeAiModel: "",
@@ -1654,6 +1673,15 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
       calibrationInput.value = "";
       refreshBalanceSummary();
     }));
+    new import_obsidian4.Setting(balancePanel).setName("\u4F59\u989D\u6821\u51C6\u5DEE\u989D\u5907\u6CE8").setDesc("\u8BB0\u5F55\u5DEE\u989D\u8D44\u91D1\u7684\u5927\u81F4\u53BB\u5411\u3002\u70B9\u51FB\u5DE5\u8D44\u7011\u5E03\u56FE\u7684\u201C\u4F59\u989D\u6821\u51C6\u5DEE\u989D\u201D\u67E5\u770B\uFF1B\u53EA\u4F5C\u6587\u5B57\u8BF4\u660E\uFF0C\u4E0D\u5F71\u54CD\u7EDF\u8BA1\u6216 AI \u5224\u65AD\u3002\u5907\u6CE8\u4F1A\u4FDD\u7559\uFF0C\u91CD\u65B0\u6821\u51C6\u6216\u8FDB\u5165\u65B0\u5468\u671F\u540E\u8BF7\u6309\u9700\u66F4\u65B0\u3002").addTextArea((text) => {
+      text.setPlaceholder("\u4F8B\u5982\uFF1A\u8FD8\u6B3E 2000 \u5143\u3001\u8F6C\u7ED9\u5BB6\u4EBA 1000 \u5143\uFF0C\u5176\u4F59\u4E3A\u672A\u9010\u7B14\u8BB0\u8D26\u7684\u65E5\u5E38\u652F\u51FA\u3002").setValue(this.plugin.settings.balanceCalibrationNote).onChange(async (value) => {
+        this.plugin.settings.balanceCalibrationNote = value;
+        await this.plugin.saveSettings(false, false);
+      });
+      text.inputEl.rows = 5;
+      text.inputEl.addClass("ledger-balance-note-input");
+      text.inputEl.setAttribute("aria-label", "\u4F59\u989D\u6821\u51C6\u5DEE\u989D\u5907\u6CE8");
+    });
     const balanceSummary = balancePanel.createDiv({ cls: "ledger-balance-summary", attr: { "aria-live": "polite" } });
     refreshBalanceSummary = () => {
       balanceSummary.empty();
@@ -2047,7 +2075,11 @@ function accessibleTarget(element, label, activate) {
   element.classList.add("ledger-chart-target");
   element.addEventListener("click", activate);
   element.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" || event.key === " ") activate();
+    const key = event.key;
+    if (key === "Enter" || key === " ") {
+      event.preventDefault();
+      activate();
+    }
   });
 }
 function trendTooltip(x, y, chartWidth, value, mobile = false) {
@@ -2467,7 +2499,7 @@ function renderTrendChart(parent, points, type, onClick) {
   renderMobileTrend(chart, points, isLine, onClick);
   sourceLine(shell, `${isLine ? "HAIRLINE LINE" : "HAIRLINE AREA"} \xB7 MONO-BASIC \xB7 LOCAL LEDGER`);
 }
-function renderSalaryWaterfall(parent, steps, range, onCategory) {
+function renderSalaryWaterfall(parent, steps, range, onCategory, onCalibrationNote) {
   var _a, _b, _c;
   const spent = -steps.filter((step) => step.kind === "expense").reduce((sum, step) => sum + step.deltaCents, 0);
   const remaining = (_b = (_a = steps.at(-1)) == null ? void 0 : _a.toCents) != null ? _b : 0;
@@ -2528,6 +2560,10 @@ function renderSalaryWaterfall(parent, steps, range, onCategory) {
     label.textContent = step.label;
     group.append(value, label);
     if (step.categories.length === 1) accessibleTarget(group, `${step.label}\u652F\u51FA ${formatCents(-step.deltaCents)}\uFF0C\u6253\u5F00\u5206\u7C7B\u660E\u7EC6`, () => onCategory(step.categories[0]));
+    if (step.kind === "calibration" && onCalibrationNote) {
+      group.prepend(svgEl("rect", { x: x - 42, y: 8, width: 84, height: 302, fill: "transparent" }));
+      accessibleTarget(group, "\u4F59\u989D\u6821\u51C6\u5DEE\u989D\uFF0C\u67E5\u770B\u5907\u6CE8", onCalibrationNote);
+    }
     svg.append(group);
   });
   const foot = svgEl("text", { x: width / 2, y: height - 9, "text-anchor": "middle", class: "ledger-foot-label" });
@@ -2541,7 +2577,13 @@ function renderSalaryWaterfall(parent, steps, range, onCategory) {
     head.createSpan({ text: step.label });
     head.createEl("strong", { text: step.kind === "expense" ? `\u2212${formatCents(-step.deltaCents)}` : step.kind === "calibration" ? signedAdjustment(step.deltaCents) : formatCents(step.toCents) });
     if (step.kind === "expense") row.createDiv({ cls: "ledger-waterfall-mobile-balance", text: `\u6263\u9664\u540E\u5269\u4F59 ${formatCents(step.toCents)}` });
-    if (step.kind === "calibration") row.createDiv({ cls: "ledger-waterfall-mobile-balance", text: "\u5BF9\u8D26\u5DEE\u989D\uFF0C\u4E0D\u8BA1\u5165\u4E0A\u65B9\u5DF2\u652F\u51FA" });
+    if (step.kind === "calibration") {
+      row.createDiv({ cls: "ledger-waterfall-mobile-balance", text: "\u5BF9\u8D26\u5DEE\u989D\uFF0C\u4E0D\u8BA1\u5165\u4E0A\u65B9\u5DF2\u652F\u51FA" });
+      if (onCalibrationNote) {
+        row.createDiv({ cls: "ledger-waterfall-mobile-balance", text: "\u70B9\u51FB\u67E5\u770B\u5907\u6CE8" });
+        accessibleTarget(row, "\u4F59\u989D\u6821\u51C6\u5DEE\u989D\uFF0C\u67E5\u770B\u5907\u6CE8", onCalibrationNote);
+      }
+    }
     if (step.categories.length === 1) {
       row.setAttribute("role", "button");
       row.setAttribute("tabindex", "0");
@@ -3314,7 +3356,13 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian6.
     const cycleRecords = flattenRecords(files);
     const balance = balanceStatus(cycleRecords, now, this.plugin.settings.salaryCents, this.plugin.settings.balanceCalibration);
     const waterfall = salaryWaterfall(cycleRecords, currentCycle, this.plugin.settings.salaryCents, balance);
-    renderSalaryWaterfall(parent, waterfall, currentCycle, (category) => this.drillCategoryInRange(category, currentCycle));
+    renderSalaryWaterfall(
+      parent,
+      waterfall,
+      currentCycle,
+      (category) => this.drillCategoryInRange(category, currentCycle),
+      () => new BalanceCalibrationNoteModal(this.plugin).open()
+    );
     if (records.length === 0) {
       renderEmpty(parent, "\u5F53\u524D\u7B5B\u9009\u6761\u4EF6\u4E0B\u6CA1\u6709\u8BB0\u5F55\u3002\u7F3A\u5C11\u6587\u4EF6\u7684\u65E5\u671F\u4E0D\u4F1A\u6309\u96F6\u6D88\u8D39\u5904\u7406\u3002");
     } else {
@@ -4059,6 +4107,7 @@ var LedgerStatisticsPlugin = class extends import_obsidian7.Plugin {
     this.settings.fixedExpenses = Array.isArray(this.settings.fixedExpenses) ? this.settings.fixedExpenses.filter((item) => item && typeof item.name === "string" && typeof item.id === "string" && item.payments && typeof item.payments === "object") : [];
     this.settings.insightHistory = Array.isArray(this.settings.insightHistory) ? this.settings.insightHistory.filter((item) => item && typeof item.id === "string" && typeof item.cycle === "string" && typeof item.date === "string" && Number.isFinite(item.impact)) : [];
     if (!isBalanceCalibration(this.settings.balanceCalibration)) this.settings.balanceCalibration = null;
+    if (typeof this.settings.balanceCalibrationNote !== "string") this.settings.balanceCalibrationNote = "";
     this.budgetMonitor = new BudgetMonitor(
       () => this.settings,
       (url) => (0, import_obsidian7.requestUrl)({ url, method: "GET", throw: true }),

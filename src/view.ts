@@ -4,7 +4,7 @@ import type LedgerStatisticsPlugin from "./main";
 import { requestFinanceAdvice } from "./ai";
 import { assessFinanceAdvice, createFinanceAdviceCache } from "./advice-lifecycle";
 import { markInsightSeen, withInsightHistory, unmatchedStarIds } from "./insights";
-import { FixedExpenseModal, StarRepairModal } from "./management";
+import { BalanceCalibrationNoteModal, FixedExpenseModal, StarRepairModal } from "./management";
 import { balanceStatus } from "./balance";
 import {
   AccountingScope,
@@ -438,7 +438,8 @@ export class LedgerStatisticsView extends ItemView {
     const cycleRecords = flattenRecords(files);
     const balance = balanceStatus(cycleRecords, now, this.plugin.settings.salaryCents, this.plugin.settings.balanceCalibration);
     const waterfall = salaryWaterfall(cycleRecords, currentCycle, this.plugin.settings.salaryCents, balance);
-    renderSalaryWaterfall(parent, waterfall, currentCycle, (category) => this.drillCategoryInRange(category, currentCycle));
+    renderSalaryWaterfall(parent, waterfall, currentCycle, (category) => this.drillCategoryInRange(category, currentCycle),
+      () => new BalanceCalibrationNoteModal(this.plugin).open());
     if (records.length === 0) {
       renderEmpty(parent, "当前筛选条件下没有记录。缺少文件的日期不会按零消费处理。");
     } else {

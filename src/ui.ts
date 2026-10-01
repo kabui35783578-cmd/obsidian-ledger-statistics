@@ -57,14 +57,18 @@ function niceCurrencyUnit(maxCents: number, targetTicks = 32): number {
   return Math.max(1, Math.round(step * magnitude));
 }
 
-function accessibleTarget(element: SVGElement, label: string, activate: () => void): void {
+function accessibleTarget(element: SVGElement | HTMLElement, label: string, activate: () => void): void {
   element.setAttribute("tabindex", "0");
   element.setAttribute("role", "button");
   element.setAttribute("aria-label", label);
   element.classList.add("ledger-chart-target");
   element.addEventListener("click", activate);
   element.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" || event.key === " ") activate();
+    const key = (event as KeyboardEvent).key;
+    if (key === "Enter" || key === " ") {
+      event.preventDefault();
+      activate();
+    }
   });
 }
 
@@ -483,7 +487,7 @@ export function renderTrendChart(parent: HTMLElement, points: TrendPoint[], type
   sourceLine(shell, `${isLine ? "HAIRLINE LINE" : "HAIRLINE AREA"} · MONO-BASIC · LOCAL LEDGER`);
 }
 
-export function renderSalaryWaterfall(parent: HTMLElement, steps: WaterfallStep[], range: { start: string; end: string }, onCategory: (category: string) => void): void {
+export function renderSalaryWaterfall(parent: HTMLElement, steps: WaterfallStep[], range: { start: string; end: string }, onCategory: (category: string) => void, onCalibrationNote?: () => void): void {
   const spent = -steps.filter((step) => step.kind === "expense").reduce((sum, step) => sum + step.deltaCents, 0);
   const remaining = steps.at(-1)?.toCents ?? 0;
   const calibrated = steps.at(-1)?.label === "实际余额";
@@ -538,6 +542,11 @@ export function renderSalaryWaterfall(parent: HTMLElement, steps: WaterfallStep[
     label.textContent = step.label;
     group.append(value, label);
     if (step.categories.length === 1) accessibleTarget(group, `${step.label}支出 ${formatCents(-step.deltaCents)}，打开分类明细`, () => onCategory(step.categories[0]));
+    if (step.kind === "calibration" && onCalibrationNote) {
+      // Include the empty space between rungs in the pointer target.
+      group.prepend(svgEl("rect", { x: x - 42, y: 8, width: 84, height: 302, fill: "transparent" }));
+      accessibleTarget(group, "余额校准差额，查看备注", onCalibrationNote);
+    }
     svg.append(group);
   });
   const foot = svgEl("text", { x: width / 2, y: height - 9, "text-anchor": "middle", class: "ledger-foot-label" });
@@ -551,7 +560,13 @@ export function renderSalaryWaterfall(parent: HTMLElement, steps: WaterfallStep[
     head.createSpan({ text: step.label });
     head.createEl("strong", { text: step.kind === "expense" ? `−${formatCents(-step.deltaCents)}` : step.kind === "calibration" ? signedAdjustment(step.deltaCents) : formatCents(step.toCents) });
     if (step.kind === "expense") row.createDiv({ cls: "ledger-waterfall-mobile-balance", text: `扣除后剩余 ${formatCents(step.toCents)}` });
-    if (step.kind === "calibration") row.createDiv({ cls: "ledger-waterfall-mobile-balance", text: "对账差额，不计入上方已支出" });
+    if (step.kind === "calibration") {
+      row.createDiv({ cls: "ledger-waterfall-mobile-balance", text: "对账差额，不计入上方已支出" });
+      if (onCalibrationNote) {
+        row.createDiv({ cls: "ledger-waterfall-mobile-balance", text: "点击查看备注" });
+        accessibleTarget(row, "余额校准差额，查看备注", onCalibrationNote);
+      }
+    }
     if (step.categories.length === 1) {
       row.setAttribute("role", "button");
       row.setAttribute("tabindex", "0");
