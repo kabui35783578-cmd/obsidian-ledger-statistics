@@ -3730,12 +3730,26 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian6.
     const diagnostics = diagnosticsFor(this.plugin.repository.files.values());
     const section = root.createDiv({ cls: "ledger-diagnostics" });
     const toggle = createButton(section, diagnostics.length ? `\u6570\u636E\u6838\u9A8C\uFF1A${diagnostics.length} \u9879\u9700\u6CE8\u610F` : "\u6570\u636E\u6838\u9A8C\uFF1A\u672A\u53D1\u73B0\u5F02\u5E38", this.showDiagnostics);
+    toggle.setAttribute("aria-expanded", String(this.showDiagnostics));
+    let panel = null;
+    const updatePanel = () => {
+      toggle.toggleClass("is-active", this.showDiagnostics);
+      toggle.setAttribute("aria-expanded", String(this.showDiagnostics));
+      if (this.showDiagnostics) {
+        panel = section.createDiv({ cls: "ledger-diagnostics-panel" });
+        this.renderDiagnosticsPanel(panel, diagnostics);
+      } else {
+        panel == null ? void 0 : panel.remove();
+        panel = null;
+      }
+    };
     toggle.addEventListener("click", () => {
       this.showDiagnostics = !this.showDiagnostics;
-      this.render();
+      updatePanel();
     });
-    if (!this.showDiagnostics) return;
-    const panel = section.createDiv({ cls: "ledger-diagnostics-panel" });
+    if (this.showDiagnostics) updatePanel();
+  }
+  renderDiagnosticsPanel(panel, diagnostics) {
     if (diagnostics.length === 0) return renderEmpty(panel, "\u6240\u6709\u6B63\u6587\u5408\u8BA1\u5747\u4E0E\u53EF\u89E3\u6790\u7684 frontmatter total \u4E00\u81F4\uFF0C\u4E14\u672A\u53D1\u73B0\u89E3\u6790\u5F02\u5E38\u3002");
     for (const item of diagnostics) {
       const row = panel.createDiv({ cls: `ledger-diagnostic is-${item.kind}` });

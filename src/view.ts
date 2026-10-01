@@ -829,9 +829,27 @@ export class LedgerStatisticsView extends ItemView {
     const diagnostics = diagnosticsFor(this.plugin.repository.files.values());
     const section = root.createDiv({ cls: "ledger-diagnostics" });
     const toggle = createButton(section, diagnostics.length ? `数据核验：${diagnostics.length} 项需注意` : "数据核验：未发现异常", this.showDiagnostics);
-    toggle.addEventListener("click", () => { this.showDiagnostics = !this.showDiagnostics; this.render(); });
-    if (!this.showDiagnostics) return;
-    const panel = section.createDiv({ cls: "ledger-diagnostics-panel" });
+    toggle.setAttribute("aria-expanded", String(this.showDiagnostics));
+    let panel: HTMLElement | null = null;
+    const updatePanel = () => {
+      toggle.toggleClass("is-active", this.showDiagnostics);
+      toggle.setAttribute("aria-expanded", String(this.showDiagnostics));
+      if (this.showDiagnostics) {
+        panel = section.createDiv({ cls: "ledger-diagnostics-panel" });
+        this.renderDiagnosticsPanel(panel, diagnostics);
+      } else {
+        panel?.remove();
+        panel = null;
+      }
+    };
+    toggle.addEventListener("click", () => {
+      this.showDiagnostics = !this.showDiagnostics;
+      updatePanel();
+    });
+    if (this.showDiagnostics) updatePanel();
+  }
+
+  private renderDiagnosticsPanel(panel: HTMLElement, diagnostics: ReturnType<typeof diagnosticsFor>): void {
     if (diagnostics.length === 0) return renderEmpty(panel, "所有正文合计均与可解析的 frontmatter total 一致，且未发现解析异常。" );
     for (const item of diagnostics) {
       const row = panel.createDiv({ cls: `ledger-diagnostic is-${item.kind}` });
