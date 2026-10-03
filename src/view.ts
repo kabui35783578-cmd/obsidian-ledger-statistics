@@ -7,6 +7,7 @@ import { markInsightSeen, withInsightHistory, unmatchedStarIds } from "./insight
 import { BalanceCalibrationNoteModal, FixedExpenseModal, StarRepairModal } from "./management";
 import { balanceStatus } from "./balance";
 import { withDailyInsight } from "./daily-insight";
+import { ReportPanel } from "./report-ui";
 import {
   AccountingScope,
   CategorySummary,
@@ -41,7 +42,7 @@ export const LEDGER_VIEW_TYPE = "ledger-statistics-view";
 
 const VIEW_NAMES: Array<[LedgerViewId, string]> = [
   ["overview", "总览"], ["category", "分类"], ["trend", "趋势"],
-  ["calendar", "日历"], ["details", "明细"], ["compare", "对比"]
+  ["calendar", "日历"], ["details", "明细"], ["compare", "对比"], ["report", "支出报告"]
 ];
 
 const AUTO_ADVANCE_SWIPE_DISTANCE = 100;
@@ -141,6 +142,7 @@ export class LedgerStatisticsView extends ItemView {
   private pullHint: HTMLElement | null = null;
   private settleTimer: number | null = null;
   private filterResizeObserver: ResizeObserver | null = null;
+  private reportPanel: ReportPanel | null = null;
 
   constructor(leaf: WorkspaceLeaf, private plugin: LedgerStatisticsPlugin) {
     super(leaf);
@@ -180,6 +182,8 @@ export class LedgerStatisticsView extends ItemView {
 
   async onClose(): Promise<void> {
     this.closed = true;
+    this.reportPanel?.dispose();
+    this.reportPanel = null;
     this.cancelFinanceRequest();
     this.filterResizeObserver?.disconnect();
     this.filterResizeObserver = null;
@@ -192,6 +196,7 @@ export class LedgerStatisticsView extends ItemView {
   }
 
   cancelFinanceRequest(): void {
+    this.reportPanel?.cancel();
     this.financeController?.abort();
     if (this.financeAutoTimer !== null) window.clearTimeout(this.financeAutoTimer);
     this.financeAutoTimer = null;
@@ -225,11 +230,12 @@ export class LedgerStatisticsView extends ItemView {
       return;
     }
     const files = [...this.plugin.repository.files.values()];
+    if (this.activeView !== "report") this.reportPanel?.cancel();
     this.renderHeader(root);
     if (this.activeView === "overview" && files.length > 0) this.renderCoreCards(root, files);
-    this.renderToolbar(root);
+    if (this.activeView !== "report") this.renderToolbar(root);
     this.renderTabs(root);
-    this.renderDrillBack(root);
+    if (this.activeView !== "report") this.renderDrillBack(root);
     const content = root.createDiv({ cls: "ledger-content" });
     const orphanCount = unmatchedStarIds(this.plugin.settings.starredRecordIds, flattenRecords(files)).length;
     if (orphanCount) {
@@ -246,6 +252,10 @@ export class LedgerStatisticsView extends ItemView {
       if (this.activeView === "calendar") this.renderCalendar(content);
       if (this.activeView === "details") this.renderDetails(content);
       if (this.activeView === "compare") this.renderCompare(content);
+      if (this.activeView === "report") {
+        this.reportPanel ??= new ReportPanel(this.plugin, () => this.render(), record => this.openRecord(record));
+        this.reportPanel.render(content);
+      }
     }
     this.renderDiagnostics(root);
     const next = VIEW_NAMES[VIEW_NAMES.findIndex(([id]) => id === this.activeView) + 1];
@@ -260,8 +270,9 @@ export class LedgerStatisticsView extends ItemView {
     const title = header.createDiv();
     title.createEl("h2", { text: "记账统计" });
     title.createDiv({ cls: "ledger-subtitle", text: "本地只读 · 正文逐笔记录为统计来源" });
-    const scope = header.createDiv({ cls: `ledger-scope-badge is-${this.filter.scope}` });
-    scope.setText(this.filter.scope === "consumption" ? "筛选口径：消费支出" : "筛选口径：全部支出");
+    const selectedScope = this.activeView === "report" ? this.plugin.settings.reportPreferences?.scope ?? "consumption" : this.filter.scope;
+    const scope = header.createDiv({ cls: `ledger-scope-badge is-${selectedScope}` });
+    scope.setText(selectedScope === "consumption" ? "筛选口径：消费支出" : "筛选口径：全部支出");
   }
 
   private renderToolbar(root: HTMLElement): void {

@@ -8,11 +8,15 @@ import { sharedRequestGate } from "./request-gate";
 import type { FixedExpense } from "./fixed-expenses";
 import type { SeenInsight } from "./insights";
 import { FixedExpenseModal, StarRepairModal } from "./management";
+import type { ReportCache, ReportPreferences } from "./report";
+import { defaultReportPreferences } from "./report";
 
-export type LedgerViewId = "overview" | "category" | "trend" | "calendar" | "details" | "compare";
+export type LedgerViewId = "overview" | "category" | "trend" | "calendar" | "details" | "compare" | "report";
 export type DefaultDatePreset = "today" | "week" | "month" | "salary" | "year";
 
 export interface LedgerSettings {
+  reportPreferences: ReportPreferences;
+  reportCaches: ReportCache[];
   fixedExpenses: FixedExpense[];
   insightHistory: SeenInsight[];
   ledgerFolder: string;
@@ -36,6 +40,8 @@ export interface LedgerSettings {
 }
 
 export const DEFAULT_SETTINGS: LedgerSettings = {
+  reportPreferences: defaultReportPreferences(),
+  reportCaches: [],
   fixedExpenses: [],
   insightHistory: [],
   ledgerFolder: "记账",
@@ -64,7 +70,8 @@ const VIEW_NAMES: Record<LedgerViewId, string> = {
   trend: "趋势",
   calendar: "日历",
   details: "明细",
-  compare: "对比"
+  compare: "对比",
+  report: "支出报告"
 };
 
 const OPENAI_CHAT_ENDPOINT = "https://api.openai.com/v1/chat/completions";

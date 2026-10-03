@@ -290,7 +290,7 @@ function validateEndpoint(value: string): string {
   return url.toString();
 }
 
-async function chatContent(config: FinanceAiConfig, messages: Array<{ role: string; content: string }>, maxTokens: number, signal: AbortSignal | undefined, gate: RequestGate): Promise<string> {
+export async function chatContent(config: FinanceAiConfig, messages: Array<{ role: string; content: string }>, maxTokens: number, signal: AbortSignal | undefined, gate: RequestGate): Promise<string> {
   const endpoint = validateEndpoint(config.endpoint);
   const model = config.model.trim();
   if (!model) throw new Error("请先填写 AI 模型名称");

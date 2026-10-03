@@ -6,6 +6,8 @@ import { LedgerRepository } from "./repository";
 import { isBalanceCalibration } from "./balance";
 import { DEFAULT_SETTINGS, LedgerSettingTab, LedgerSettings } from "./settings";
 import { LedgerStatisticsView, LEDGER_VIEW_TYPE } from "./view";
+import { normalizeReportPreferences } from "./report";
+import { normalizeReportCaches } from "./report-ai";
 
 export default class LedgerStatisticsPlugin extends Plugin {
   settings: LedgerSettings = DEFAULT_SETTINGS;
@@ -16,6 +18,8 @@ export default class LedgerStatisticsPlugin extends Plugin {
 
   async onload(): Promise<void> {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<LedgerSettings> | null);
+    this.settings.reportPreferences = normalizeReportPreferences(this.settings.reportPreferences);
+    this.settings.reportCaches = normalizeReportCaches(this.settings.reportCaches);
     this.settings.fixedExpenses = Array.isArray(this.settings.fixedExpenses) ? this.settings.fixedExpenses.filter((item) => item && typeof item.name === "string" && typeof item.id === "string" && item.payments && typeof item.payments === "object") : [];
     this.settings.insightHistory = Array.isArray(this.settings.insightHistory) ? this.settings.insightHistory.filter((item) => item && typeof item.id === "string" && typeof item.cycle === "string" && typeof item.date === "string" && Number.isFinite(item.impact)) : [];
     if (!isBalanceCalibration(this.settings.balanceCalibration)) this.settings.balanceCalibration = null;
