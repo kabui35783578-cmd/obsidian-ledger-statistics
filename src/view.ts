@@ -8,6 +8,9 @@ import { BalanceCalibrationNoteModal, FixedExpenseModal, StarRepairModal } from 
 import { balanceStatus } from "./balance";
 import { withDailyInsight } from "./daily-insight";
 import { ReportPanel } from "./report-ui";
+import { buildCategoryAnalysis, categoryPreviousRange } from "./category-analysis";
+import { renderCategoryAnalysis, showCategoryRecords } from "./category-ui";
+import { disposeCategoryCharts } from "./category-charts";
 import {
   AccountingScope,
   CategorySummary,
@@ -182,6 +185,7 @@ export class LedgerStatisticsView extends ItemView {
 
   async onClose(): Promise<void> {
     this.closed = true;
+    disposeCategoryCharts(this.contentEl);
     this.reportPanel?.dispose();
     this.reportPanel = null;
     this.cancelFinanceRequest();
@@ -224,6 +228,7 @@ export class LedgerStatisticsView extends ItemView {
     const root = this.contentEl;
     this.resetAutoAdvanceArm();
     this.pullHint = null;
+    disposeCategoryCharts(root);
     root.empty();
     if (!this.plugin.repository.loaded) {
       root.createDiv({ cls: "ledger-loading", text: "正在读取记账文件…" });
@@ -232,7 +237,8 @@ export class LedgerStatisticsView extends ItemView {
     const files = [...this.plugin.repository.files.values()];
     if (this.activeView !== "report") this.reportPanel?.cancel();
     this.renderHeader(root);
-    if (this.activeView === "overview" && files.length > 0) this.renderCoreCards(root, files);
+    if (this.activeView === "overview" && files.length > 0 && !this.filter.categories.length) this.renderCoreCards(root, files);
+    if (this.activeView !== "report" && this.filter.categories.length) this.cancelFinanceRequest();
     if (this.activeView !== "report") this.renderToolbar(root);
     this.renderTabs(root);
     if (this.activeView !== "report") this.renderDrillBack(root);
@@ -437,6 +443,10 @@ export class LedgerStatisticsView extends ItemView {
   }
 
   private renderOverview(parent: HTMLElement): void {
+    if (this.filter.categories.length === 1) {
+      this.renderSingleCategory(parent);
+      return;
+    }
     const files = [...this.plugin.repository.files.values()];
     const records = filteredRecords(files, this.filter);
     const stats = summarize(files, records, this.filter.range);
@@ -459,7 +469,18 @@ export class LedgerStatisticsView extends ItemView {
       renderHorizontalBars(grid, categorySummaries(records).slice(0, 8), (category) => this.drillCategory(category));
       renderTrendChart(grid, trendPoints(records, this.rangeTrendUnit()), "line", (point) => this.drillRange({ start: point.start, end: point.end }));
     }
-    renderStarredExpenses(parent, this.starredRecords(), (record) => void this.openRecord(record));
+    const starred = this.starredRecords();
+    if (starred.length) renderStarredExpenses(parent, starred, (record) => void this.openRecord(record));
+  }
+
+  private renderSingleCategory(parent: HTMLElement): void {
+    const category = this.filter.categories[0];
+    const files = [...this.plugin.repository.files.values()];
+    const analysis = buildCategoryAnalysis(files, this.filter, categoryPreviousRange(this.filter.range, this.preset), this.plugin.settings.reportObjectRules);
+    renderCategoryAnalysis(parent, category, analysis, this.rangeTrendUnit(), record => void this.openRecord(record),
+      (label, records) => showCategoryRecords(this.app, `${category} · ${label}`, records, record => void this.openRecord(record)), () => this.goDetails());
+    const starred = this.starredRecords();
+    if (starred.length) renderStarredExpenses(parent, starred, record => void this.openRecord(record));
   }
 
   private currentFinanceSnapshot(now = new Date()): ReturnType<typeof buildFinanceAdvisorSnapshot> {
@@ -608,6 +629,10 @@ export class LedgerStatisticsView extends ItemView {
 
 
   private renderCategory(parent: HTMLElement): void {
+    if (this.filter.categories.length === 1) {
+      this.renderSingleCategory(parent);
+      return;
+    }
     const controls = parent.createDiv({ cls: "ledger-section-controls" });
     addSelect(controls, "显示", this.categoryChart, [["bar", "横向条形图"], ["donut", "环形图"], ["table", "汇总表"]], (value) => {
       this.categoryChart = value as "bar" | "donut" | "table";
@@ -1074,10 +1099,8 @@ export class LedgerStatisticsView extends ItemView {
 
   private starredRecords(): LedgerRecord[] {
     const starred = new Set(this.plugin.settings.starredRecordIds);
-    const { start, end } = this.filter.range;
-    return [...this.plugin.repository.files.values()]
-      .flatMap((file) => file.records)
-      .filter((record) => starred.has(record.id) && record.date >= start && record.date <= end)
+    return filteredRecords(this.plugin.repository.files.values(), this.filter)
+      .filter((record) => starred.has(record.id))
       .sort((a, b) => b.cents - a.cents || b.date.localeCompare(a.date) || b.line - a.line);
   }
 

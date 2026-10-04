@@ -132,7 +132,7 @@ function pctText(cents: number, total: number): string {
   return total === 0 ? "占比 0.0%" : `占比 ${(cents / total * 100).toFixed(1)}%`;
 }
 
-function renderMobileTickRows(parent: HTMLElement, data: CategorySummary[], max: number, onClick: (category: string) => void): void {
+function renderMobileTickRows(parent: HTMLElement, data: CategorySummary[], unit: number, onClick: (category: string) => void, details?: Record<string, string>): void {
   const list = parent.createDiv({ cls: "ledger-mobile-tick-rows" });
   data.forEach((item, index) => {
     const row = list.createEl("button", { cls: "ledger-mobile-tick-row" });
@@ -143,29 +143,32 @@ function renderMobileTickRows(parent: HTMLElement, data: CategorySummary[], max:
     const values = head.createSpan();
     values.createEl("strong", { text: formatCents(item.cents) });
     values.createSpan({ text: ` · ${item.count}笔` });
+    if (details?.[item.category]) row.createDiv({ cls: "ledger-note", text: details[item.category] });
     const track = row.createDiv({ cls: "ledger-mobile-tick-track", attr: { "aria-hidden": "true" } });
-    const tickCount = Math.max(item.cents > 0 ? 1 : 0, Math.round(item.cents / max * 28));
+    const tickCount = Math.ceil(item.cents / unit);
     for (let tick = 0; tick < tickCount; tick += 1) {
       const mark = track.createSpan({ cls: `ledger-mobile-tick${index === 0 ? " is-leading" : ""}` });
-      mark.style.height = `${10 + deterministic(tick + 1, index + 2) * 13}px`;
+      mark.style.height = `${(10 + deterministic(tick + 1, index + 2) * 13) * Math.min(1, item.cents / unit - tick)}px`;
       mark.style.animationDelay = `${index * 0.05 + tick * 0.012}s`;
     }
     row.addEventListener("click", () => onClick(item.category));
   });
 }
 
-export function renderHorizontalBars(parent: HTMLElement, data: CategorySummary[], onClick: (category: string) => void): void {
+export interface TickRowsOptions { title?: string; subtitle?: string; details?: Record<string, string> }
+
+export function renderHorizontalBars(parent: HTMLElement, data: CategorySummary[], onClick: (category: string) => void, options: TickRowsOptions = {}): void {
   const total = data.reduce((sum, item) => sum + item.cents, 0);
   const leader = data[0];
   const { shell, chart } = monoCard(
     parent,
     "LUPI BASICS · F5 TICK ROWS",
-    leader ? `${leader.category}是本期最重的一行` : "本期还没有形成分类队列",
-    leader ? `每根刻线代表同一金额单位 · 行尾保留精确金额 · ${pctText(leader.cents, total)}` : "分类金额 · 当前筛选范围"
+    options.title ?? (leader ? `${leader.category}是本期最重的一行` : "本期还没有形成分类队列"),
+    options.subtitle ?? (leader ? `每根刻线代表同一金额单位 · 行尾保留精确金额 · ${pctText(leader.cents, total)}` : "分类金额 · 当前筛选范围")
   );
   if (data.length === 0) return renderEmpty(chart, "当前筛选条件下没有可绘制的数据");
   const width = 820;
-  const height = Math.max(330, data.length * 44 + 58);
+  const height = Math.max(330, data.length * (options.details ? 62 : 44) + 58);
   const rowHeight = (height - 58) / data.length;
   const x0 = 126;
   const plotWidth = 520;
@@ -178,11 +181,21 @@ export function renderHorizontalBars(parent: HTMLElement, data: CategorySummary[
   data.forEach((item, index) => {
     const y = 28 + index * rowHeight;
     const group = svgEl("g");
+    group.dataset.cents = String(item.cents);
     accessibleTarget(group, `${item.category} ${formatCents(item.cents)}，${item.count} 笔`, () => onClick(item.category));
     const label = svgEl("text", { x: x0 - 12, y: y + 3, "text-anchor": "end", class: "ledger-axis-label" });
-    label.textContent = item.category;
+    const name = Array.from(item.category);
+    label.textContent = options.details && name.length > 10 ? `${name.slice(0, 10).join("")}…` : item.category;
     const baseline = svgEl("line", { x1: x0, y1: y + 9, x2: x0 + plotWidth, y2: y + 9, stroke: GRID, "stroke-width": 0.8 });
     group.append(label, baseline);
+    if (options.details?.[item.category]) {
+      const detail = svgEl("text", { x: x0, y: y + 29, class: "ledger-foot-label" });
+      detail.textContent = options.details[item.category];
+      group.append(detail);
+      const title = svgEl("title");
+      title.textContent = `${item.category} · ${options.details[item.category]} · ${formatCents(item.cents)}`;
+      group.append(title);
+    }
     const full = Math.floor(item.cents / unit);
     const remainder = item.cents % unit;
     for (let tick = 0; tick < full; tick += 1) {
@@ -213,7 +226,8 @@ export function renderHorizontalBars(parent: HTMLElement, data: CategorySummary[
   unitText.textContent = `ONE TICK = ${formatCents(unit)} · DASHED FINAL TICK = REMAINDER`;
   svg.append(unitText);
   chart.append(svg);
-  renderMobileTickRows(chart, data, max, onClick);
+  renderMobileTickRows(chart, data, unit, onClick, options.details);
+  shell.createDiv({ cls: "ledger-note", text: `每根完整刻线 = ${formatCents(unit)} · 末根不足一单位按比例绘制` });
   sourceLine(shell, "TICK ROWS · MONO-BASIC · LOCAL LEDGER");
 }
 
@@ -964,8 +978,8 @@ export function renderStarredExpenses(parent: HTMLElement, records: LedgerRecord
   const heading = card.createDiv({ cls: "ledger-starred-heading" });
   const headingCopy = heading.createDiv({ cls: "ledger-starred-heading-copy" });
   headingCopy.createDiv({ cls: "ledger-mono-badge", text: "STARRED EXPENSES · MANUAL CURATION" });
-  headingCopy.createEl("h3", { text: "大额支出" });
-  headingCopy.createDiv({ cls: "ledger-mono-sub", text: "仅汇总所选时间内的手动星标记录，不按金额自动判断。" });
+  headingCopy.createEl("h3", { text: "星标支出" });
+  headingCopy.createDiv({ cls: "ledger-mono-sub", text: "当前筛选下的手动星标记录，不按金额自动判断。" });
   const totalCents = records.reduce((sum, record) => sum + record.cents, 0);
   const summary = heading.createDiv({ cls: "ledger-starred-summary" });
   summary.createEl("strong", { text: formatCents(totalCents) });
