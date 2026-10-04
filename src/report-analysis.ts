@@ -3,6 +3,7 @@ import { identifyReportObjects, cosine, reportCoverageIndexed, reportDays, repor
 import type { ReportAnalysisOptions, ReportCoverage, ReportEvidence, ReportFact, ReportFinding, ReportObject, ReportPreferences, ReportSnapshot } from './report';
 import { DEFAULT_REPORT_OBJECT_RULES, parseObjectRules, REPORT_THRESHOLDS } from './report-config';
 import { stratifiedAssociationTail } from './report-statistics';
+import { distributionEvidence, evidenceReadings, overviewSections } from './report-evidence';
 
 const total = (r: LedgerRecord[]) => r.reduce((s, t) => s + t.cents, 0);
 const unique = (r: LedgerRecord[]) => [...new Map(r.map(t => [t.id, t])).values()];
@@ -40,9 +41,10 @@ export function analyzeReport(files: ParsedLedgerFile[], preferences: ReportPref
   const selected = (range: DateRange) => budgetScopedRecords(flattened.filter(r => recordMatches(r, { range, scope:preferences.scope, excludedCategories, categories:preferences.category ? [preferences.category] : [], keyword:preferences.keyword } as FilterState)), preferences.includeStarred, starredIds);
   const allRange = { start:periods.history[5].start, end:effectiveRange.end }, all = selected(allRange), current = selected(effectiveRange), previous = selected(previousRange);
   const snapshot: ReportSnapshot = { ruleVersion:REPORT_RULE_VERSION, fingerprint:'', label:preferences.mode === 'salary' ? '工资周期支出报告' : preferences.mode === 'month' ? '自然月支出报告' : '自定义支出报告', range:periods.range, fullRange:periods.fullRange, effectiveRange, previousRange, trimmedDates, degraded, observedDays:observed, coverage, undatedPaths, comparable, historicalRanges:coverage.slice(2).filter(c => c.complete && !undatedPaths.length).map(c => c.range), records:all, preferences, excludedCategories, findings:[], evidence:[] };
-  const limits = ['笔数是账目记录，不代表商品数量；每笔付款金额不是商品单价。', '备注用途识别可能受记账习惯影响，无法确认漏记或生活原因。'];
+  const limits = ['笔数是账目记录，不代表商品数量；每笔付款金额不是商品单价。', '备注用途识别可能受记账习惯影响，无法确认漏记或生活原因。', '总额的次数/平均每笔分解是计算关系，不代表每一笔付款变贵或商品涨价。', '最贵记录取两期各自排序后的记录，不是同一商品配对；差额占比可为负或超过100%，不代表因果或置信概率。'];
   if (degraded) limits.push(`本期缺${coverage[0].missingDates.length}天，上期缺${coverage[1].missingDates.length}天；仅比较已观察日期，不能推断完整周期总额。`);
   if (k !== 1) limits.push(`上期按${observed[0]} / ${observed[1]}个已观察日折算；原始金额与笔数保留供核对，折算不是实际付款。`);
+  if (k !== 1) limits.push('周期天数不同时，固定笔数的最贵记录差额也受样本量和折算影响，应结合分位数及其余记录核对，不代表同一付款变贵。');
   if (rules.errors.length) limits.push('部分对象识别规则无效，未参与识别；请核对设置。');
   const comparisonFacts = (aa: LedgerRecord[], bb: LedgerRecord[]) => {
     const a = stats(aa), b = stats(bb), d = symmetricDecomposition(b.n * k, b.cents * k, a.n, a.cents);
@@ -53,22 +55,36 @@ export function analyzeReport(files: ParsedLedgerFile[], preferences: ReportPref
       current_observed_days:fact('本期已观察日数',observed[0],'天'), previous_observed_days:fact('上期已观察日数',observed[1],'天'), current_missing_days:fact('本期缺失日数',coverage[0].missingDates.length,'天'), previous_missing_days:fact('上期缺失日数',coverage[1].missingDates.length,'天'),
       current_daily_count:fact('本期每观察日笔数',a.n/Math.max(1,observed[0]),'笔'), previous_daily_count:fact('上期每观察日笔数',b.n/Math.max(1,observed[1]),'笔'),
       current_active_day_count:fact('本期每个消费日笔数',a.days?a.n/a.days:0,'笔'), previous_active_day_count:fact('上期每个消费日笔数',b.days?b.n/b.days:0,'笔'),
-      frequency_contribution:fact('次数变化带来的影响',d.frequency/100,'元'), ticket_contribution:fact('每笔金额变化带来的影响',d.ticket/100,'元')
+      ...distributionEvidence(aa, bb, k, comparable, T.topCount, T.binRoundCents)
     };
-    if (k !== 1) { result.previous_amount_scaled=fact('上期按本期观察日折算金额',b.cents*k/100,'元'); result.previous_count_scaled=fact('上期按本期观察日折算笔数',b.n*k,'笔'); }
+    if (comparable && a.n && b.n) {
+      result.frequency_contribution=fact('笔数变化对应的分解差额',d.frequency/100,'元');
+      result.ticket_contribution=fact('平均每笔金额变化对应的分解差额',d.ticket/100,'元');
+    }
+    if (!a.n) { delete result.current_mean; delete result.current_median; }
+    if (!b.n) { delete result.previous_mean; delete result.previous_median; }
+    if (k !== 1 && comparable) { result.previous_amount_scaled=fact('上期按本期观察日折算金额',b.cents*k/100,'元'); result.previous_count_scaled=fact('上期按本期观察日折算笔数',b.n*k,'笔'); }
     return result;
   };
   const ranges = [{label:'本期实际分析',range:effectiveRange},{label:'上期比较',range:previousRange}];
-  const add = (subject:string,type:string,title:string,observation:string,strength:number,rs:LedgerRecord[],facts:Record<string,ReportFact>,extraLimits:string[]=limits,rsRanges=ranges,signals?:ReportFinding['signals']) => {
+  const scopeFor = (subject: string): NonNullable<ReportEvidence['scope']> => {
+    const kind = subject.includes('+') ? 'multiple' : subject.split(':')[0];
+    return { kind:['category','object','brand','mixed','note','multiple'].includes(kind) ? kind as NonNullable<ReportEvidence['scope']>['kind'] : 'all', label:subject.includes(':') ? subject.replace(/(?:category|object|brand|mixed|note):/g, '') : '全部筛选后支出', accounting:preferences.scope };
+  };
+  const add = (subject:string,type:string,title:string,observation:string,strength:number,rs:LedgerRecord[],facts:Record<string,ReportFact>,extraLimits:string[]=limits,rsRanges=ranges,signals?:ReportFinding['signals'],evidenceScope?:ReportEvidence['scope']) => {
     const id = `${type}:${reportHash(subject+title+JSON.stringify(rsRanges))}`;
     const score = (WEIGHT[type]??55)*(.6+.4*Math.max(0,Math.min(1,strength)))*(degraded && FAMILY[type]==='change' ? .85 : 1);
-    snapshot.evidence.push({id,label:title,ranges:rsRanges,facts,recordIds:unique(rs).map(r=>r.id),limits:[...new Set(extraLimits)]});
+    snapshot.evidence.push({id,label:title,scope:evidenceScope??scopeFor(subject),ranges:rsRanges,facts,recordIds:unique(rs).map(r=>r.id),limits:[...new Set(extraLimits)]});
     snapshot.findings.push({id,subject,type,title,observation,score,evidenceIds:[id],limits:[...new Set(extraLimits)],...(signals?.length?{signals}: {})});
   };
   const objectGroups = (rs:LedgerRecord[]) => { const out = new Map<string, ReportObject & {records:LedgerRecord[]}>(); for(const r of rs) for(const o of identifyReportObjects(r.note,rules)) {const g=out.get(o.key)??{...o,records:[]};g.records.push(r);out.set(o.key,g);}return out; };
   const objectsNow=objectGroups(current),objectsPrev=objectGroups(previous),objectsAll=objectGroups(all),aCats=group(current,r=>r.category),bCats=group(previous,r=>r.category),cats=[...new Set([...aCats.keys(),...bCats.keys()])];
-  const overview: ReportEvidence = {id:'overview',label:'本期概况',ranges,facts:comparisonFacts(current,previous),recordIds:unique([...current,...previous]).map(r=>r.id),limits:[...limits,...(!comparable?['可比数据不足，原始已记录总量仅供核对，不据此判断涨跌。']:[])]};
-  cats.sort((a,b)=>total(aCats.get(b)??[])-total(aCats.get(a)??[])).slice(0,T.topCount).forEach((c,i)=>{overview.facts[`category_${i}_current`]=fact(`${c}本期金额`,total(aCats.get(c)??[])/100,'元');overview.facts[`category_${i}_previous`]=fact(`${c}上期金额`,total(bCats.get(c)??[])/100,'元');});
+  const overview: ReportEvidence = {id:'overview',label:'本期概况',scope:scopeFor('overview'),ranges,facts:comparisonFacts(current,previous),recordIds:unique([...current,...previous]).map(r=>r.id),limits:[...limits,...(!comparable?['可比数据不足，原始已记录总量仅供核对，不据此判断涨跌。']:[])]};
+  overview.categories=cats.map(c=>{
+    const a=total(aCats.get(c)??[])/100,b=total(bCats.get(c)??[])/100;
+    return {label:c,current:a,previous:b,previousScaled:comparable?b*k:b,...(comparable?{difference:a-b*k}:{}),status:(!comparable?'unknown':b===0&&a>0?'new':a===0&&b>0?'ceased':'existing') as 'new'|'ceased'|'existing'|'unknown'};
+  }).sort((a,b)=>comparable?Math.abs(b.difference!)-Math.abs(a.difference!)||a.label.localeCompare(b.label):b.current-a.current||a.label.localeCompare(b.label));
+  overview.sections=overviewSections(overview.facts);
   snapshot.overview=overview;snapshot.evidence.push(overview);
   const subjects = new Map<string,{label:string;kind:ReportObject['kind']|'category';a:LedgerRecord[];b:LedgerRecord[]}>();
   cats.forEach(c=>subjects.set(`category:${c}`,{label:c,kind:'category',a:aCats.get(c)??[],b:bCats.get(c)??[]}));
@@ -85,7 +101,7 @@ export function analyzeReport(files: ParsedLedgerFile[], preferences: ReportPref
     const smallA=a.n?s.a.filter(r=>r.cents<smallThreshold).length/a.n:0,smallB=b.n?s.b.filter(r=>r.cents<smallThreshold).length/b.n:0;
     const signal: Array<{kind:string;title:string;observation:string;weight:number}>=[];
     if(frequency||amount)signal.push({kind:'change',title:!b.n?`${s.label}在本期新增`:frequency?`${s.label}的记录频率${rate!>0?'增加':'减少'}`:`${s.label}的已记录金额${delta>0?'增加':'减少'}`,observation:!b.n?'上期没有这组记录，本期新增；尚不能认定长期习惯。':'金额变化同时受次数和平均每笔影响，应结合出现天数理解，不能直接判断商品涨价。',weight:20});
-    if(big)signal.push({kind:'big',title:`${s.label}${delta>0?'上涨':'下降'}主要集中在最贵的几笔`,observation:'两期各自最贵的三笔，其合计变化解释了金额变化的一半以上。其余支出可能有不同方向，不能推广到每一笔日常消费。',weight:40});
+    if(big)signal.push({kind:'big',title:`${s.label}${delta>0?'上涨':'下降'}主要集中在最贵的几笔`,observation:'两期各自最贵的三笔，合计差额达到总金额差额的一半以上。其余支出可能有不同方向，不能推广到每一笔日常消费。',weight:40});
     if(distribution&&amount&&a.mean>b.mean&&a.median<=b.median)signal.push({kind:'distribution',title:`${s.label}平均金额上升，典型单笔没有同步变贵`,observation:'平均每笔上升，中位数却没有上升，说明金额分布内部变化，不能把平均数上升理解为每笔都更贵。',weight:45});
     if(distribution&&amount&&a.mean<b.mean&&a.median>b.median)signal.push({kind:'distribution',title:`${s.label}平均金额下降，但典型单笔金额上升`,observation:'平均每笔下降，中位数却上升，较大付款减少可能掩盖典型付款金额的提高；仍不代表商品单价上涨。',weight:45});
     if(distribution&&Math.abs(smallA-smallB)>=T.shareDelta)signal.push({kind:'small',title:`${s.label}的小额记录占比改变`,observation:'按两期合并金额确定的小额档位，占比发生变化；总额可能掩盖金额分布变化。',weight:15});
@@ -101,12 +117,11 @@ export function analyzeReport(files: ParsedLedgerFile[], preferences: ReportPref
         if(!big&&Math.abs(residual)<1e-9&&total(s.a.filter(r=>!lead.a.some(l=>l.id===r.id)))===total(s.b.filter(r=>!lead.b.some(l=>l.id===r.id)))*k)subject=lead.key;
       }
     }
-    const facts={...comparisonFacts(s.a,s.b),...componentFacts,small_threshold:fact('小额档位上界（不含）',smallThreshold/100,'元'),current_small_share:fact('本期小额笔数占比',smallA*100,'%'),previous_small_share:fact('上期小额笔数占比',smallB*100,'%'),top3_current_n:fact('本期最大记录取样笔数',Math.min(T.topCount,a.n),'笔'),top3_previous_n:fact('上期最大记录取样笔数',Math.min(T.topCount,b.n),'笔'),top3_current_amount:fact('本期最贵三笔合计',total(top(s.a))/100,'元'),top3_previous_amount:fact('上期最贵三笔合计',total(top(s.b))/100,'元'),top3_difference:fact('最贵三笔合计差（已折算）',topDelta/100,'元'),...(big?{top3_contribution:fact('最贵三笔差额占变化比例',topDelta/delta*100,'%')}: {})};
-    if(distribution){const edges=[0,...[.25,.5,.75].map(p=>Math.round(quantile(combined,p)/T.binRoundCents)*T.binRoundCents),Infinity].filter((n,i,a)=>!i||n>a[i-1]);for(let i=0;i<edges.length-1;i++){const low=edges[i],high=edges[i+1],label=high===Infinity?`${low/100}元及以上`:`${low/100}～${high/100}元（不含上界）`;(facts as Record<string,ReportFact>)[`current_bin_${i}`]=fact(`本期${label}笔数`,s.a.filter(r=>r.cents>=low&&r.cents<high).length,'笔');(facts as Record<string,ReportFact>)[`previous_bin_${i}`]=fact(`上期${label}笔数`,s.b.filter(r=>r.cents>=low&&r.cents<high).length,'笔');}}
+    const facts={...comparisonFacts(s.a,s.b),...componentFacts,small_threshold:fact('小额档位上界（不含）',smallThreshold/100,'元'),current_small_share:fact('本期小额笔数占比',smallA*100,'%'),previous_small_share:fact('上期小额笔数占比',smallB*100,'%')};
     const ca=group(s.a,r=>r.category),cb=group(s.b,r=>r.category),cs=[...new Set([...ca.keys(),...cb.keys()])];
     const variation=cs.reduce((n,c)=>n+Math.abs((ca.get(c)?.length??0)/Math.max(1,a.n)-(cb.get(c)?.length??0)/Math.max(1,b.n)),0)/2;
     const categoryLimit=s.kind!=='category'&&variation>0?['同一用途的分类分布存在差异，跨分类合并统计；小样本不足以确认稳定的归类变化。']:[];
-    if(signal.length){signal.sort((x,y)=>y.weight-x.weight);const main=signal[0];add(subject,'comparison',main.title,main.observation,(main.weight+Math.min(20,(signal.length-1)*8))/65,[...s.a,...s.b],facts,[...limits,...categoryLimit],ranges,signal.slice(1).map(s=>({type:s.kind,title:s.title})));}
+    if(signal.length){signal.sort((x,y)=>y.weight-x.weight);const main=signal[0];add(subject,'comparison',main.title,main.observation,(main.weight+Math.min(20,(signal.length-1)*8))/65,[...s.a,...s.b],facts,[...limits,...categoryLimit],ranges,signal.slice(1).map(s=>({type:s.kind,title:s.title})),{kind:s.kind,label:s.label,accounting:preferences.scope});}
     if(s.kind!=='category'&&a.n&&b.n&&variation>=T.classificationShare&&variation*Math.min(a.n,b.n)>=T.classificationMinMoved)add(subject,'classification',`${s.label}的分类归属发生变化`,`本期记录在${[...ca.keys()].join('、')}，上期在${[...cb.keys()].join('、')}；两期分类分布有明显变化，需跨分类合并后理解实际消费变化。`,variation,[...s.a,...s.b],{...comparisonFacts(s.a,s.b),classification_variation:fact('分类分布变动幅度',variation*100,'%')},limits);
   }
   if(comparable){
@@ -183,7 +198,7 @@ export function analyzeReport(files: ParsedLedgerFile[], preferences: ReportPref
     const ids=recordSet(candidate),existing=merged.find(f=>{
       if(f.subject===candidate.subject||f.subject===aliases.get(candidate.subject))return true;
       const outlier=f.type==='outlier'?f:candidate.type==='outlier'?candidate:undefined,comparison=f.type==='comparison'?f:candidate.type==='comparison'?candidate:undefined;
-      if(outlier&&comparison){const outlierEvidence=evidenceById.get(outlier.id),comparisonEvidence=evidenceById.get(comparison.id);if(outlierEvidence&&comparisonEvidence?.facts.top3_contribution&&comparisonEvidence.recordIds.includes(outlierEvidence.recordIds[0]))return true;}
+      if(outlier&&comparison){const outlierEvidence=evidenceById.get(outlier.id),comparisonEvidence=evidenceById.get(comparison.id);if(outlierEvidence&&comparisonEvidence&&(comparisonEvidence.facts.top3_contribution?.value??0)>=T.topContribution*100&&comparisonEvidence.recordIds.includes(outlierEvidence.recordIds[0]))return true;}
       return f.evidenceIds.some(id=>{const type=id.split(':')[0];if(!(FAMILY[type]==='change'&&FAMILY[candidate.type]==='change')&&!(type===candidate.type&&FAMILY[type]==='time'))return false;const other=new Set(evidenceById.get(id)?.recordIds??[]),intersection=[...ids].filter(id=>other.has(id)).length;return intersection/Math.max(1,ids.size+other.size-intersection)>=T.dedupJaccard;});
     });
     if(!existing){merged.push({...candidate,evidenceIds:[...candidate.evidenceIds],limits:[...candidate.limits],signals:[...(candidate.signals??[])]});continue;}
@@ -205,6 +220,7 @@ export function analyzeReport(files: ParsedLedgerFile[], preferences: ReportPref
   snapshot.findings=merged.filter(f=>{if(FAMILY[f.type]==='change'&&hasTime){if(changeCount>=T.maxComparisonFamily)return false;changeCount++;}return true;}).slice(0,T.topFindings);
   if(hasTime&&!snapshot.findings.some(isTime)){const time=merged.find(isTime)!;let base=snapshot.findings.slice(0,T.topFindings-1);if(FAMILY[time.type]==='change'&&base.filter(f=>FAMILY[f.type]==='change').length>=T.maxComparisonFamily){const last=base.map(f=>FAMILY[f.type]).lastIndexOf('change');base=base.filter((_f,i)=>i!==last);}snapshot.findings=[...base,time].sort((a,b)=>b.score-a.score);}
   const used=new Set(['overview',...snapshot.findings.flatMap(f=>f.evidenceIds)]);snapshot.evidence=snapshot.evidence.filter(e=>used.has(e.id));
+  snapshot.evidence.forEach(e => { e.readings=evidenceReadings(e,comparable); });
   snapshot.fingerprint=reportHash(JSON.stringify({rule:REPORT_RULE_VERSION,thresholds:T,objectRules:rules.source,preferences,excludedCategories,periods,effectiveRange,previousRange,trimmedDates,stars:preferences.includeStarred?[]:[...starredIds].sort(),files:files.filter(f=>!f.date||(f.date>=allRange.start&&f.date<=periods.range.end)).map(f=>[f.path,f.date,f.frontmatterTotalCents,f.diagnostics,f.records.map(r=>[r.id,r.date,r.time,r.category,r.cents,r.note])]).sort((a,b)=>String(a[0]).localeCompare(String(b[0])))}));
   return snapshot;
 }

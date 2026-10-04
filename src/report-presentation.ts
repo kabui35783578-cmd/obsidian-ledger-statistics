@@ -10,8 +10,8 @@ function decimal(value: string, places: number): string {
 /** Presentation only: raw reports and local evidence retain their original values. */
 export function reportPlainLanguage(text: string): string {
   return text.replace(/基期/g, "上期")
-    .replace(/笔数变化的金额贡献（对称分解）|笔数贡献/g, "次数变化带来的影响")
-    .replace(/笔均变化的金额贡献（对称分解）|笔均贡献/g, "每笔金额变化带来的影响")
+    .replace(/笔数变化的金额贡献（对称分解）|笔数贡献|次数变化带来的影响/g, "笔数变化对应的分解差额")
+    .replace(/笔均变化的金额贡献（对称分解）|笔均贡献|每笔金额变化带来的影响/g, "平均每笔金额变化对应的分解差额")
     .replace(/头部大额记录/g, "最贵的几笔")
     .replace(/头部三笔|最大三笔/g, "最贵的三笔")
     .replace(/解释边界/g, "注意事项")
@@ -83,7 +83,7 @@ export function findingKeyNumbers(f: ReportFinding, evidence: ReportEvidence[]):
 }
 
 export function formatReportFact(key: string, f: ReportFact): { text: string; tone?: "increase" | "decrease" } {
-  const change = ["frequency_contribution", "ticket_contribution", "top3_difference", "increase", "decrease"].includes(key);
+  const change = ["frequency_contribution", "ticket_contribution", "top3_difference", "remaining_difference", "amount_difference", "category_difference", "increase", "decrease"].includes(key);
   const value = key === "decrease" ? -Math.abs(f.value) : f.value;
   const places = f.unit === "元" ? 2 : f.unit === "%" ? 1 : Number.isInteger(value) ? 0 : 2;
   const text = `${decimal(`${change && value > 0 ? "+" : ""}${value}`, places)}${f.unit}`;

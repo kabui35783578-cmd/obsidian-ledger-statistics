@@ -1,7 +1,7 @@
 import { Modal, Notice } from "obsidian";
 import type LedgerStatisticsPlugin from "./main";
 import { addDays, formatCents, isValidIsoDate, isoFromDate, LedgerRecord } from "./core";
-import { buildReportSnapshot, localSpendingReport, normalizeReportPreferences, reportDays, reportPeriods, ReportPreferences, ReportSnapshot, SpendingReport } from "./report";
+import { buildReportSnapshot, localSpendingReport, normalizeReportPreferences, reportDays, reportPeriods, ReportEvidence, ReportPreferences, ReportSnapshot, SpendingReport } from "./report";
 import { appendReportCache, findReportCache, reportConfiguration, requestSpendingReport } from "./report-ai";
 import { sharedRequestGate } from "./request-gate";
 import { createButton } from "./ui";
@@ -16,12 +16,41 @@ export class ReportEvidenceModal extends Modal {
     for (const e of entries) {
       const section = this.contentEl.createDiv({ cls: "ledger-report-evidence-section" });
       section.createEl("h3", { text: reportPlainLanguage(e.label) });
+      if (e.scope) section.createEl('p', {cls:'ledger-report-evidence-scope',text:`分析对象：${e.scope.kind==='all'?'全部筛选后支出':e.scope.label} · ${e.scope.accounting==='consumption'?'消费支出':'全部记账口径'}`});
       e.ranges.forEach(r => section.createEl("p", { cls: "ledger-report-muted", text: `${reportPlainLanguage(r.label)}：${r.range.start} 至 ${r.range.end}` }));
-      const list = section.createEl("dl", { cls: "ledger-report-facts" });
-      for (const [key, f] of Object.entries(e.facts)) {
-        const value = formatReportFact(key, f);
-        list.createEl("dt", { text: formatReportText(f.label) });
-        list.createEl("dd", { text: value.text, cls: value.tone ? `ledger-report-${value.tone}` : "" });
+      const p=this.snapshot.preferences;
+      if (p.category || p.keyword || !p.includeStarred) section.createEl('p',{cls:'ledger-report-muted',text:`筛选：${p.category||'全部分类'}${p.keyword?` · 关键词 ${p.keyword}`:''}${!p.includeStarred?' · 排除星标':''}`});
+      const caution=e.readings?.counter[0];
+      if(caution)section.createEl('p',{cls:'ledger-report-limit',text:`需同时考虑：${formatReportText(caution.text)}`});
+      const interpretation=(e.readings?.supporting.length||e.readings?.counter.length)?section.createEl('details',{cls:'ledger-report-evidence-group'}):undefined;
+      interpretation?.createEl('summary',{text:'解读线索：观察与相反信息'});
+      const readings = (label:string, items:NonNullable<ReportEvidence['readings']>['supporting']) => {
+        if (!items.length || !interpretation) return;
+        const group=interpretation.createDiv({cls:'ledger-report-readings'});group.createEl('h4',{text:label});
+        const list=group.createEl('ul');items.forEach(item=>list.createEl('li',{text:formatReportText(item.text)}));
+      };
+      readings('观察线索',e.readings?.supporting??[]);readings('需要同时考虑',e.readings?.counter??[]);
+      const facts = (parent:HTMLElement, keys:string[]) => {
+        const list=parent.createEl('dl',{cls:'ledger-report-facts'});
+        for(const key of keys){const f=e.facts[key];if(!f)continue;const value=formatReportFact(key,f);list.createEl('dt',{text:formatReportText(f.label)});list.createEl('dd',{text:value.text,cls:value.tone?`ledger-report-${value.tone}`:''});}
+      };
+      if(e.sections?.length){
+        const shown=new Set<string>();
+        e.sections.forEach(group=>{const details=section.createEl('details',{cls:'ledger-report-evidence-group'});details.open=group.expanded??false;details.createEl('summary',{text:group.label});facts(details,group.keys);group.keys.forEach(k=>shown.add(k));});
+        const rest=Object.keys(e.facts).filter(k=>!shown.has(k));if(rest.length)facts(section,rest);
+      }else facts(section,Object.keys(e.facts));
+      if(e.categories?.length){
+        const categories=section.createEl('details',{cls:'ledger-report-evidence-group ledger-report-categories'});
+        categories.createEl('summary',{text:`全部分类增减（${e.categories.length}类）`});
+        categories.createEl('p',{cls:'ledger-report-muted',text:this.snapshot.comparable?'按金额变化幅度排序；两期长度不同时，上期按观察日折算。新增只表示上期该类未记录金额。':'可比数据不足，仅列出已记录分类金额，不据此判断新增或增减。'});
+        e.categories.forEach(c=>{
+          const card=categories.createDiv({cls:'ledger-report-category'});card.createEl('h4',{text:c.label});
+          if(this.snapshot.comparable&&c.status!=='existing')card.createEl('p',{cls:'ledger-report-muted',text:c.status==='new'?'上期该分类未记录金额，本期有记录':'本期该分类未记录金额，上期有记录'});
+          const list=card.createEl('dl',{cls:'ledger-report-facts'});
+          const row=(key:string,label:string,value:number)=>{const formatted=formatReportFact(key,{label,value,unit:'元'});list.createEl('dt',{text:label});list.createEl('dd',{text:formatted.text,cls:formatted.tone?`ledger-report-${formatted.tone}`:''});};
+          row('current','本期已记录金额',c.current);row('previous','上期已记录金额',c.previous);
+          if(c.difference!==undefined){if(c.previousScaled!==c.previous)row('scaled','上期按观察日折算金额',c.previousScaled);row('category_difference','金额差额',c.difference);}
+        });
       }
       e.limits.forEach(t => section.createEl("p", { cls: "ledger-report-limit", text: formatReportText(t) }));
     }
@@ -188,18 +217,25 @@ export function renderReportArticle(parent: HTMLElement, report: SpendingReport,
     const b = createButton(article, "查看本期概况"); b.addClass("ledger-report-overview-citation");
     b.addEventListener("click", () => evidence([snapshot.overview!.id]));
   }
+  if(report.paragraphs.length)article.createEl('p',{cls:'ledger-report-reference-note',text:'引用按钮指向本地事实；报告的解释需结合观察与相反线索判断。'});
   report.paragraphs.forEach((p, i) => {
     const section = article.createEl("section");
     if (p.heading) section.createEl("h3", { text: formatReportText(p.heading).replace(/\*\*/g, "") });
     prose(section, p.text);
     const ids = p.evidenceIds.filter(id => snapshot.evidence.some(e => e.id === id));
-    if (!ids.length) return;
+    if (!ids.length) {
+      section.createEl('p',{cls:'ledger-report-reference-note',text:'本段未指定有效证据引用，可展开本地分析自行核对。'});
+      return;
+    }
+    const labels=[...new Set(ids.map(id=>{const e=snapshot.evidence.find(e=>e.id===id)!;return e.scope?.kind==='all'?'全部筛选后支出':e.scope?.label??e.label;}))];
+    section.createEl('p',{cls:'ledger-report-reference-note',text:`引用对象：${labels.join('、')}${p.evidenceIds.some(id=>!ids.includes(id))?' · 部分引用未对应到本地证据':''}`});
     const b = createButton(section, `查看依据 ${["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧"][i] ?? i + 1}`); b.addClass("ledger-report-citation");
     b.addEventListener("click", () => evidence(ids));
   });
   if ((!report.paragraphs.length || report.paragraphs.some(p => !p.evidenceIds.some(id => snapshot.evidence.some(e => e.id === id)))) && snapshot.findings.length) {
     const local = article.createEl("details", { cls: "ledger-report-quality" });
     local.createEl("summary", { text: "查看本地分析与证据" });
+    local.createEl('p',{text:'以下是独立计算的本地发现，供自行核对，不自动作为未指定引用段落的证明。'});
     snapshot.findings.forEach(f => {
       const b = createButton(local, formatReportText(f.title)); b.addClass("ledger-report-citation");
       b.addEventListener("click", () => evidence(f.evidenceIds));

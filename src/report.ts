@@ -5,7 +5,7 @@ export { trimTrailingGap } from "./report-analysis";
 import { findingKeyNumbers } from "./report-presentation";
 export { REPORT_THRESHOLDS, DEFAULT_REPORT_OBJECT_RULES, parseObjectRules } from "./report-config";
 
-export const REPORT_RULE_VERSION = "2";
+export const REPORT_RULE_VERSION = "3";
 export interface ReportPreferences {
   mode: "salary" | "month" | "custom";
   offset: number;
@@ -21,7 +21,12 @@ export interface ReportFact { label: string; value: number; unit: "元" | "笔" 
 export interface ReportEvidence {
   id: string; label: string; ranges: Array<{ label: string; range: DateRange }>;
   facts: Record<string, ReportFact>; recordIds: string[]; limits: string[];
+  scope?: { kind: "all" | "category" | "object" | "brand" | "mixed" | "note" | "multiple"; label: string; accounting: "consumption" | "all" };
+  readings?: { supporting: ReportReading[]; counter: ReportReading[] };
+  sections?: Array<{ label: string; keys: string[]; expanded?: boolean }>;
+  categories?: Array<{ label: string; current: number; previous: number; previousScaled: number; difference?: number; status: "new" | "ceased" | "existing" | "unknown" }>;
 }
+export interface ReportReading { text: string; factKeys: string[] }
 export interface ReportFinding {
   id: string; subject: string; type: string; title: string; observation: string;
   score: number; evidenceIds: string[]; limits: string[];

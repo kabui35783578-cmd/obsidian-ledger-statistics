@@ -7,7 +7,7 @@ const snap=(files,options={},p=prefs,date=now)=>R.buildReportSnapshot(files,p,da
 const regular=()=>ledgers('2026-07-13','2026-10-04',()=>[['饮品',800,'咖啡']]);
 
 test('rule version, threshold values and dictionary changes invalidate snapshots automatically',()=>{
- const f=regular(),s=snap(f);assert.equal(s.ruleVersion,'2');
+ const f=regular(),s=snap(f);assert.equal(s.ruleVersion,'3');
  assert.notEqual(s.fingerprint,snap(f,{thresholds:{countDelta:7}}).fingerprint);
  assert.notEqual(s.fingerprint,snap(f,{objectRules:'咖啡=咖啡\n打车=打车'}).fingerprint);
 });
