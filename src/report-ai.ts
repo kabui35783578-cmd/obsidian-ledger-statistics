@@ -1,5 +1,12 @@
 import { chatContent, FinanceAiConfig } from "./ai";
 import { RequestGate, sharedRequestGate } from "./request-gate";
+import { jsonrepair } from "jsonrepair";
+/*!
+ * jsonrepair 3.15.0 - The ISC License
+ * Copyright (c) 2020-2026 by Jos de Jong
+ * Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
+ * THE SOFTWARE IS PROVIDED "AS IS" AND ISC DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL ISC BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
 import { ReportCache, ReportFact, ReportSnapshot, SpendingReport, reportDays, reportHash } from "./report";
 
 export const REPORT_AI_PROFILE = `你在撰写个人消费分析报告，重点解释用户日常不容易察觉的规律、变化与其他可能解释，而不是逐项复述总额。
@@ -48,14 +55,35 @@ function responseIds(value: unknown): string[] {
   if (typeof value === "string") return [value];
   return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : [];
 }
-export function parseSpendingReport(text: string, snapshot: ReportSnapshot): SpendingReport {
+function unwrapReportJson(text: string): string {
+  const trimmed = text.trim().replace(/^\uFEFF/, "");
+  const fenced = trimmed.match(/(?:^|\n)\s*```(?:json)?\s*\n?([\s\S]*?)\n?\s*```(?:\s|$)/i);
+  return fenced ? fenced[1].trim() : trimmed.replace(/^```(?:json)?[ \t]*\r?\n?/i, "").replace(/\r?\n?```\s*$/, "");
+}
+function looksStructured(text: string): boolean {
+  const candidate = unwrapReportJson(text);
+  if (/^(?:\{|\[)/.test(candidate)) return true;
+  try {
+    const decoded: unknown = JSON.parse(candidate);
+    return typeof decoded === "string" && /^(?:\{|\[)/.test(unwrapReportJson(decoded));
+  } catch { return false; }
+}
+export function parseSpendingReport(text: string, snapshot: Pick<ReportSnapshot, "label" | "findings">): SpendingReport {
   const plain = (content: string): SpendingReport => ({
     title: snapshot.label, summary: "",
     paragraphs: [{ heading: "", text: content, findingIds: [], evidenceIds: [] }]
   });
-  let value: unknown;
-  try { value = JSON.parse(text.trim().replace(/^\x60\x60\x60(?:json)?\s*/i, "").replace(/\s*\x60\x60\x60$/, "")); }
-  catch { return plain(text); }
+  let value: unknown, candidate = unwrapReportJson(text);
+  for (let depth = 0; depth < 3; depth++) {
+    try { value = JSON.parse(candidate); }
+    catch {
+      if (!looksStructured(candidate)) return plain(text);
+      try { value = JSON.parse(jsonrepair(candidate)); }
+      catch { return plain(text); }
+    }
+    if (typeof value !== "string" || !looksStructured(value)) break;
+    candidate = unwrapReportJson(value);
+  }
   if (typeof value === "string") return plain(value);
   if (!value || typeof value !== "object") return plain(text);
   const data = value as Record<string, unknown>;
@@ -80,7 +108,16 @@ export function normalizeReportCaches(value: unknown): ReportCache[] {
   if (!Array.isArray(value)) return [];
   return value.filter((c): c is ReportCache => !!c && typeof c.fingerprint === "string" && typeof c.configuration === "string" && typeof c.generatedAt === "string"
     && c.report && typeof c.report.title === "string" && typeof c.report.summary === "string" && Array.isArray(c.report.paragraphs)
-    && c.report.paragraphs.every((p: Record<string, unknown>) => p && typeof p.heading === "string" && typeof p.text === "string" && Array.isArray(p.findingIds) && p.findingIds.every(id => typeof id === "string") && Array.isArray(p.evidenceIds) && p.evidenceIds.every(id => typeof id === "string"))).slice(-6);
+    && c.report.paragraphs.every((p: Record<string, unknown>) => p && typeof p.heading === "string" && typeof p.text === "string" && Array.isArray(p.findingIds) && p.findingIds.every(id => typeof id === "string") && Array.isArray(p.evidenceIds) && p.evidenceIds.every(id => typeof id === "string")))
+    .slice(-6).map(cache => {
+      const report = cache.report, p = report.paragraphs[0];
+      // Versions through 2.8.2 cached malformed JSON as one raw-text paragraph.
+      // Repair that presentation locally without losing cache identity or calling AI.
+      if (report.paragraphs.length === 1 && !report.summary && !p.heading && looksStructured(p.text)) {
+        return { ...cache, report: parseSpendingReport(p.text, { label: report.title, findings: [] }) };
+      }
+      return cache;
+    });
 }
 export function findReportCache(caches: ReportCache[], snapshot: ReportSnapshot, config: FinanceAiConfig): ReportCache | undefined {
   return caches.find(c => c.fingerprint === snapshot.fingerprint && c.configuration === reportConfiguration(config));

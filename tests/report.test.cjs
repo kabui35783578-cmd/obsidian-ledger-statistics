@@ -254,6 +254,45 @@ test('missing or unknown AI bindings retain prose and expose independently compu
   assert.ok(AI.findReportCache(AI.normalizeReportCaches([cache]), s, config));
 });
 
+test('unescaped quotes and literal newlines recover readable paragraphs without changing content', () => {
+  const s = snapshot(coffeeData()), response = goodResponse(s);
+  response.summary = '总额增长，不代表"每一笔都更贵"。';
+  response.paragraphs[0].text = '出现"更多消费日"。\n平均数与中位数表达不同含义。';
+  const malformed = JSON.stringify(response).replace(/\\"/g, '"').replace(/\\n/g, '\n');
+  assert.throws(() => JSON.parse(malformed));
+  const report = AI.parseSpendingReport(malformed, s);
+  assert.equal(report.title, response.title);
+  assert.equal(report.summary, response.summary);
+  assert.equal(report.paragraphs[0].text, response.paragraphs[0].text);
+  assert.deepEqual(report.paragraphs[0].evidenceIds, response.paragraphs[0].evidence_ids);
+});
+
+test('fenced and encoded report JSON is unwrapped, and truncated prose stays readable', () => {
+  const s = snapshot(coffeeData()), response = goodResponse(s), raw = JSON.stringify(response);
+  for(const text of [JSON.stringify(raw), JSON.stringify(JSON.stringify(raw)), `以下是报告：\n\`\`\`json\n${raw}\n\`\`\`\n以上是分析。`, `\`\`\`json\n${raw}`, raw.slice(0, -1)]) {
+    const report = AI.parseSpendingReport(text, s);
+    assert.equal(report.title, response.title);
+    assert.equal(report.paragraphs[0].text, response.paragraphs[0].text);
+  }
+  const partial = '{"title":"已返回的报告","paragraphs":[{"heading":"发现","text":"保留已返回的正文';
+  const report = AI.parseSpendingReport(partial, s);
+  assert.equal(report.paragraphs[0].text, '保留已返回的正文');
+  const unrecoverable = '{ invalid ::: response }';
+  assert.equal(AI.parseSpendingReport(unrecoverable, s).paragraphs[0].text, unrecoverable);
+});
+
+test('cached raw JSON reports repair locally without losing date, identity, paragraphs or evidence', () => {
+  const s = snapshot(coffeeData()), response = goodResponse(s);
+  response.paragraphs[0].text = '较大记录拉高"平均数"，不改变其他事实。';
+  const raw = JSON.stringify(response).replace(/\\"/g, '"');
+  const old = {fingerprint:s.fingerprint,configuration:'same-config',generatedAt:'2026-10-04T02:42:13.073Z',report:{title:s.label,summary:'',paragraphs:[{heading:'',text:raw,findingIds:[],evidenceIds:[]}]}};
+  const repaired = AI.normalizeReportCaches([old])[0];
+  assert.equal(repaired.generatedAt, old.generatedAt); assert.equal(repaired.fingerprint, old.fingerprint); assert.equal(repaired.configuration, old.configuration);
+  assert.equal(repaired.report.paragraphs[0].text, response.paragraphs[0].text);
+  assert.deepEqual(repaired.report.paragraphs[0].evidenceIds, response.paragraphs[0].evidence_ids);
+  assert.deepEqual(AI.normalizeReportCaches([repaired]), [repaired]);
+});
+
 test('manual AI request shares transport gate, preserves timeout lock and permits no local findings', async () => {
   const s = snapshot(coffeeData()), config = { endpoint: 'https://example.test/v1', model: 'mock', apiKey: '' };
   global.__ledgerTestRequest = () => ({ status: 200, json: { choices: [{ message: { content: JSON.stringify(goodResponse(s)) } }] } });

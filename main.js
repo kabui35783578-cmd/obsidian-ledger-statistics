@@ -2617,6 +2617,768 @@ function withDailyInsight(snapshot, files, now, options) {
 // src/report-ui.ts
 var import_obsidian6 = require("obsidian");
 
+// node_modules/jsonrepair/lib/esm/utils/JSONRepairError.js
+var JSONRepairError = class extends Error {
+  constructor(message, position) {
+    super(`${message} at position ${position}`);
+    this.position = position;
+  }
+};
+
+// node_modules/jsonrepair/lib/esm/utils/stringUtils.js
+var codeSpace = 32;
+var codeNewline = 10;
+var codeTab = 9;
+var codeReturn = 13;
+var codeNonBreakingSpace = 160;
+var codeMongolianVowelSeparator = 6158;
+var codeEnQuad = 8192;
+var codeZeroWidthSpace = 8203;
+var codeNarrowNoBreakSpace = 8239;
+var codeMediumMathematicalSpace = 8287;
+var codeIdeographicSpace = 12288;
+var codeZeroWidthNoBreakSpace = 65279;
+function isHex(char) {
+  return /^[0-9A-Fa-f]$/.test(char);
+}
+function isDigit(char) {
+  return char >= "0" && char <= "9";
+}
+function isValidStringCharacter(char) {
+  return char >= " ";
+}
+function isDelimiter(char) {
+  return ",:[]/{}()\n+".includes(char);
+}
+function isFunctionNameCharStart(char) {
+  return char >= "a" && char <= "z" || char >= "A" && char <= "Z" || char === "_" || char === "$";
+}
+function isFunctionNameChar(char) {
+  return char >= "a" && char <= "z" || char >= "A" && char <= "Z" || char === "_" || char === "$" || char >= "0" && char <= "9";
+}
+var regexUrlStart = /^(http|https|ftp|mailto|file|data|irc):\/\/$/;
+var regexUrlChar = /^[A-Za-z0-9-._~:/?#@!$&'()*+;=]$/;
+function isUnquotedStringDelimiter(char) {
+  return ",[]/{}\n+".includes(char);
+}
+function isStartOfValue(char) {
+  return isQuote(char) || regexStartOfValue.test(char);
+}
+var regexStartOfValue = /^[[{\w-]$/;
+function isControlCharacter(char) {
+  return char === "\n" || char === "\r" || char === "	" || char === "\b" || char === "\f";
+}
+function isWhitespace(text, index) {
+  const code = text.charCodeAt(index);
+  return code === codeSpace || code === codeNewline || code === codeTab || code === codeReturn;
+}
+function isWhitespaceExceptNewline(text, index) {
+  const code = text.charCodeAt(index);
+  return code === codeSpace || code === codeTab || code === codeReturn;
+}
+function isSpecialWhitespace(text, index) {
+  const code = text.charCodeAt(index);
+  return code === codeNonBreakingSpace || code === codeMongolianVowelSeparator || code >= codeEnQuad && code <= codeZeroWidthSpace || code === codeNarrowNoBreakSpace || code === codeMediumMathematicalSpace || code === codeIdeographicSpace || code === codeZeroWidthNoBreakSpace;
+}
+function isQuote(char) {
+  return isDoubleQuoteLike(char) || isSingleQuoteLike(char);
+}
+function isDoubleQuoteLike(char) {
+  return char === '"' || char === "\u201C" || char === "\u201D";
+}
+function isDoubleQuote(char) {
+  return char === '"';
+}
+function isSingleQuoteLike(char) {
+  return char === "'" || char === "\u2018" || char === "\u2019" || char === "`" || char === "\xB4";
+}
+function isSingleQuote(char) {
+  return char === "'";
+}
+function stripLastOccurrence(text, textToStrip) {
+  let stripRemainingText = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : false;
+  const index = text.lastIndexOf(textToStrip);
+  return index !== -1 ? text.substring(0, index) + (stripRemainingText ? "" : text.substring(index + 1)) : text;
+}
+function insertBeforeLastWhitespace(text, textToInsert) {
+  let index = text.length;
+  if (!isWhitespace(text, index - 1)) {
+    return text + textToInsert;
+  }
+  while (isWhitespace(text, index - 1)) {
+    index--;
+  }
+  return text.substring(0, index) + textToInsert + text.substring(index);
+}
+function removeAtIndex(text, start, count) {
+  return text.substring(0, start) + text.substring(start + count);
+}
+function endsWithCommaOrNewline(text) {
+  return /[,\n][ \t\r]*$/.test(text);
+}
+var namedHtmlEntities = {
+  "&quot;": '"',
+  "&amp;": "&",
+  "&lt;": "<",
+  "&gt;": ">",
+  "&apos;": "'"
+};
+var maxHtmlEntityLength = 12;
+function matchHtmlEntity(fragment) {
+  if (fragment.charAt(0) !== "&") {
+    return null;
+  }
+  const semicolon = fragment.indexOf(";");
+  if (semicolon === -1) {
+    return null;
+  }
+  const entity = fragment.substring(0, semicolon + 1);
+  const named = namedHtmlEntities[entity];
+  if (named !== void 0) {
+    return {
+      char: named,
+      length: entity.length
+    };
+  }
+  if (fragment.charAt(1) === "#") {
+    const body = fragment.substring(2, semicolon);
+    const hex = body.charAt(0) === "x" || body.charAt(0) === "X";
+    const digits = hex ? body.substring(1) : body;
+    if (digits.length > 0) {
+      const code = Number.parseInt(digits, hex ? 16 : 10);
+      if (!Number.isNaN(code) && code >= 0 && code <= 1114111) {
+        return {
+          char: String.fromCodePoint(code),
+          length: entity.length
+        };
+      }
+    }
+  }
+  return null;
+}
+function isDoubleQuoteEntity(match) {
+  return match !== null && match.char === '"';
+}
+function isSingleQuoteEntity(match) {
+  return match !== null && match.char === "'";
+}
+function countOccurrences(text, char) {
+  let count = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text.charAt(i) === char) {
+      count++;
+    }
+  }
+  return count;
+}
+function isInsideUnclosedBracket(text, closeChar) {
+  switch (closeChar) {
+    case ")":
+      return countOccurrences(text, "(") > countOccurrences(text, ")");
+    case "]":
+      return countOccurrences(text, "[") > countOccurrences(text, "]");
+    case "}":
+      return countOccurrences(text, "{") > countOccurrences(text, "}");
+    default:
+      return false;
+  }
+}
+
+// node_modules/jsonrepair/lib/esm/regular/jsonrepair.js
+var controlCharacters = {
+  "\b": "\\b",
+  "\f": "\\f",
+  "\n": "\\n",
+  "\r": "\\r",
+  "	": "\\t"
+};
+var escapeCharacters = {
+  '"': '"',
+  "\\": "\\",
+  "/": "/",
+  b: "\b",
+  f: "\f",
+  n: "\n",
+  r: "\r",
+  t: "	"
+  // note that \u is handled separately in parseString()
+};
+function jsonrepair(text) {
+  let i = 0;
+  let output = "";
+  parseMarkdownCodeBlock(["```", "[```", "{```"]);
+  const processed = parseValue();
+  if (!processed) {
+    throwUnexpectedEnd();
+  }
+  parseMarkdownCodeBlock(["```", "```]", "```}"]);
+  const processedComma = parseCharacter(",");
+  if (processedComma) {
+    parseWhitespaceAndSkipComments();
+  }
+  if (isStartOfValue(text[i]) && endsWithCommaOrNewline(output)) {
+    if (!processedComma) {
+      output = insertBeforeLastWhitespace(output, ",");
+    }
+    parseNewlineDelimitedJSON();
+  } else if (processedComma) {
+    output = stripLastOccurrence(output, ",");
+  }
+  while (text[i] === "}" || text[i] === "]") {
+    i++;
+    parseWhitespaceAndSkipComments();
+  }
+  if (i >= text.length) {
+    return output;
+  }
+  throwUnexpectedCharacter();
+  function parseValue() {
+    parseWhitespaceAndSkipComments();
+    const processed2 = parseObject() || parseArray() || parseString() || parseNumber() || parseKeywords() || parseUnquotedString(false) || parseRegex();
+    parseWhitespaceAndSkipComments();
+    return processed2;
+  }
+  function parseWhitespaceAndSkipComments() {
+    let skipNewline = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : true;
+    const start = i;
+    let changed = parseWhitespace(skipNewline);
+    do {
+      changed = parseComment();
+      if (changed) {
+        changed = parseWhitespace(skipNewline);
+      }
+    } while (changed);
+    return i > start;
+  }
+  function parseWhitespace(skipNewline) {
+    const _isWhiteSpace = skipNewline ? isWhitespace : isWhitespaceExceptNewline;
+    let whitespace = "";
+    while (true) {
+      if (_isWhiteSpace(text, i)) {
+        whitespace += text[i];
+        i++;
+      } else if (isSpecialWhitespace(text, i)) {
+        whitespace += " ";
+        i++;
+      } else {
+        break;
+      }
+    }
+    if (whitespace.length > 0) {
+      output += whitespace;
+      return true;
+    }
+    return false;
+  }
+  function parseComment() {
+    if (text[i] === "/" && text[i + 1] === "*") {
+      while (i < text.length && !atEndOfBlockComment(text, i)) {
+        i++;
+      }
+      i += 2;
+      return true;
+    }
+    if (text[i] === "/" && text[i + 1] === "/") {
+      while (i < text.length && text[i] !== "\n") {
+        i++;
+      }
+      return true;
+    }
+    return false;
+  }
+  function parseMarkdownCodeBlock(blocks) {
+    if (skipMarkdownCodeBlock(blocks)) {
+      if (isFunctionNameCharStart(text[i])) {
+        while (i < text.length && isFunctionNameChar(text[i])) {
+          i++;
+        }
+      }
+      parseWhitespaceAndSkipComments();
+      return true;
+    }
+    return false;
+  }
+  function skipMarkdownCodeBlock(blocks) {
+    parseWhitespace(true);
+    for (const block of blocks) {
+      const end = i + block.length;
+      if (text.slice(i, end) === block) {
+        i = end;
+        return true;
+      }
+    }
+    return false;
+  }
+  function parseCharacter(char) {
+    if (text[i] === char) {
+      output += text[i];
+      i++;
+      return true;
+    }
+    return false;
+  }
+  function skipCharacter(char) {
+    if (text[i] === char) {
+      i++;
+      return true;
+    }
+    return false;
+  }
+  function skipEscapeCharacter() {
+    return skipCharacter("\\");
+  }
+  function skipEllipsis() {
+    parseWhitespaceAndSkipComments();
+    if (text[i] === "." && text[i + 1] === "." && text[i + 2] === ".") {
+      i += 3;
+      parseWhitespaceAndSkipComments();
+      skipCharacter(",");
+      return true;
+    }
+    return false;
+  }
+  function parseObject() {
+    if (text[i] === "{") {
+      output += "{";
+      i++;
+      parseWhitespaceAndSkipComments();
+      if (skipCharacter(",")) {
+        parseWhitespaceAndSkipComments();
+      }
+      let initial = true;
+      while (i < text.length && text[i] !== "}") {
+        let processedComma2;
+        if (!initial) {
+          processedComma2 = parseCharacter(",");
+          if (!processedComma2) {
+            output = insertBeforeLastWhitespace(output, ",");
+          }
+          parseWhitespaceAndSkipComments();
+        } else {
+          processedComma2 = true;
+        }
+        skipEllipsis();
+        const processedKey = parseString() || parseUnquotedString(true);
+        if (!processedKey) {
+          if (text[i] === "}" || text[i] === "{" || text[i] === "]" || text[i] === "[" || text[i] === void 0) {
+            if (!initial) {
+              output = stripLastOccurrence(output, ",");
+            }
+          } else {
+            throwObjectKeyExpected();
+          }
+          break;
+        }
+        parseWhitespaceAndSkipComments();
+        const processedColon = parseCharacter(":");
+        const truncatedText = i >= text.length;
+        if (!processedColon) {
+          if (isStartOfValue(text[i]) || truncatedText) {
+            output = insertBeforeLastWhitespace(output, ":");
+          } else {
+            throwColonExpected();
+          }
+        }
+        const processedValue = parseValue();
+        if (!processedValue) {
+          if (processedColon || truncatedText) {
+            output += "null";
+          } else {
+            throwColonExpected();
+          }
+        }
+        initial = false;
+      }
+      if (text[i] === "}") {
+        output += "}";
+        i++;
+      } else {
+        output = insertBeforeLastWhitespace(output, "}");
+      }
+      return true;
+    }
+    return false;
+  }
+  function parseArray() {
+    if (text[i] === "[") {
+      output += "[";
+      i++;
+      parseWhitespaceAndSkipComments();
+      if (skipCharacter(",")) {
+        parseWhitespaceAndSkipComments();
+      }
+      let initial = true;
+      while (i < text.length && text[i] !== "]") {
+        if (!initial) {
+          const processedComma2 = parseCharacter(",");
+          if (!processedComma2) {
+            output = insertBeforeLastWhitespace(output, ",");
+          }
+        }
+        skipEllipsis();
+        const processedValue = parseValue();
+        if (!processedValue) {
+          if (!initial) {
+            output = stripLastOccurrence(output, ",");
+          }
+          break;
+        }
+        initial = false;
+      }
+      if (text[i] === "]") {
+        output += "]";
+        i++;
+      } else {
+        output = insertBeforeLastWhitespace(output, "]");
+      }
+      return true;
+    }
+    return false;
+  }
+  function parseNewlineDelimitedJSON() {
+    let initial = true;
+    let processedValue = true;
+    while (processedValue) {
+      if (!initial) {
+        const processedComma2 = parseCharacter(",");
+        if (!processedComma2) {
+          output = insertBeforeLastWhitespace(output, ",");
+        }
+      } else {
+        initial = false;
+      }
+      processedValue = parseValue();
+    }
+    if (!processedValue) {
+      output = stripLastOccurrence(output, ",");
+    }
+    output = `[
+${output}
+]`;
+  }
+  function parseString() {
+    let stopAtDelimiter = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : false;
+    let stopAtIndex = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : -1;
+    const skipEscapeChars = text[i] === "\\";
+    if (skipEscapeChars) {
+      i++;
+      if (!isQuote(text[i])) {
+        throwUnexpectedCharacter();
+      }
+    }
+    const openEntity = text[i] === "&" ? matchHtmlEntity(text.slice(i, i + maxHtmlEntityLength)) : null;
+    const openedByEntity = isDoubleQuoteEntity(openEntity) || isSingleQuoteEntity(openEntity);
+    if (isQuote(text[i]) || openedByEntity) {
+      const isEndQuote = isDoubleQuote(text[i]) ? isDoubleQuote : isSingleQuote(text[i]) ? isSingleQuote : isSingleQuoteLike(text[i]) ? isSingleQuoteLike : isDoubleQuoteLike;
+      const iBefore = i;
+      const oBefore = output.length;
+      let str = '"';
+      i += openedByEntity && openEntity ? openEntity.length : 1;
+      while (true) {
+        if (i >= text.length) {
+          const iPrev = prevNonWhitespaceIndex(i - 1);
+          if (!stopAtDelimiter && isDelimiter(text.charAt(iPrev))) {
+            i = iBefore;
+            output = output.substring(0, oBefore);
+            return parseString(true);
+          }
+          str = insertBeforeLastWhitespace(str, '"');
+          output += str;
+          return true;
+        }
+        if (i === stopAtIndex) {
+          str = insertBeforeLastWhitespace(str, '"');
+          output += str;
+          return true;
+        }
+        const entity = openedByEntity && text[i] === "&" ? matchHtmlEntity(text.slice(i, i + maxHtmlEntityLength)) : null;
+        const isEnd = entity && openEntity ? entity.char === openEntity.char : isEndQuote(text[i]);
+        if (isEnd) {
+          const iQuote = i;
+          const oQuote = str.length;
+          str += '"';
+          i += entity ? entity.length : 1;
+          output += str;
+          parseWhitespaceAndSkipComments(false);
+          if (stopAtDelimiter || i >= text.length || isDelimiter(text[i]) && // only count the brackets inside the string when actually needed,
+          // i.e. when the quote is directly followed by a closing bracket
+          !isInsideUnclosedBracket(str, text[i]) || isQuote(text[i]) && !nextQuoteIsEndQuote(i) || isDigit(text[i])) {
+            parseConcatenatedString();
+            return true;
+          }
+          if (text[i] === "\\") {
+            throwUnexpectedCharacter();
+          }
+          const iPrevChar = prevNonWhitespaceIndex(iQuote - 1);
+          const prevChar = text.charAt(iPrevChar);
+          if (prevChar === ",") {
+            i = iBefore;
+            output = output.substring(0, oBefore);
+            return parseString(false, iPrevChar);
+          }
+          if (isDelimiter(prevChar)) {
+            i = iBefore;
+            output = output.substring(0, oBefore);
+            return parseString(true);
+          }
+          output = output.substring(0, oBefore);
+          i = iQuote + (entity ? entity.length : 1);
+          str = `${str.substring(0, oQuote)}\\${str.substring(oQuote)}`;
+        } else if (stopAtDelimiter && isUnquotedStringDelimiter(text[i])) {
+          if (text[i - 1] === ":" && regexUrlStart.test(text.substring(iBefore + 1, i + 2))) {
+            while (i < text.length && regexUrlChar.test(text[i])) {
+              str += text[i];
+              i++;
+            }
+          }
+          str = insertBeforeLastWhitespace(str, '"');
+          output += str;
+          parseConcatenatedString();
+          return true;
+        } else if (entity) {
+          const char = entity.char;
+          if (char === '"') {
+            str += '\\"';
+          } else if (isControlCharacter(char)) {
+            str += controlCharacters[char];
+          } else {
+            str += char;
+          }
+          i += entity.length;
+        } else if (text[i] === "\\") {
+          const char = text.charAt(i + 1);
+          const escapeChar = escapeCharacters[char];
+          if (escapeChar !== void 0) {
+            str += text.slice(i, i + 2);
+            i += 2;
+          } else if (char === "u") {
+            let j = 2;
+            while (j < 6 && isHex(text[i + j])) {
+              j++;
+            }
+            if (j === 6) {
+              str += text.slice(i, i + 6);
+              i += 6;
+            } else if (i + j >= text.length) {
+              i = text.length;
+            } else {
+              throwInvalidUnicodeCharacter();
+            }
+          } else if (char === "\n") {
+            str += "\\n";
+            i += 2;
+          } else {
+            str += char;
+            i += 2;
+          }
+        } else {
+          const char = text.charAt(i);
+          if (char === '"' && text[i - 1] !== "\\") {
+            str += `\\${char}`;
+            i++;
+          } else if (isControlCharacter(char)) {
+            str += controlCharacters[char];
+            i++;
+          } else {
+            if (!isValidStringCharacter(char)) {
+              throwInvalidCharacter(char);
+            }
+            str += char;
+            i++;
+          }
+        }
+        if (skipEscapeChars) {
+          skipEscapeCharacter();
+        }
+      }
+    }
+    return false;
+  }
+  function parseConcatenatedString() {
+    let processed2 = false;
+    parseWhitespaceAndSkipComments();
+    while (text[i] === "+") {
+      processed2 = true;
+      i++;
+      parseWhitespaceAndSkipComments();
+      output = stripLastOccurrence(output, '"', true);
+      const start = output.length;
+      const parsedStr = parseString();
+      if (parsedStr) {
+        output = removeAtIndex(output, start, 1);
+      } else {
+        output = insertBeforeLastWhitespace(output, '"');
+      }
+    }
+    return processed2;
+  }
+  function parseNumber() {
+    const start = i;
+    let num = "";
+    let invalid = false;
+    if (text[i] === "-") {
+      num += text[i];
+      i++;
+      if (!isDigit(text[i]) && atEndOfNumber()) {
+        num += "0";
+      }
+    }
+    if (text[i] === "0" && isDigit(text[i + 1])) {
+      invalid = true;
+    }
+    while (isDigit(text[i])) {
+      num += text[i];
+      i++;
+    }
+    if (text[i] === ".") {
+      if (num === "" || num === "-") {
+        num += "0";
+      }
+      num += text[i];
+      i++;
+      if (!isDigit(text[i])) {
+        num += "0";
+      }
+      while (isDigit(text[i])) {
+        num += text[i];
+        i++;
+      }
+    }
+    if (i > start) {
+      if (text[i] === "e" || text[i] === "E") {
+        if (num === "-") {
+          invalid = true;
+        }
+        num += text[i];
+        i++;
+        if (text[i] === "-" || text[i] === "+") {
+          num += text[i];
+          i++;
+        }
+        if (!isDigit(text[i])) {
+          num += "0";
+        }
+        while (isDigit(text[i])) {
+          num += text[i];
+          i++;
+        }
+      }
+      if (!atEndOfNumber()) {
+        i = start;
+        return false;
+      }
+      output += invalid ? `"${text.substring(start, i)}"` : num;
+      return true;
+    }
+    return false;
+  }
+  function parseKeywords() {
+    return parseKeyword("true", "true") || parseKeyword("false", "false") || parseKeyword("null", "null") || // repair Python keywords True, False, None
+    parseKeyword("True", "true") || parseKeyword("False", "false") || parseKeyword("None", "null");
+  }
+  function parseKeyword(name, value) {
+    if (text.slice(i, i + name.length) === name && !isFunctionNameChar(text[i + name.length])) {
+      output += value;
+      i += name.length;
+      return true;
+    }
+    return false;
+  }
+  function parseUnquotedString(isKey) {
+    const start = i;
+    if (isFunctionNameCharStart(text[i])) {
+      while (i < text.length && isFunctionNameChar(text[i])) {
+        i++;
+      }
+      let j = i;
+      while (isWhitespace(text, j)) {
+        j++;
+      }
+      if (text[j] === "(") {
+        i = j + 1;
+        parseValue();
+        if (text[i] === ")") {
+          i++;
+          if (text[i] === ";") {
+            i++;
+          }
+        }
+        return true;
+      }
+    }
+    while (i < text.length && !isUnquotedStringDelimiter(text[i]) && !isQuote(text[i]) && (!isKey || text[i] !== ":")) {
+      i++;
+    }
+    if (text[i - 1] === ":" && regexUrlStart.test(text.substring(start, i + 2))) {
+      while (i < text.length && regexUrlChar.test(text[i])) {
+        i++;
+      }
+    }
+    if (i > start) {
+      while (isWhitespace(text, i - 1) && i > 0) {
+        i--;
+      }
+      const symbol = text.slice(start, i);
+      output += symbol === "undefined" ? "null" : JSON.stringify(symbol);
+      if (text[i] === '"') {
+        i++;
+      }
+      return true;
+    }
+  }
+  function parseRegex() {
+    if (text[i] === "/") {
+      const start = i;
+      i++;
+      while (i < text.length && (text[i] !== "/" || text[i - 1] === "\\")) {
+        i++;
+      }
+      i++;
+      output += JSON.stringify(text.substring(start, i));
+      return true;
+    }
+  }
+  function prevNonWhitespaceIndex(start) {
+    let prev = start;
+    while (prev > 0 && isWhitespace(text, prev)) {
+      prev--;
+    }
+    return prev;
+  }
+  function nextQuoteIsEndQuote(index) {
+    let next = index + 1;
+    while (next < text.length && isWhitespace(text, next)) {
+      next++;
+    }
+    return next >= text.length || isDelimiter(text[next]);
+  }
+  function atEndOfNumber() {
+    return i >= text.length || isDelimiter(text[i]) || isWhitespace(text, i);
+  }
+  function throwInvalidCharacter(char) {
+    throw new JSONRepairError(`Invalid character ${JSON.stringify(char)}`, i);
+  }
+  function throwUnexpectedCharacter() {
+    throw new JSONRepairError(`Unexpected character ${JSON.stringify(text[i])}`, i);
+  }
+  function throwUnexpectedEnd() {
+    throw new JSONRepairError("Unexpected end of json string", text.length);
+  }
+  function throwObjectKeyExpected() {
+    throw new JSONRepairError("Object key expected", i);
+  }
+  function throwColonExpected() {
+    throw new JSONRepairError("Colon expected", i);
+  }
+  function throwInvalidUnicodeCharacter() {
+    const chars = text.slice(i, i + 6);
+    throw new JSONRepairError(`Invalid unicode character "${chars}"`, i);
+  }
+}
+function atEndOfBlockComment(text, i) {
+  return text[i] === "*" && text[i + 1] === "/";
+}
+
 // src/report-ai.ts
 var REPORT_AI_PROFILE = `\u4F60\u5728\u64B0\u5199\u4E2A\u4EBA\u6D88\u8D39\u5206\u6790\u62A5\u544A\uFF0C\u91CD\u70B9\u89E3\u91CA\u7528\u6237\u65E5\u5E38\u4E0D\u5BB9\u6613\u5BDF\u89C9\u7684\u89C4\u5F8B\u3001\u53D8\u5316\u4E0E\u5176\u4ED6\u53EF\u80FD\u89E3\u91CA\uFF0C\u800C\u4E0D\u662F\u9010\u9879\u590D\u8FF0\u603B\u989D\u3002
 \u7A0B\u5E8F\u63D0\u4F9B\u5DF2\u8BA1\u7B97\u7684\u6C47\u603B\u3001\u6BD4\u8F83\u671F\u95F4\u3001\u5019\u9009\u53D1\u73B0\u548C\u53EF\u6838\u5BF9\u7684\u672C\u5730\u8BC1\u636E\u3002\u5019\u9009\u53D1\u73B0\u662F\u5206\u6790\u7EBF\u7D22\uFF0C\u4F60\u53EF\u4EE5\u7ED3\u5408\u8FD9\u4E9B\u4E8B\u5B9E\u8FDB\u4E00\u6B65\u7EC4\u7EC7\u81EA\u5DF1\u7684\u5206\u6790\u3001\u8BA1\u7B97\u5DEE\u989D\u6216\u6BD4\u4F8B\uFF0C\u4F7F\u7528\u81EA\u7136\u8868\u8FBE\u548C\u6982\u6570\u3002\u533A\u5206\u5DF2\u8BB0\u5F55\u4E8B\u5B9E\u4E0E\u539F\u56E0\u63A8\u6D4B\uFF0C\u6CE8\u610F\u8F93\u5165\u7684\u6570\u636E\u7F3A\u5931\u548C\u89E3\u91CA\u9650\u5236\u3002\u7BC7\u5E45\u4EE5\u8BB2\u6E05\u695A\u73B0\u8C61\u4E3A\u51C6\u3002
@@ -2675,6 +3437,21 @@ function responseIds(value) {
   if (typeof value === "string") return [value];
   return Array.isArray(value) ? value.filter((id) => typeof id === "string") : [];
 }
+function unwrapReportJson(text) {
+  const trimmed = text.trim().replace(/^\uFEFF/, "");
+  const fenced = trimmed.match(/(?:^|\n)\s*```(?:json)?\s*\n?([\s\S]*?)\n?\s*```(?:\s|$)/i);
+  return fenced ? fenced[1].trim() : trimmed.replace(/^```(?:json)?[ \t]*\r?\n?/i, "").replace(/\r?\n?```\s*$/, "");
+}
+function looksStructured(text) {
+  const candidate = unwrapReportJson(text);
+  if (/^(?:\{|\[)/.test(candidate)) return true;
+  try {
+    const decoded = JSON.parse(candidate);
+    return typeof decoded === "string" && /^(?:\{|\[)/.test(unwrapReportJson(decoded));
+  } catch (e) {
+    return false;
+  }
+}
 function parseSpendingReport(text, snapshot) {
   var _a, _b, _c, _d;
   const plain = (content) => ({
@@ -2682,11 +3459,20 @@ function parseSpendingReport(text, snapshot) {
     summary: "",
     paragraphs: [{ heading: "", text: content, findingIds: [], evidenceIds: [] }]
   });
-  let value;
-  try {
-    value = JSON.parse(text.trim().replace(/^\x60\x60\x60(?:json)?\s*/i, "").replace(/\s*\x60\x60\x60$/, ""));
-  } catch (e) {
-    return plain(text);
+  let value, candidate = unwrapReportJson(text);
+  for (let depth = 0; depth < 3; depth++) {
+    try {
+      value = JSON.parse(candidate);
+    } catch (e) {
+      if (!looksStructured(candidate)) return plain(text);
+      try {
+        value = JSON.parse(jsonrepair(candidate));
+      } catch (e2) {
+        return plain(text);
+      }
+    }
+    if (typeof value !== "string" || !looksStructured(value)) break;
+    candidate = unwrapReportJson(value);
   }
   if (typeof value === "string") return plain(value);
   if (!value || typeof value !== "object") return plain(text);
@@ -2709,7 +3495,13 @@ function parseSpendingReport(text, snapshot) {
 }
 function normalizeReportCaches(value) {
   if (!Array.isArray(value)) return [];
-  return value.filter((c) => !!c && typeof c.fingerprint === "string" && typeof c.configuration === "string" && typeof c.generatedAt === "string" && c.report && typeof c.report.title === "string" && typeof c.report.summary === "string" && Array.isArray(c.report.paragraphs) && c.report.paragraphs.every((p) => p && typeof p.heading === "string" && typeof p.text === "string" && Array.isArray(p.findingIds) && p.findingIds.every((id) => typeof id === "string") && Array.isArray(p.evidenceIds) && p.evidenceIds.every((id) => typeof id === "string"))).slice(-6);
+  return value.filter((c) => !!c && typeof c.fingerprint === "string" && typeof c.configuration === "string" && typeof c.generatedAt === "string" && c.report && typeof c.report.title === "string" && typeof c.report.summary === "string" && Array.isArray(c.report.paragraphs) && c.report.paragraphs.every((p) => p && typeof p.heading === "string" && typeof p.text === "string" && Array.isArray(p.findingIds) && p.findingIds.every((id) => typeof id === "string") && Array.isArray(p.evidenceIds) && p.evidenceIds.every((id) => typeof id === "string"))).slice(-6).map((cache) => {
+    const report = cache.report, p = report.paragraphs[0];
+    if (report.paragraphs.length === 1 && !report.summary && !p.heading && looksStructured(p.text)) {
+      return { ...cache, report: parseSpendingReport(p.text, { label: report.title, findings: [] }) };
+    }
+    return cache;
+  });
 }
 function findReportCache(caches, snapshot, config) {
   return caches.find((c) => c.fingerprint === snapshot.fingerprint && c.configuration === reportConfiguration(config));
@@ -5254,3 +6046,9 @@ var LedgerStatisticsPlugin = class extends import_obsidian8.Plugin {
     }
   }
 };
+/*!
+ * jsonrepair 3.15.0 - The ISC License
+ * Copyright (c) 2020-2026 by Jos de Jong
+ * Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
+ * THE SOFTWARE IS PROVIDED "AS IS" AND ISC DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL ISC BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
