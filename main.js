@@ -4000,7 +4000,7 @@ function renderMobileTickRows(parent, data, unit, onClick, details) {
     const values = head.createSpan();
     values.createEl("strong", { text: formatCents(item.cents) });
     values.createSpan({ text: ` \xB7 ${item.count}\u7B14` });
-    if (details == null ? void 0 : details[item.category]) row.createDiv({ cls: "ledger-note", text: details[item.category] });
+    if (details == null ? void 0 : details[item.category]) row.createDiv({ cls: "ledger-mobile-chart-detail", text: details[item.category] });
     const track = row.createDiv({ cls: "ledger-mobile-tick-track", attr: { "aria-hidden": "true" } });
     const tickCount = Math.ceil(item.cents / unit);
     for (let tick = 0; tick < tickCount; tick += 1) {

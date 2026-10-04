@@ -2823,11 +2823,14 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
     gap: 3px;
   }
 
-  .ledger-mobile-tick-row,
-  .ledger-mobile-dumbbell {
+  .ledger-statistics-view button.ledger-mobile-tick-row,
+  .ledger-statistics-view button.ledger-mobile-dumbbell {
     display: block !important;
     width: 100%;
+    height: auto;
     min-height: 64px;
+    max-height: none;
+    margin: 0;
     padding: 10px 0;
     border: 0;
     border-bottom: 1px solid var(--mono-grid);
@@ -2836,10 +2839,12 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
     background: transparent !important;
     color: var(--mono-ink);
     text-align: left;
+    white-space: normal;
+    line-height: 1.45;
   }
 
-  .ledger-mobile-tick-row:last-child,
-  .ledger-mobile-dumbbell:last-child {
+  .ledger-statistics-view button.ledger-mobile-tick-row:last-child,
+  .ledger-statistics-view button.ledger-mobile-dumbbell:last-child {
     border-bottom: 0;
   }
 
@@ -2853,7 +2858,14 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
     font-variant-numeric: tabular-nums;
   }
 
+  .ledger-mobile-chart-head > strong {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
   .ledger-mobile-chart-head > span {
+    flex-shrink: 0;
     color: var(--mono-muted);
     font-size: 11px;
     white-space: nowrap;
@@ -2862,6 +2874,14 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
   .ledger-mobile-chart-head > span strong {
     color: var(--mono-ink);
     font-size: 13px;
+  }
+
+  .ledger-mobile-chart-detail {
+    margin: 4px 0 8px;
+    color: var(--mono-muted);
+    font-size: 11px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
   }
 
   .ledger-mobile-tick-track {
@@ -2926,7 +2946,7 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
     gap: 2px;
   }
 
-  .ledger-mobile-dumbbell {
+  .ledger-statistics-view button.ledger-mobile-dumbbell {
     min-height: 104px;
   }
 

@@ -143,7 +143,7 @@ function renderMobileTickRows(parent: HTMLElement, data: CategorySummary[], unit
     const values = head.createSpan();
     values.createEl("strong", { text: formatCents(item.cents) });
     values.createSpan({ text: ` · ${item.count}笔` });
-    if (details?.[item.category]) row.createDiv({ cls: "ledger-note", text: details[item.category] });
+    if (details?.[item.category]) row.createDiv({ cls: "ledger-mobile-chart-detail", text: details[item.category] });
     const track = row.createDiv({ cls: "ledger-mobile-tick-track", attr: { "aria-hidden": "true" } });
     const tickCount = Math.ceil(item.cents / unit);
     for (let tick = 0; tick < tickCount; tick += 1) {
