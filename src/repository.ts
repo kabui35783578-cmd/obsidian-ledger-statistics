@@ -9,6 +9,8 @@ export class LedgerRepository {
   private ready = false;
   private disposed = false;
   private revisions = new Map<string, number>();
+  private contentVersion = 0;
+  get contentRevision(): number { return this.contentVersion; }
 
   constructor(
     private app: App,
@@ -40,7 +42,7 @@ export class LedgerRepository {
     this.ready = false;
     const files = this.app.vault.getMarkdownFiles().filter((file) => this.isLedgerFile(file));
     const paths = new Set(files.map((file) => file.path));
-    for (const path of this.cache.keys()) if (!paths.has(path)) this.cache.delete(path);
+    for (const path of this.cache.keys()) if (!paths.has(path)) { this.cache.delete(path); this.contentVersion++; }
     // Bounded reads avoid flooding mobile storage. All updates share revision guards.
     let index = 0;
     await Promise.all(Array.from({ length: Math.min(8, files.length) }, async () => {
@@ -83,6 +85,7 @@ export class LedgerRepository {
     if (!this.disposed && generation === this.generation && this.revisions.get(path) === revision
       && file.path === path && this.app.vault.getAbstractFileByPath(path) === file && this.isLedgerFile(file) && parsed) {
       this.cache.set(path, parsed);
+      this.contentVersion++;
       this.scheduleNotify();
     }
   }
@@ -101,7 +104,7 @@ export class LedgerRepository {
     for (const key of new Set([...this.cache.keys(), ...this.revisions.keys(), path])) {
       if (key !== path && !key.startsWith(`${path}/`)) continue;
       this.revisions.set(key, (this.revisions.get(key) ?? 0) + 1);
-      this.cache.delete(key);
+      if (this.cache.delete(key)) this.contentVersion++;
     }
     this.scheduleNotify();
   }

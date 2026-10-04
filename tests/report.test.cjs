@@ -63,7 +63,8 @@ test('extra water records do not imply more meals; object analysis detects cross
   assert.match(water.title, /矿泉水/);
   assert.match(water.observation, /不能把分类变化泛化/);
   assert.match(water.observation, /分类|归类/);
-  assert.ok(s.evidence.some(e => e.id.startsWith('classification')));
+  assert.ok(!s.evidence.some(e => e.id.startsWith('classification'))); // One baseline record cannot establish a stable classification change.
+  assert.ok(water.limits.some(t => /分类分布存在差异/.test(t)));
   assert.ok(!s.findings.some(f => f.subject === 'category:餐饮'));
 });
 test('average increase with median decrease is attributed to the distribution and large records', () => {
@@ -85,7 +86,8 @@ test('missing files are unknown, zero ledgers are valid, diagnostics and undated
   const files = coffeeData();
   assert.equal(snapshot(files).comparable, true);
   const missing = snapshot(files.filter(f => f.date !== '2026-09-02'));
-  assert.equal(missing.comparable, false);
+  assert.equal(missing.comparable, true);
+  assert.equal(missing.degraded, true);
   assert.ok(missing.coverage[0].missingDates.includes('2026-09-02'));
   const bad = structuredClone(files); bad[0].diagnostics.push({ kind: 'total', path: bad[0].path, reason: '异常' });
   assert.equal(snapshot(bad).comparable, false);
@@ -156,13 +158,14 @@ test('stable totals can conceal opposite category changes, without claiming caus
   assert.equal(e.facts.current_amount.value, e.facts.previous_amount.value);
 });
 
-test('an incomplete latest period cannot supply apparent complete weeks to temporal analysis', () => {
+test('a mid-period missing day does not certify its week or allow an excessively old temporal run', () => {
   const files = ledgers('2026-05-04', '2026-09-28', d => {
     const day = new Date(`${d}T12:00:00`).getDay();
     return [['饮品', day === 0 || day === 6 ? 3000 : 500, '咖啡']];
   }).filter(f => f.date !== '2026-09-02');
   const s = snapshot(files);
-  assert.equal(s.comparable, false);
+  assert.equal(s.comparable, true);
+  assert.equal(s.degraded, true);
   assert.ok(!s.evidence.some(e => /^(repeat|trend|level|rhythm|association):/.test(e.id)));
 });
 test('fingerprints change on new day, backfill, note edit and rename but do not persist source notes', () => {
@@ -247,7 +250,7 @@ test('missing or unknown AI bindings retain prose and expose independently compu
   assert.ok(root.all().some(e => e.textContent === '普通正文，无任何引用ID。'));
   assert.ok(root.all().some(e => e.textContent === '查看本地分析与证据'));
   assert.ok(!root.all().some(e => e.textContent === '正文数值核对提示'));
-  root.all().find(e => e.tag === 'button').listeners.click();
+  root.all().find(e => e.tag === 'button' && e.classes.has('ledger-report-citation')).listeners.click();
   assert.deepEqual(ids, s.findings[0].evidenceIds);
   const config = { endpoint:'https://example.test/v1', model:'mock', apiKey:'' };
   const cache = {fingerprint:s.fingerprint, configuration:AI.reportConfiguration(config), generatedAt:new Date().toISOString(),report:AI.parseSpendingReport(JSON.stringify({paragraphs:[{text:'未知ID也保留',finding_ids:['unknown'],evidence_ids:['unknown']}]}),s)};
@@ -329,8 +332,8 @@ test('report presentation formats amounts, percentages and terms without confusi
 test('progress states distinguish matching elapsed days, short history, completed cycles and custom ranges', () => {
   const P = require('../dist/report-presentation.cjs'), s = snapshot(ledgers('2026-08-15','2026-10-04'), R.defaultReportPreferences(new Date(2026,9,4)), new Date(2026,9,4));
   assert.equal(P.reportProgress(s), '本周期已过 20 / 30 天 · 上期取同样的前 20 天对比');
-  const short = {...s,range:{start:'2026-03-15',end:'2026-04-13'},fullRange:{start:'2026-03-15',end:'2026-04-14'},previousRange:{start:'2026-02-15',end:'2026-03-14'}};
-  assert.equal(P.reportProgress(short), '本周期已过 30 / 31 天 · 上期仅 28 天，频次按自然日折算');
+  const short = {...s,range:{start:'2026-03-15',end:'2026-04-13'},effectiveRange:{start:'2026-03-15',end:'2026-04-13'},fullRange:{start:'2026-03-15',end:'2026-04-14'},previousRange:{start:'2026-02-15',end:'2026-03-14'}};
+  assert.equal(P.reportProgress(short), '本周期已过 30 / 31 天 · 上期仅 28 天，金额与频次按观察日折算');
   const complete = {...short,range:short.fullRange};
   assert.equal(P.reportProgress(complete), '本周期共 31 天 · 与上期完整周期（28 天）对比');
   assert.match(P.reportProgress({...complete,comparable:false}), /数据待核对$/);
@@ -358,7 +361,7 @@ test('article keeps narrative readable, evidence buttons use known IDs and text 
   const s = snapshot(coffeeData()), report = R.localSpendingReport(s), root = new Element(); let clicked;
   report.paragraphs[0].text += '<script>not executable</script>';
   renderReportArticle(root, report, s, ids => { clicked = ids; });
-  const buttons = root.all().filter(e => e.tag === 'button'); assert.equal(buttons.length, report.paragraphs.length);
+  const buttons = root.all().filter(e => e.tag === 'button' && e.classes.has('ledger-report-citation')); assert.equal(buttons.length, report.paragraphs.length);
   buttons[0].listeners.click(); assert.deepEqual(clicked, report.paragraphs[0].evidenceIds);
   assert.ok(root.all().some(e => e.textContent.includes('<script>')));
 });

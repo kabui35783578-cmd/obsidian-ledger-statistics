@@ -843,6 +843,10 @@ var LedgerRepository = class {
     this.ready = false;
     this.disposed = false;
     this.revisions = /* @__PURE__ */ new Map();
+    this.contentVersion = 0;
+  }
+  get contentRevision() {
+    return this.contentVersion;
   }
   get files() {
     return this.cache;
@@ -864,7 +868,10 @@ var LedgerRepository = class {
     this.ready = false;
     const files = this.app.vault.getMarkdownFiles().filter((file) => this.isLedgerFile(file));
     const paths = new Set(files.map((file) => file.path));
-    for (const path of this.cache.keys()) if (!paths.has(path)) this.cache.delete(path);
+    for (const path of this.cache.keys()) if (!paths.has(path)) {
+      this.cache.delete(path);
+      this.contentVersion++;
+    }
     let index = 0;
     await Promise.all(Array.from({ length: Math.min(8, files.length) }, async () => {
       while (index < files.length && generation === this.generation && !this.disposed) {
@@ -902,6 +909,7 @@ var LedgerRepository = class {
     const parsed = await this.read(file, path);
     if (!this.disposed && generation === this.generation && this.revisions.get(path) === revision && file.path === path && this.app.vault.getAbstractFileByPath(path) === file && this.isLedgerFile(file) && parsed) {
       this.cache.set(path, parsed);
+      this.contentVersion++;
       this.scheduleNotify();
     }
   }
@@ -918,7 +926,7 @@ var LedgerRepository = class {
     for (const key of /* @__PURE__ */ new Set([...this.cache.keys(), ...this.revisions.keys(), path])) {
       if (key !== path && !key.startsWith(`${path}/`)) continue;
       this.revisions.set(key, ((_a = this.revisions.get(key)) != null ? _a : 0) + 1);
-      this.cache.delete(key);
+      if (this.cache.delete(key)) this.contentVersion++;
     }
     this.scheduleNotify();
   }
@@ -1069,7 +1077,7 @@ function validateNumericNarrative(text, snapshot, suggestion = false) {
       const value = Number(((_a = match[1]) != null ? _a : match[2]).replace(/,/g, ""));
       const unit = match[1] || match[3] === "\u5757" ? "\u5143" : match[3] === "\uFF05" ? "%" : match[3];
       const approximate = /(?:约|大约|大概|接近)\s*$/.test(clause.slice(0, match.index));
-      if (!facts.some((fact) => fact.unit === unit && (Math.abs(fact.value - value) < 5e-3 || unit === "%" && Math.abs(Math.round(fact.value) - value) < 5e-3 || unit === "\u5143" && approximate && Number.isInteger(value) && Math.round(fact.value) === value))) {
+      if (!facts.some((fact2) => fact2.unit === unit && (Math.abs(fact2.value - value) < 5e-3 || unit === "%" && Math.abs(Math.round(fact2.value) - value) < 5e-3 || unit === "\u5143" && approximate && Number.isInteger(value) && Math.round(fact2.value) === value))) {
         throw new Error("AI \u5F15\u7528\u4E86\u7A0B\u5E8F\u672A\u63D0\u4F9B\u7684\u91D1\u989D\u3001\u6BD4\u4F8B\u6216\u7B14\u6570\uFF0C\u8BF7\u91CD\u65B0\u5206\u6790");
       }
     }
@@ -1169,8 +1177,8 @@ function parseFinanceAdvice(raw, snapshot) {
   if (value.fact_claims !== void 0) {
     if (!Array.isArray(value.fact_claims) || value.fact_claims.length > 20) throw new Error("AI \u6570\u5B57\u4E8B\u5B9E\u5F15\u7528\u683C\u5F0F\u4E0D\u6B63\u786E");
     for (const claim of value.fact_claims) {
-      const fact = claim && typeof claim.metric_id === "string" ? numericFacts[claim.metric_id] : void 0;
-      if (!fact || typeof claim.value !== "number" || claim.value !== fact.value) throw new Error("AI \u6570\u5B57\u4E8B\u5B9E\u4E0E\u7A0B\u5E8F\u8BA1\u7B97\u4E0D\u4E00\u81F4");
+      const fact2 = claim && typeof claim.metric_id === "string" ? numericFacts[claim.metric_id] : void 0;
+      if (!fact2 || typeof claim.value !== "number" || claim.value !== fact2.value) throw new Error("AI \u6570\u5B57\u4E8B\u5B9E\u4E0E\u7A0B\u5E8F\u8BA1\u7B97\u4E0D\u4E00\u81F4");
     }
   }
   for (const text of [headline, judgment, ...categoryLines.map((line) => line.text)]) validateNumericNarrative(text, snapshot);
@@ -1626,8 +1634,583 @@ var StarRepairModal = class extends import_obsidian3.Modal {
   }
 };
 
+// src/report-config.ts
+var REPORT_THRESHOLDS = {
+  minSubjectCount: 5,
+  countDelta: 4,
+  rateDelta: 0.2,
+  amountDeltaCents: 1e4,
+  amountRate: 0.2,
+  distributionMin: 10,
+  shareDelta: 0.1,
+  daysDelta: 4,
+  topCount: 3,
+  topContribution: 0.5,
+  maxTrailingGap: 2,
+  maxInteriorGapRatio: 0.05,
+  maxInteriorGap: 1,
+  degradedRate: 0.3,
+  repeatWeeks: 4,
+  repeatActiveWeeks: 3,
+  repeatCount: 8,
+  trendMinWeeks: 8,
+  temporalMaxLagDays: 7,
+  temporalMaxWeeks: 24,
+  temporalMinCount: 10,
+  trendSegmentWeeks: 4,
+  trendAbsolute: 2,
+  trendRelative: 0.5,
+  rhythmRatio: 1.5,
+  rhythmDayRatio: 1.8,
+  rhythmPersistence: 0.6,
+  associationMinWeeks: 8,
+  associationMinDays: 10,
+  associationTogether: 5,
+  associationLift: 2,
+  associationAlpha: 0.05,
+  associationMaxObjects: 12,
+  classificationMinMoved: 2,
+  classificationShare: 0.2,
+  dedupJaccard: 0.8,
+  historyPeriods: 3,
+  historyMadMultiplier: 3,
+  historyScale: 1.4826,
+  outlierHistoryCount: 10,
+  outlierP90Multiplier: 3,
+  outlierFloorCents: 2e4,
+  topFindings: 5,
+  maxComparisonFamily: 3,
+  minSmallCents: 1e3,
+  binRoundCents: 500
+};
+var DEFAULT_REPORT_OBJECT_RULES = `\u5496\u5561=\u5496\u5561|\u62FF\u94C1|\u7F8E\u5F0F
+\u5976\u8336=\u5976\u8336
+\u77FF\u6CC9\u6C34=\u77FF\u6CC9\u6C34
+\u65E9\u9910=\u65E9\u9910|\u65E9\u996D
+\u5348\u9910=\u5348\u9910|\u5348\u996D
+\u665A\u9910=\u665A\u9910|\u665A\u996D
+\u96F6\u98DF=\u96F6\u98DF
+\u6C34\u679C=\u6C34\u679C|\u897F\u74DC(?!\u971C)|\u69B4\u83B2|\u9999\u8549|\u8461\u8404
+\u751F\u6D3B\u7528\u54C1=\u6D17\u53D1\u6C34|\u6D17\u8863\u6DB2|\u7259\u818F|\u7259\u7EBF|\u7EB8\u5DFE|\u9762\u5DFE\u7EB8|\u6D17\u8138\u5DFE|\u6D17\u9762\u5DFE|\u6D17\u8863\u7C89|\u9999\u7682|\u6C90\u6D74\u9732
+\u5916\u5356=\u5916\u5356
+\u6253\u8F66=\u6253\u8F66|\u51FA\u79DF\u8F66|\u7F51\u7EA6\u8F66|\u6EF4\u6EF4
+\u5730\u94C1\u516C\u4EA4=\u5730\u94C1|\u516C\u4EA4
+\u996E\u6599=\u996E\u6599|\u6C7D\u6C34|\u53EF\u4E50|\u96EA\u78A7|\u67E0\u6AAC\u8336
+\u70DF\u9152=\u9999\u70DF|\u5564\u9152|\u767D\u9152|\u7EA2\u9152
+\u8BDD\u8D39=\u8BDD\u8D39
+\u505C\u8F66=\u505C\u8F66
+@\u745E\u5E78=\u745E\u5E78
+@\u871C\u96EA\u51B0\u57CE=\u871C\u96EA\u51B0\u57CE
+@\u6D77\u5E95\u635E=\u6D77\u5E95\u635E`;
+function parseObjectRules(text = DEFAULT_REPORT_OBJECT_RULES) {
+  const out = { objects: [], brands: [], errors: [], source: text };
+  const labels = /* @__PURE__ */ new Set();
+  text.split(/\r?\n/).forEach((line, i) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) return;
+    const equal = trimmed.indexOf("="), raw = trimmed.slice(0, equal).trim(), pattern = trimmed.slice(equal + 1).trim();
+    const label = raw.startsWith("@") ? raw.slice(1).trim() : raw;
+    if (equal < 1 || !label || !pattern || labels.has(raw)) {
+      out.errors.push(`\u7B2C${i + 1}\u884C\uFF1A\u9700\u8981\u4E0D\u91CD\u590D\u7684\u201C\u6807\u7B7E=\u6B63\u5219\u201D`);
+      return;
+    }
+    try {
+      const re = new RegExp(pattern, "i");
+      if (re.test("")) throw new Error("\u4E0D\u80FD\u5339\u914D\u7A7A\u5907\u6CE8");
+      (raw.startsWith("@") ? out.brands : out.objects).push([label, re]);
+      labels.add(raw);
+    } catch (e) {
+      out.errors.push(`\u7B2C${i + 1}\u884C\uFF1A\u6B63\u5219\u65E0\u6548\u6216\u5339\u914D\u7A7A\u5907\u6CE8`);
+    }
+  });
+  return out;
+}
+
+// src/report-statistics.ts
+function stratifiedAssociationTail(strata, observed) {
+  const chooseLog = (n, k) => {
+    if (k < 0 || k > n) return -Infinity;
+    let value = 0;
+    for (let i = 1; i <= Math.min(k, n - k); i++) value += Math.log(n - i + 1) - Math.log(i);
+    return value;
+  };
+  let distribution = [1], expected = 0;
+  for (const s of strata) {
+    if (!s.days) continue;
+    expected += s.a * s.b / s.days;
+    const pmf = Array(Math.min(s.a, s.b) + 1).fill(0);
+    for (let k = Math.max(0, s.a + s.b - s.days); k < pmf.length; k++) pmf[k] = Math.exp(chooseLog(s.b, k) + chooseLog(s.days - s.b, s.a - k) - chooseLog(s.days, s.a));
+    const mass = pmf.reduce((a, b) => a + b, 0);
+    if (!mass) return { p: 1, expected };
+    const next = Array(distribution.length + pmf.length - 1).fill(0);
+    distribution.forEach((a, i) => pmf.forEach((b, j) => next[i + j] += a * b / mass));
+    distribution = next;
+  }
+  return { p: Math.min(1, distribution.slice(Math.max(0, observed)).reduce((a, b) => a + b, 0)), expected };
+}
+
+// src/report-analysis.ts
+var total = (r) => r.reduce((s, t) => s + t.cents, 0);
+var unique = (r) => [...new Map(r.map((t) => [t.id, t])).values()];
+var dates = (r) => Array.from({ length: reportDays(r) }, (_, i) => addDays(r.start, i));
+var weekday = (d) => ((/* @__PURE__ */ new Date(`${d}T12:00:00`)).getDay() + 6) % 7;
+function group(items, key) {
+  var _a;
+  const out = /* @__PURE__ */ new Map();
+  for (const item of items) {
+    const k = key(item), a = (_a = out.get(k)) != null ? _a : [];
+    a.push(item);
+    out.set(k, a);
+  }
+  return out;
+}
+function stats(r) {
+  return { n: r.length, cents: total(r), mean: r.length ? total(r) / r.length : 0, median: reportMedian(r.map((t) => t.cents)), days: new Set(r.map((t) => t.date)).size };
+}
+var fact = (label, value, unit) => ({ label, value, unit });
+var quantile = (values, p) => {
+  const a = [...values].sort((x, y) => x - y);
+  if (!a.length) return 0;
+  const pos = (a.length - 1) * p, lo = Math.floor(pos);
+  return a[lo] + (a[Math.ceil(pos)] - a[lo]) * (pos - lo);
+};
+function trimTrailingGap(c, today, max) {
+  if (c.range.end !== today || c.problems.length || !c.missingDates.length || c.missingDates.length > max || c.missingDates.length >= reportDays(c.range)) return null;
+  const missing = new Set(c.missingDates);
+  if (!dates({ start: c.missingDates[0], end: c.range.end }).every((d) => missing.has(d))) return null;
+  return { ...c.range, end: addDays(c.missingDates[0], -1) };
+}
+var FAMILY = { comparison: "change", classification: "change", structure: "change", mix: "change", history: "change", outlier: "change", repeat: "time", trend: "time", level: "time", rhythm: "time", association: "time" };
+var WEIGHT = { comparison: 70, classification: 60, structure: 65, mix: 55, history: 75, outlier: 70, repeat: 55, trend: 75, level: 70, rhythm: 65, association: 55 };
+function analyzeReport(files, preferences, now, excludedCategories, starredIds, options) {
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l;
+  const T = { ...REPORT_THRESHOLDS, ...options.thresholds }, rules = parseObjectRules((_a = options.objectRules) != null ? _a : DEFAULT_REPORT_OBJECT_RULES);
+  const periods = reportPeriods(preferences, now), today = isoFromDate(now), index = group(files.filter((f) => !!f.date), (f) => f.date);
+  const cover = (range) => reportCoverageIndexed(index, range);
+  const initial = cover(periods.range), trimmed = periods.fullRange.end > today ? trimTrailingGap(initial, today, T.maxTrailingGap) : null;
+  const effectiveRange = trimmed != null ? trimmed : periods.range, trimmedDates = trimmed ? initial.missingDates : [];
+  let previousRange = periods.previous;
+  if (trimmed) previousRange = { start: periods.previous.start, end: addDays(periods.previous.start, Math.min(reportDays(trimmed), reportDays(periods.history[0])) - 1) };
+  const coverage = [effectiveRange, previousRange, ...periods.history].map(cover), undatedPaths = files.filter((f) => !f.date).map((f) => f.path);
+  const firstDate = (_b = [...index.keys()].sort()[0]) != null ? _b : today;
+  const eligible = (c) => c.complete || !c.problems.length && c.range.start >= firstDate && c.missingDates.length <= T.maxInteriorGap && c.missingDates.length <= reportDays(c.range) * T.maxInteriorGapRatio && c.missingDates.every((d) => d > c.range.start && d < c.range.end);
+  const comparable = !undatedPaths.length && eligible(coverage[0]) && eligible(coverage[1]);
+  const degraded = comparable && (!coverage[0].complete || !coverage[1].complete);
+  const observed = coverage.slice(0, 2).map((c) => reportDays(c.range) - c.missingDates.length);
+  const k = observed[1] ? observed[0] / observed[1] : 1;
+  const flattened = unique(flattenRecords(files));
+  const selected = (range) => budgetScopedRecords(flattened.filter((r) => recordMatches(r, { range, scope: preferences.scope, excludedCategories, categories: preferences.category ? [preferences.category] : [], keyword: preferences.keyword })), preferences.includeStarred, starredIds);
+  const allRange = { start: periods.history[5].start, end: effectiveRange.end }, all = selected(allRange), current = selected(effectiveRange), previous = selected(previousRange);
+  const snapshot = { ruleVersion: REPORT_RULE_VERSION, fingerprint: "", label: preferences.mode === "salary" ? "\u5DE5\u8D44\u5468\u671F\u652F\u51FA\u62A5\u544A" : preferences.mode === "month" ? "\u81EA\u7136\u6708\u652F\u51FA\u62A5\u544A" : "\u81EA\u5B9A\u4E49\u652F\u51FA\u62A5\u544A", range: periods.range, fullRange: periods.fullRange, effectiveRange, previousRange, trimmedDates, degraded, observedDays: observed, coverage, undatedPaths, comparable, historicalRanges: coverage.slice(2).filter((c) => c.complete && !undatedPaths.length).map((c) => c.range), records: all, preferences, excludedCategories, findings: [], evidence: [] };
+  const limits = ["\u7B14\u6570\u662F\u8D26\u76EE\u8BB0\u5F55\uFF0C\u4E0D\u4EE3\u8868\u5546\u54C1\u6570\u91CF\uFF1B\u6BCF\u7B14\u4ED8\u6B3E\u91D1\u989D\u4E0D\u662F\u5546\u54C1\u5355\u4EF7\u3002", "\u5907\u6CE8\u7528\u9014\u8BC6\u522B\u53EF\u80FD\u53D7\u8BB0\u8D26\u4E60\u60EF\u5F71\u54CD\uFF0C\u65E0\u6CD5\u786E\u8BA4\u6F0F\u8BB0\u6216\u751F\u6D3B\u539F\u56E0\u3002"];
+  if (degraded) limits.push(`\u672C\u671F\u7F3A${coverage[0].missingDates.length}\u5929\uFF0C\u4E0A\u671F\u7F3A${coverage[1].missingDates.length}\u5929\uFF1B\u4EC5\u6BD4\u8F83\u5DF2\u89C2\u5BDF\u65E5\u671F\uFF0C\u4E0D\u80FD\u63A8\u65AD\u5B8C\u6574\u5468\u671F\u603B\u989D\u3002`);
+  if (k !== 1) limits.push(`\u4E0A\u671F\u6309${observed[0]} / ${observed[1]}\u4E2A\u5DF2\u89C2\u5BDF\u65E5\u6298\u7B97\uFF1B\u539F\u59CB\u91D1\u989D\u4E0E\u7B14\u6570\u4FDD\u7559\u4F9B\u6838\u5BF9\uFF0C\u6298\u7B97\u4E0D\u662F\u5B9E\u9645\u4ED8\u6B3E\u3002`);
+  if (rules.errors.length) limits.push("\u90E8\u5206\u5BF9\u8C61\u8BC6\u522B\u89C4\u5219\u65E0\u6548\uFF0C\u672A\u53C2\u4E0E\u8BC6\u522B\uFF1B\u8BF7\u6838\u5BF9\u8BBE\u7F6E\u3002");
+  const comparisonFacts = (aa, bb) => {
+    const a = stats(aa), b = stats(bb), d = symmetricDecomposition(b.n * k, b.cents * k, a.n, a.cents);
+    const result = {
+      current_amount: fact("\u672C\u671F\u5DF2\u8BB0\u5F55\u91D1\u989D", a.cents / 100, "\u5143"),
+      previous_amount: fact("\u4E0A\u671F\u5DF2\u8BB0\u5F55\u91D1\u989D", b.cents / 100, "\u5143"),
+      current_count: fact("\u672C\u671F\u7B14\u6570", a.n, "\u7B14"),
+      previous_count: fact("\u4E0A\u671F\u7B14\u6570", b.n, "\u7B14"),
+      current_mean: fact("\u672C\u671F\u5E73\u5747\u6BCF\u7B14", a.mean / 100, "\u5143"),
+      previous_mean: fact("\u4E0A\u671F\u5E73\u5747\u6BCF\u7B14", b.mean / 100, "\u5143"),
+      current_median: fact("\u672C\u671F\u5355\u7B14\u4E2D\u4F4D\u6570", a.median / 100, "\u5143"),
+      previous_median: fact("\u4E0A\u671F\u5355\u7B14\u4E2D\u4F4D\u6570", b.median / 100, "\u5143"),
+      current_days: fact("\u672C\u671F\u51FA\u73B0\u5929\u6570", a.days, "\u5929"),
+      previous_days: fact("\u4E0A\u671F\u51FA\u73B0\u5929\u6570", b.days, "\u5929"),
+      current_calendar_days: fact("\u672C\u671F\u81EA\u7136\u65E5\u6570", reportDays(effectiveRange), "\u5929"),
+      previous_calendar_days: fact("\u4E0A\u671F\u81EA\u7136\u65E5\u6570", reportDays(previousRange), "\u5929"),
+      current_observed_days: fact("\u672C\u671F\u5DF2\u89C2\u5BDF\u65E5\u6570", observed[0], "\u5929"),
+      previous_observed_days: fact("\u4E0A\u671F\u5DF2\u89C2\u5BDF\u65E5\u6570", observed[1], "\u5929"),
+      current_missing_days: fact("\u672C\u671F\u7F3A\u5931\u65E5\u6570", coverage[0].missingDates.length, "\u5929"),
+      previous_missing_days: fact("\u4E0A\u671F\u7F3A\u5931\u65E5\u6570", coverage[1].missingDates.length, "\u5929"),
+      current_daily_count: fact("\u672C\u671F\u6BCF\u89C2\u5BDF\u65E5\u7B14\u6570", a.n / Math.max(1, observed[0]), "\u7B14"),
+      previous_daily_count: fact("\u4E0A\u671F\u6BCF\u89C2\u5BDF\u65E5\u7B14\u6570", b.n / Math.max(1, observed[1]), "\u7B14"),
+      current_active_day_count: fact("\u672C\u671F\u6BCF\u4E2A\u6D88\u8D39\u65E5\u7B14\u6570", a.days ? a.n / a.days : 0, "\u7B14"),
+      previous_active_day_count: fact("\u4E0A\u671F\u6BCF\u4E2A\u6D88\u8D39\u65E5\u7B14\u6570", b.days ? b.n / b.days : 0, "\u7B14"),
+      frequency_contribution: fact("\u6B21\u6570\u53D8\u5316\u5E26\u6765\u7684\u5F71\u54CD", d.frequency / 100, "\u5143"),
+      ticket_contribution: fact("\u6BCF\u7B14\u91D1\u989D\u53D8\u5316\u5E26\u6765\u7684\u5F71\u54CD", d.ticket / 100, "\u5143")
+    };
+    if (k !== 1) {
+      result.previous_amount_scaled = fact("\u4E0A\u671F\u6309\u672C\u671F\u89C2\u5BDF\u65E5\u6298\u7B97\u91D1\u989D", b.cents * k / 100, "\u5143");
+      result.previous_count_scaled = fact("\u4E0A\u671F\u6309\u672C\u671F\u89C2\u5BDF\u65E5\u6298\u7B97\u7B14\u6570", b.n * k, "\u7B14");
+    }
+    return result;
+  };
+  const ranges = [{ label: "\u672C\u671F\u5B9E\u9645\u5206\u6790", range: effectiveRange }, { label: "\u4E0A\u671F\u6BD4\u8F83", range: previousRange }];
+  const add = (subject, type, title, observation, strength, rs, facts, extraLimits = limits, rsRanges = ranges, signals) => {
+    var _a2;
+    const id = `${type}:${reportHash(subject + title + JSON.stringify(rsRanges))}`;
+    const score = ((_a2 = WEIGHT[type]) != null ? _a2 : 55) * (0.6 + 0.4 * Math.max(0, Math.min(1, strength))) * (degraded && FAMILY[type] === "change" ? 0.85 : 1);
+    snapshot.evidence.push({ id, label: title, ranges: rsRanges, facts, recordIds: unique(rs).map((r) => r.id), limits: [...new Set(extraLimits)] });
+    snapshot.findings.push({ id, subject, type, title, observation, score, evidenceIds: [id], limits: [...new Set(extraLimits)], ...(signals == null ? void 0 : signals.length) ? { signals } : {} });
+  };
+  const objectGroups = (rs) => {
+    var _a2;
+    const out = /* @__PURE__ */ new Map();
+    for (const r of rs) for (const o of identifyReportObjects(r.note, rules)) {
+      const g = (_a2 = out.get(o.key)) != null ? _a2 : { ...o, records: [] };
+      g.records.push(r);
+      out.set(o.key, g);
+    }
+    return out;
+  };
+  const objectsNow = objectGroups(current), objectsPrev = objectGroups(previous), objectsAll = objectGroups(all), aCats = group(current, (r) => r.category), bCats = group(previous, (r) => r.category), cats = [.../* @__PURE__ */ new Set([...aCats.keys(), ...bCats.keys()])];
+  const overview = { id: "overview", label: "\u672C\u671F\u6982\u51B5", ranges, facts: comparisonFacts(current, previous), recordIds: unique([...current, ...previous]).map((r) => r.id), limits: [...limits, ...!comparable ? ["\u53EF\u6BD4\u6570\u636E\u4E0D\u8DB3\uFF0C\u539F\u59CB\u5DF2\u8BB0\u5F55\u603B\u91CF\u4EC5\u4F9B\u6838\u5BF9\uFF0C\u4E0D\u636E\u6B64\u5224\u65AD\u6DA8\u8DCC\u3002"] : []] };
+  cats.sort((a, b) => {
+    var _a2, _b2;
+    return total((_a2 = aCats.get(b)) != null ? _a2 : []) - total((_b2 = aCats.get(a)) != null ? _b2 : []);
+  }).slice(0, T.topCount).forEach((c, i) => {
+    var _a2, _b2;
+    overview.facts[`category_${i}_current`] = fact(`${c}\u672C\u671F\u91D1\u989D`, total((_a2 = aCats.get(c)) != null ? _a2 : []) / 100, "\u5143");
+    overview.facts[`category_${i}_previous`] = fact(`${c}\u4E0A\u671F\u91D1\u989D`, total((_b2 = bCats.get(c)) != null ? _b2 : []) / 100, "\u5143");
+  });
+  snapshot.overview = overview;
+  snapshot.evidence.push(overview);
+  const subjects = /* @__PURE__ */ new Map();
+  cats.forEach((c) => {
+    var _a2, _b2;
+    return subjects.set(`category:${c}`, { label: c, kind: "category", a: (_a2 = aCats.get(c)) != null ? _a2 : [], b: (_b2 = bCats.get(c)) != null ? _b2 : [] });
+  });
+  for (const key of /* @__PURE__ */ new Set([...objectsNow.keys(), ...objectsPrev.keys()])) {
+    const g = (_c = objectsNow.get(key)) != null ? _c : objectsPrev.get(key);
+    subjects.set(key, { label: g.label, kind: g.kind, a: unique((_e = (_d = objectsNow.get(key)) == null ? void 0 : _d.records) != null ? _e : []), b: unique((_g = (_f = objectsPrev.get(key)) == null ? void 0 : _f.records) != null ? _g : []) });
+  }
+  if (comparable) for (const [key, s] of subjects) {
+    const a = stats(s.a), b = stats(s.b);
+    if (Math.max(a.n, b.n) < T.minSubjectCount) continue;
+    const delta = a.cents - b.cents * k, rate = b.n * k ? a.n / (b.n * k) - 1 : null, amountRate = b.cents * k ? a.cents / (b.cents * k) - 1 : null;
+    const minRate = degraded ? T.degradedRate : T.rateDelta;
+    const frequency = Math.abs(a.n - b.n * k) >= T.countDelta && (rate === null || Math.abs(rate) >= minRate), amount = Math.abs(delta) >= T.amountDeltaCents && (amountRate === null || Math.abs(amountRate) >= (degraded ? T.degradedRate : T.amountRate));
+    const top = (r) => [...r].sort((x, y) => y.cents - x.cents).slice(0, T.topCount), topDelta = total(top(s.a)) - total(top(s.b)) * k;
+    const distribution = a.n >= T.distributionMin && b.n >= T.distributionMin;
+    const big = distribution && Math.abs(delta) >= T.amountDeltaCents && topDelta / delta >= T.topContribution;
+    const combined = [...s.a, ...s.b].map((r) => r.cents), smallThreshold = Math.max(T.minSmallCents, Math.round(reportMedian(combined) * 0.5 / T.binRoundCents) * T.binRoundCents);
+    const smallA = a.n ? s.a.filter((r) => r.cents < smallThreshold).length / a.n : 0, smallB = b.n ? s.b.filter((r) => r.cents < smallThreshold).length / b.n : 0;
+    const signal2 = [];
+    if (frequency || amount) signal2.push({ kind: "change", title: !b.n ? `${s.label}\u5728\u672C\u671F\u65B0\u589E` : frequency ? `${s.label}\u7684\u8BB0\u5F55\u9891\u7387${rate > 0 ? "\u589E\u52A0" : "\u51CF\u5C11"}` : `${s.label}\u7684\u5DF2\u8BB0\u5F55\u91D1\u989D${delta > 0 ? "\u589E\u52A0" : "\u51CF\u5C11"}`, observation: !b.n ? "\u4E0A\u671F\u6CA1\u6709\u8FD9\u7EC4\u8BB0\u5F55\uFF0C\u672C\u671F\u65B0\u589E\uFF1B\u5C1A\u4E0D\u80FD\u8BA4\u5B9A\u957F\u671F\u4E60\u60EF\u3002" : "\u91D1\u989D\u53D8\u5316\u540C\u65F6\u53D7\u6B21\u6570\u548C\u5E73\u5747\u6BCF\u7B14\u5F71\u54CD\uFF0C\u5E94\u7ED3\u5408\u51FA\u73B0\u5929\u6570\u7406\u89E3\uFF0C\u4E0D\u80FD\u76F4\u63A5\u5224\u65AD\u5546\u54C1\u6DA8\u4EF7\u3002", weight: 20 });
+    if (big) signal2.push({ kind: "big", title: `${s.label}${delta > 0 ? "\u4E0A\u6DA8" : "\u4E0B\u964D"}\u4E3B\u8981\u96C6\u4E2D\u5728\u6700\u8D35\u7684\u51E0\u7B14`, observation: "\u4E24\u671F\u5404\u81EA\u6700\u8D35\u7684\u4E09\u7B14\uFF0C\u5176\u5408\u8BA1\u53D8\u5316\u89E3\u91CA\u4E86\u91D1\u989D\u53D8\u5316\u7684\u4E00\u534A\u4EE5\u4E0A\u3002\u5176\u4F59\u652F\u51FA\u53EF\u80FD\u6709\u4E0D\u540C\u65B9\u5411\uFF0C\u4E0D\u80FD\u63A8\u5E7F\u5230\u6BCF\u4E00\u7B14\u65E5\u5E38\u6D88\u8D39\u3002", weight: 40 });
+    if (distribution && amount && a.mean > b.mean && a.median <= b.median) signal2.push({ kind: "distribution", title: `${s.label}\u5E73\u5747\u91D1\u989D\u4E0A\u5347\uFF0C\u5178\u578B\u5355\u7B14\u6CA1\u6709\u540C\u6B65\u53D8\u8D35`, observation: "\u5E73\u5747\u6BCF\u7B14\u4E0A\u5347\uFF0C\u4E2D\u4F4D\u6570\u5374\u6CA1\u6709\u4E0A\u5347\uFF0C\u8BF4\u660E\u91D1\u989D\u5206\u5E03\u5185\u90E8\u53D8\u5316\uFF0C\u4E0D\u80FD\u628A\u5E73\u5747\u6570\u4E0A\u5347\u7406\u89E3\u4E3A\u6BCF\u7B14\u90FD\u66F4\u8D35\u3002", weight: 45 });
+    if (distribution && amount && a.mean < b.mean && a.median > b.median) signal2.push({ kind: "distribution", title: `${s.label}\u5E73\u5747\u91D1\u989D\u4E0B\u964D\uFF0C\u4F46\u5178\u578B\u5355\u7B14\u91D1\u989D\u4E0A\u5347`, observation: "\u5E73\u5747\u6BCF\u7B14\u4E0B\u964D\uFF0C\u4E2D\u4F4D\u6570\u5374\u4E0A\u5347\uFF0C\u8F83\u5927\u4ED8\u6B3E\u51CF\u5C11\u53EF\u80FD\u63A9\u76D6\u5178\u578B\u4ED8\u6B3E\u91D1\u989D\u7684\u63D0\u9AD8\uFF1B\u4ECD\u4E0D\u4EE3\u8868\u5546\u54C1\u5355\u4EF7\u4E0A\u6DA8\u3002", weight: 45 });
+    if (distribution && Math.abs(smallA - smallB) >= T.shareDelta) signal2.push({ kind: "small", title: `${s.label}\u7684\u5C0F\u989D\u8BB0\u5F55\u5360\u6BD4\u6539\u53D8`, observation: "\u6309\u4E24\u671F\u5408\u5E76\u91D1\u989D\u786E\u5B9A\u7684\u5C0F\u989D\u6863\u4F4D\uFF0C\u5360\u6BD4\u53D1\u751F\u53D8\u5316\uFF1B\u603B\u989D\u53EF\u80FD\u63A9\u76D6\u91D1\u989D\u5206\u5E03\u53D8\u5316\u3002", weight: 15 });
+    if (["object", "mixed", "brand"].includes(s.kind) && a.days - b.days * k >= T.daysDelta) signal2.push({ kind: "days", title: `${s.label}\u51FA\u73B0\u5728\u66F4\u591A\u65E5\u5B50\u91CC`, observation: "\u8BB0\u5F55\u5206\u5E03\u5230\u66F4\u591A\u5DF2\u89C2\u5BDF\u65E5\u671F\uFF0C\u66F4\u63A5\u8FD1\u65E5\u5E38\u91CD\u590D\u51FA\u73B0\uFF1B\u662F\u5426\u6301\u7EED\u4ECD\u9700\u8DE8\u5468\u89C2\u5BDF\u3002", weight: 35 });
+    let componentFacts = {}, subject = key;
+    if (s.kind === "category" && (frequency || amount || Math.abs(a.n - b.n * k) >= T.countDelta)) {
+      const components = [...objectsNow.entries()].filter(([, g]) => ["object", "mixed"].includes(g.kind)).map(([key2, g]) => {
+        var _a2, _b2;
+        return { key: key2, label: g.label, a: g.records.filter((r) => r.category === s.label), b: ((_b2 = (_a2 = objectsPrev.get(key2)) == null ? void 0 : _a2.records) != null ? _b2 : []).filter((r) => r.category === s.label) };
+      }).sort((x, y) => Math.abs(y.a.length - y.b.length * k) - Math.abs(x.a.length - x.b.length * k));
+      const lead = components[0];
+      if (lead && Math.abs(lead.a.length - lead.b.length * k) >= T.countDelta && Math.abs(lead.a.length - lead.b.length * k) >= Math.abs(a.n - b.n * k) * 0.5) {
+        const residual = a.n - lead.a.length - (b.n - lead.b.length) * k;
+        signal2.push({ kind: "component", title: !b.n ? `${s.label}\u672C\u671F\u65B0\u589E\uFF0C\u4E3B\u8981\u6765\u81EA${lead.label}\u8BB0\u5F55` : `${s.label}\u7B14\u6570\u53D8\u5316\u4E3B\u8981\u6765\u81EA${lead.label}\u8BB0\u5F55`, observation: `\u5206\u7C7B\u7B14\u6570\u53D8\u5316\u4E2D\uFF0C${lead.label}\u8BB0\u5F55\u8D21\u732E\u660E\u663E\uFF1B\u6263\u9664\u540E\u5176\u4F59\u7B14\u6570${residual > 0 ? "\u589E\u52A0" : residual < 0 ? "\u51CF\u5C11" : "\u4E0D\u53D8"}\uFF0C\u4E0D\u80FD\u628A\u5206\u7C7B\u53D8\u5316\u6CDB\u5316\u6210\u6BCF\u4E00\u79CD\u6D88\u8D39\u90FD\u53D8\u9891\u7E41\u3002`, weight: 50 });
+        componentFacts = { component_current_count: fact(`${lead.label}\u672C\u671F\u7B14\u6570\uFF08\u8BE5\u5206\u7C7B\u5185\uFF09`, lead.a.length, "\u7B14"), component_previous_count: fact(`${lead.label}\u4E0A\u671F\u7B14\u6570\uFF08\u8BE5\u5206\u7C7B\u5185\uFF09`, lead.b.length, "\u7B14"), residual_current_count: fact("\u672C\u671F\u6263\u9664\u5BF9\u8C61\u540E\u7684\u7B14\u6570", a.n - lead.a.length, "\u7B14"), residual_previous_count: fact("\u4E0A\u671F\u6263\u9664\u5BF9\u8C61\u540E\u7684\u7B14\u6570", b.n - lead.b.length, "\u7B14") };
+        if (!big && Math.abs(residual) < 1e-9 && total(s.a.filter((r) => !lead.a.some((l) => l.id === r.id))) === total(s.b.filter((r) => !lead.b.some((l) => l.id === r.id))) * k) subject = lead.key;
+      }
+    }
+    const facts = { ...comparisonFacts(s.a, s.b), ...componentFacts, small_threshold: fact("\u5C0F\u989D\u6863\u4F4D\u4E0A\u754C\uFF08\u4E0D\u542B\uFF09", smallThreshold / 100, "\u5143"), current_small_share: fact("\u672C\u671F\u5C0F\u989D\u7B14\u6570\u5360\u6BD4", smallA * 100, "%"), previous_small_share: fact("\u4E0A\u671F\u5C0F\u989D\u7B14\u6570\u5360\u6BD4", smallB * 100, "%"), top3_current_n: fact("\u672C\u671F\u6700\u5927\u8BB0\u5F55\u53D6\u6837\u7B14\u6570", Math.min(T.topCount, a.n), "\u7B14"), top3_previous_n: fact("\u4E0A\u671F\u6700\u5927\u8BB0\u5F55\u53D6\u6837\u7B14\u6570", Math.min(T.topCount, b.n), "\u7B14"), top3_current_amount: fact("\u672C\u671F\u6700\u8D35\u4E09\u7B14\u5408\u8BA1", total(top(s.a)) / 100, "\u5143"), top3_previous_amount: fact("\u4E0A\u671F\u6700\u8D35\u4E09\u7B14\u5408\u8BA1", total(top(s.b)) / 100, "\u5143"), top3_difference: fact("\u6700\u8D35\u4E09\u7B14\u5408\u8BA1\u5DEE\uFF08\u5DF2\u6298\u7B97\uFF09", topDelta / 100, "\u5143"), ...big ? { top3_contribution: fact("\u6700\u8D35\u4E09\u7B14\u5DEE\u989D\u5360\u53D8\u5316\u6BD4\u4F8B", topDelta / delta * 100, "%") } : {} };
+    if (distribution) {
+      const edges = [0, ...[0.25, 0.5, 0.75].map((p) => Math.round(quantile(combined, p) / T.binRoundCents) * T.binRoundCents), Infinity].filter((n, i, a2) => !i || n > a2[i - 1]);
+      for (let i = 0; i < edges.length - 1; i++) {
+        const low = edges[i], high = edges[i + 1], label = high === Infinity ? `${low / 100}\u5143\u53CA\u4EE5\u4E0A` : `${low / 100}\uFF5E${high / 100}\u5143\uFF08\u4E0D\u542B\u4E0A\u754C\uFF09`;
+        facts[`current_bin_${i}`] = fact(`\u672C\u671F${label}\u7B14\u6570`, s.a.filter((r) => r.cents >= low && r.cents < high).length, "\u7B14");
+        facts[`previous_bin_${i}`] = fact(`\u4E0A\u671F${label}\u7B14\u6570`, s.b.filter((r) => r.cents >= low && r.cents < high).length, "\u7B14");
+      }
+    }
+    const ca = group(s.a, (r) => r.category), cb = group(s.b, (r) => r.category), cs = [.../* @__PURE__ */ new Set([...ca.keys(), ...cb.keys()])];
+    const variation = cs.reduce((n, c) => {
+      var _a2, _b2, _c2, _d2;
+      return n + Math.abs(((_b2 = (_a2 = ca.get(c)) == null ? void 0 : _a2.length) != null ? _b2 : 0) / Math.max(1, a.n) - ((_d2 = (_c2 = cb.get(c)) == null ? void 0 : _c2.length) != null ? _d2 : 0) / Math.max(1, b.n));
+    }, 0) / 2;
+    const categoryLimit = s.kind !== "category" && variation > 0 ? ["\u540C\u4E00\u7528\u9014\u7684\u5206\u7C7B\u5206\u5E03\u5B58\u5728\u5DEE\u5F02\uFF0C\u8DE8\u5206\u7C7B\u5408\u5E76\u7EDF\u8BA1\uFF1B\u5C0F\u6837\u672C\u4E0D\u8DB3\u4EE5\u786E\u8BA4\u7A33\u5B9A\u7684\u5F52\u7C7B\u53D8\u5316\u3002"] : [];
+    if (signal2.length) {
+      signal2.sort((x, y) => y.weight - x.weight);
+      const main = signal2[0];
+      add(subject, "comparison", main.title, main.observation, (main.weight + Math.min(20, (signal2.length - 1) * 8)) / 65, [...s.a, ...s.b], facts, [...limits, ...categoryLimit], ranges, signal2.slice(1).map((s2) => ({ type: s2.kind, title: s2.title })));
+    }
+    if (s.kind !== "category" && a.n && b.n && variation >= T.classificationShare && variation * Math.min(a.n, b.n) >= T.classificationMinMoved) add(subject, "classification", `${s.label}\u7684\u5206\u7C7B\u5F52\u5C5E\u53D1\u751F\u53D8\u5316`, `\u672C\u671F\u8BB0\u5F55\u5728${[...ca.keys()].join("\u3001")}\uFF0C\u4E0A\u671F\u5728${[...cb.keys()].join("\u3001")}\uFF1B\u4E24\u671F\u5206\u7C7B\u5206\u5E03\u6709\u660E\u663E\u53D8\u5316\uFF0C\u9700\u8DE8\u5206\u7C7B\u5408\u5E76\u540E\u7406\u89E3\u5B9E\u9645\u6D88\u8D39\u53D8\u5316\u3002`, variation, [...s.a, ...s.b], { ...comparisonFacts(s.a, s.b), classification_variation: fact("\u5206\u7C7B\u5206\u5E03\u53D8\u52A8\u5E45\u5EA6", variation * 100, "%") }, limits);
+  }
+  if (comparable) {
+    const changes = cats.map((c) => {
+      var _a2, _b2;
+      return { c, a: total((_a2 = aCats.get(c)) != null ? _a2 : []), b: total((_b2 = bCats.get(c)) != null ? _b2 : []) * k };
+    }).sort((x, y) => Math.abs(y.a - y.b) - Math.abs(x.a - x.b));
+    const rising = changes.find((c) => c.a - c.b >= T.amountDeltaCents), falling = changes.find((c) => c.b - c.a >= T.amountDeltaCents);
+    if (rising && falling && Math.abs(total(current) - total(previous) * k) <= Math.max(total(previous) * k * T.shareDelta, T.amountDeltaCents)) add("structure", "structure", "\u603B\u989D\u76F8\u8FD1\uFF0C\u5185\u90E8\u652F\u51FA\u91CD\u5FC3\u5374\u5728\u53D8\u5316", `${rising.c}\u589E\u52A0\u4E0E${falling.c}\u51CF\u5C11\u5728\u91D1\u989D\u4E0A\u76F8\u4E92\u62B5\u6D88\u3002\u603B\u989D\u7A33\u5B9A\u63A9\u76D6\u4E86\u5206\u7C7B\u6784\u6210\u53D8\u5316\uFF0C\u4E0D\u80FD\u636E\u6B64\u8BC1\u660E\u4E24\u79CD\u6D88\u8D39\u5B58\u5728\u8D44\u91D1\u8F6C\u79FB\u5173\u7CFB\u3002`, 0.9, [...current, ...previous], { increase: fact(`${rising.c}\u589E\u52A0\u91D1\u989D`, (rising.a - rising.b) / 100, "\u5143"), decrease: fact(`${falling.c}\u51CF\u5C11\u91D1\u989D`, (falling.b - falling.a) / 100, "\u5143"), ...comparisonFacts(current, previous) }, [...limits, "\u91D1\u989D\u62B5\u6D88\u4E0D\u7B49\u4E8E\u6D88\u8D39\u66FF\u4EE3\u6216\u56E0\u679C\u5173\u7CFB\u3002"]);
+    const entropy = (g, n) => cats.length <= 1 || !n ? 0 : -[...g.values()].reduce((s, r) => {
+      const p = r.length / n;
+      return s + p * Math.log(p);
+    }, 0) / Math.log(cats.length);
+    const hA = entropy(aCats, current.length), hB = entropy(bCats, previous.length), shares = cats.map((c) => {
+      var _a2, _b2, _c2, _d2, _e2, _f2;
+      return { c, a: ((_b2 = (_a2 = aCats.get(c)) == null ? void 0 : _a2.length) != null ? _b2 : 0) / Math.max(1, current.length), b: ((_d2 = (_c2 = bCats.get(c)) == null ? void 0 : _c2.length) != null ? _d2 : 0) / Math.max(1, previous.length), am: total((_e2 = aCats.get(c)) != null ? _e2 : []) / Math.max(1, total(current)), bm: total((_f2 = bCats.get(c)) != null ? _f2 : []) / Math.max(1, total(previous)) };
+    }).sort((x, y) => Math.max(Math.abs(y.a - y.b), Math.abs(y.am - y.bm)) - Math.max(Math.abs(x.a - x.b), Math.abs(x.am - x.bm)));
+    if (current.length >= T.distributionMin && previous.length >= T.distributionMin && shares[0]) {
+      const lead = shares[0], diff = Math.max(Math.abs(lead.a - lead.b), Math.abs(lead.am - lead.bm));
+      if (diff >= T.shareDelta || Math.abs(hA - hB) >= T.shareDelta) add("mix", "mix", "\u6D88\u8D39\u6784\u6210\u6539\u53D8\uFF0C\u7B14\u6570\u4E0E\u91D1\u989D\u5360\u6BD4\u503C\u5F97\u4E00\u8D77\u770B", `${lead.c}\u7684\u7B14\u6570\u6216\u91D1\u989D\u5360\u6BD4\u6539\u53D8\u3002\u5360\u6BD4\u53D8\u5316\u53EF\u80FD\u6765\u81EA\u8BE5\u7C7B\u589E\u52A0\uFF0C\u4E5F\u53EF\u80FD\u6765\u81EA\u5176\u4ED6\u7C7B\u51CF\u5C11\uFF0C\u4E0D\u80FD\u53EA\u770B\u4E00\u4E2A\u6BD4\u4F8B\u5224\u65AD\u82B1\u5F97\u66F4\u591A\u3002`, Math.min(1, diff * 3), [...current, ...previous], { ...comparisonFacts(current, previous), current_share: fact(`${lead.c}\u672C\u671F\u7B14\u6570\u5360\u6BD4`, lead.a * 100, "%"), previous_share: fact(`${lead.c}\u4E0A\u671F\u7B14\u6570\u5360\u6BD4`, lead.b * 100, "%"), current_amount_share: fact(`${lead.c}\u672C\u671F\u91D1\u989D\u5360\u6BD4`, lead.am * 100, "%"), previous_amount_share: fact(`${lead.c}\u4E0A\u671F\u91D1\u989D\u5360\u6BD4`, lead.bm * 100, "%"), category_overlap: fact("\u7C7B\u522B\u96C6\u5408\u91CD\u5408\u5EA6", cats.length ? [...aCats.keys()].filter((c) => bCats.has(c)).length / cats.length * 100 : 0, "%"), current_diversity: fact("\u672C\u671F\u7C7B\u522B\u5206\u6563\u7A0B\u5EA6", hA * 100, "%"), previous_diversity: fact("\u4E0A\u671F\u7C7B\u522B\u5206\u6563\u7A0B\u5EA6", hB * 100, "%") }, [...limits, "\u5206\u7C7B\u8C03\u6574\u4F1A\u5F71\u54CD\u6D88\u8D39\u6784\u6210\uFF0C\u7C7B\u522B\u71B5\u4F7F\u7528\u4E24\u671F\u76F8\u540C\u7C7B\u522B\u96C6\u5408\u3002"]);
+    }
+  }
+  const weekRanges = [];
+  for (let d = addDays(allRange.start, (7 - weekday(allRange.start)) % 7); addDays(d, 6) <= effectiveRange.end; d = addDays(d, 7)) weekRanges.push({ start: d, end: addDays(d, 6) });
+  const runs = [];
+  let run = [];
+  if (!undatedPaths.length) for (const w of weekRanges) {
+    if (cover(w).complete) run.push(w);
+    else {
+      if (run.length) runs.push(run);
+      run = [];
+    }
+  }
+  if (run.length) runs.push(run);
+  const recent = [...runs].reverse().find((r) => r.length >= T.repeatWeeks), lag = recent && weekRanges.length ? reportDays({ start: recent[recent.length - 1].end, end: weekRanges[weekRanges.length - 1].end }) - 1 : 0;
+  const weeks = recent && lag <= T.temporalMaxLagDays ? recent.slice(-T.temporalMaxWeeks) : [];
+  const temporalRange = weeks.length ? { start: weeks[0].start, end: weeks[weeks.length - 1].end } : effectiveRange, temporal = weeks.length ? selected(temporalRange) : [], temporalRanges = [{ label: "\u8FDE\u7EED\u5B8C\u6574\u5468", range: temporalRange }];
+  snapshot.temporalRange = weeks.length ? temporalRange : void 0;
+  snapshot.temporalLagDays = lag;
+  const timeLimits = [...limits.filter((t) => !t.includes("\u4E0A\u671F\u6309") && !t.includes("\u672C\u671F\u7F3A")), ...lag ? [`\u6700\u8FD1${lag / 7}\u5468\u8D26\u672C\u4E0D\u5B8C\u6574\uFF0C\u6309\u622A\u81F3${temporalRange.end}\u7684\u8FDE\u7EED\u5B8C\u6574\u5468\u5206\u6790\u3002`] : []];
+  const minDiff = (a, b) => Math.max(T.trendAbsolute, T.trendRelative * Math.max(a, b, 1));
+  for (const [key, g] of objectsAll) {
+    if (!weeks.length) break;
+    const records = unique(g.records.filter((r) => r.date >= temporalRange.start && r.date <= temporalRange.end)), counts = weeks.map((w) => records.filter((r) => r.date >= w.start && r.date <= w.end).length), last = weeks.slice(-T.repeatWeeks), lastRecords = records.filter((r) => r.date >= last[0].start);
+    const ordinary = ["object:\u65E9\u9910", "object:\u5348\u9910", "object:\u665A\u9910"].includes(key), changed = snapshot.findings.some((f) => f.subject === key);
+    if (last.length === T.repeatWeeks && counts.slice(-T.repeatWeeks).filter((n) => n > 0).length >= T.repeatActiveWeeks && lastRecords.length >= T.repeatCount && objectsNow.has(key) && (!ordinary || changed)) {
+      const dd = [...new Set(lastRecords.map((r) => r.date))].sort(), intervals = dd.slice(1).map((d, i) => reportDays({ start: dd[i], end: d }) - 1), lastCounts = counts.slice(-T.repeatWeeks);
+      add(key, "repeat", `${g.label}\u5DF2\u7ECF\u8FDE\u7EED\u591A\u5468\u51FA\u73B0`, "\u8FD9\u7EC4\u8BB0\u5F55\u5206\u6563\u5728\u591A\u4E2A\u5B8C\u6574\u5468\uFF0C\u66F4\u63A5\u8FD1\u65E5\u5E38\u91CD\u590D\u51FA\u73B0\uFF0C\u800C\u975E\u4E00\u6B21\u96C6\u4E2D\u8D2D\u4E70\uFF1B\u662F\u5426\u957F\u671F\u4FDD\u6301\u4ECD\u9700\u7EE7\u7EED\u89C2\u5BDF\u3002", Math.min(1, lastRecords.length / (T.repeatCount * 2)), lastRecords, { count: fact("\u6700\u8FD1\u56DB\u5468\u7B14\u6570", lastRecords.length, "\u7B14"), days: fact("\u51FA\u73B0\u5929\u6570", dd.length, "\u5929"), interval: fact("\u76F8\u90BB\u6D88\u8D39\u65E5\u95F4\u9694\u4E2D\u4F4D\u6570", reportMedian(intervals), "\u5929"), concentration: fact("\u6700\u591A\u4E00\u5468\u7B14\u6570\u5360\u6BD4", Math.max(...lastCounts) / lastRecords.length * 100, "%") }, timeLimits, [{ label: "\u6700\u8FD1\u56DB\u4E2A\u5B8C\u6574\u5468", range: { start: last[0].start, end: last[last.length - 1].end } }]);
+    }
+    if (weeks.length < T.trendMinWeeks || records.length < T.temporalMinCount) continue;
+    const slope = theilSen(counts), early = reportMedian(counts.slice(0, T.trendSegmentWeeks)), late = reportMedian(counts.slice(-T.trendSegmentWeeks)), difference = late - early;
+    if (Math.abs(difference) >= minDiff(early, late) && Math.abs(slope) * (weeks.length - 1) >= minDiff(early, late) && slope * difference > 0) add(key, "trend", `${g.label}\u7684\u5468\u9891\u6B21\u5448\u6301\u7EED${slope > 0 ? "\u4E0A\u5347" : "\u4E0B\u964D"}`, "\u524D\u540E\u56DB\u5468\u4E2D\u4F4D\u6570\u548C\u7A33\u5065\u8D8B\u52BF\u65B9\u5411\u4E00\u81F4\uFF0C\u63D0\u793A\u8BB0\u5F55\u9891\u7387\u6301\u7EED\u53D8\u5316\u3002\u53EA\u80FD\u5B9A\u4F4D\u5230\u5468\uFF0C\u4E0D\u80FD\u636E\u6B64\u786E\u5B9A\u751F\u6D3B\u539F\u56E0\u3002", Math.min(1, Math.abs(difference) / Math.max(1, early, late)), records, { early: fact("\u524D\u56DB\u5468\u5468\u7B14\u6570\u4E2D\u4F4D\u6570", early, "\u7B14"), late: fact("\u540E\u56DB\u5468\u5468\u7B14\u6570\u4E2D\u4F4D\u6570", late, "\u7B14"), slope: fact("\u7A33\u5065\u8D8B\u52BF\u6BCF\u5468\u7B14\u6570\u53D8\u5316", slope, "\u7B14") }, timeLimits, temporalRanges);
+    let split;
+    for (let i = T.trendSegmentWeeks; i <= counts.length - T.trendSegmentWeeks; i++) {
+      const before = reportMedian(counts.slice(0, i)), after = reportMedian(counts.slice(i)), difference2 = Math.abs(after - before);
+      if (difference2 >= minDiff(before, after) && (!split || difference2 > split.difference)) split = { index: i, before, after, difference: difference2 };
+    }
+    if (split) add(key, "level", `${g.label}\u7684\u9891\u7387\u5728\u67D0\u4E00\u5468\u524D\u540E\u6539\u53D8`, `\u4EE5${weeks[split.index].start}\u5F00\u59CB\u7684\u5468\u9644\u8FD1\u4E3A\u5019\u9009\u5206\u754C\uFF0C\u524D\u540E\u5468\u7B14\u6570\u4E2D\u4F4D\u6570\u4E0D\u540C\uFF1B\u4E0D\u80FD\u7CBE\u786E\u5230\u67D0\u4E00\u5929\u6216\u65AD\u8A00\u539F\u56E0\u3002`, Math.min(1, split.difference / Math.max(1, split.before, split.after)), records, { before: fact("\u5206\u754C\u524D\u5468\u7B14\u6570\u4E2D\u4F4D\u6570", split.before, "\u7B14"), after: fact("\u5206\u754C\u540E\u5468\u7B14\u6570\u4E2D\u4F4D\u6570", split.after, "\u7B14") }, [...timeLimits, "\u5206\u754C\u6765\u81EA\u63A2\u7D22\u6027\u626B\u63CF\uFF0C\u4E0D\u4EE3\u8868\u7EDF\u8BA1\u663E\u8457\u6027\u3002"], temporalRanges);
+  }
+  if (weeks.length >= T.trendMinWeeks && temporal.length >= T.temporalMinCount) {
+    const byDate = group(temporal, (r) => r.date), vectors = weeks.map((w) => Array.from({ length: 7 }, (_, day) => {
+      var _a2;
+      return total((_a2 = byDate.get(addDays(w.start, day))) != null ? _a2 : []);
+    })), means = Array.from({ length: 7 }, (_, d) => vectors.reduce((s, v) => s + v[d], 0) / weeks.length), work = means.slice(0, 5).reduce((a, b) => a + b, 0) / 5, wknd = (means[5] + means[6]) / 2;
+    const weekdayFacts = {};
+    for (let d = 0; d < 7; d++) {
+      const label = ["\u5468\u4E00", "\u5468\u4E8C", "\u5468\u4E09", "\u5468\u56DB", "\u5468\u4E94", "\u5468\u516D", "\u5468\u65E5"][d];
+      weekdayFacts[`weekday_amount_${d}`] = fact(`${label}\u65E5\u5747\u91D1\u989D`, means[d] / 100, "\u5143");
+      weekdayFacts[`weekday_count_${d}`] = fact(`${label}\u65E5\u5747\u7B14\u6570`, vectors.reduce((s, _v, i) => {
+        var _a2, _b2;
+        return s + ((_b2 = (_a2 = byDate.get(addDays(weeks[i].start, d))) == null ? void 0 : _a2.length) != null ? _b2 : 0);
+      }, 0) / weeks.length, "\u7B14");
+    }
+    const rhythm = [];
+    const weekendRepeat = vectors.filter((v) => (v[5] + v[6]) / 2 >= v.slice(0, 5).reduce((s, n) => s + n, 0) / 5 * T.rhythmRatio && v[5] + v[6] > 0).length / weeks.length, workRepeat = vectors.filter((v) => v.slice(0, 5).reduce((s, n) => s + n, 0) / 5 >= (v[5] + v[6]) / 2 * T.rhythmRatio && v.slice(0, 5).some((n) => n > 0)).length / weeks.length;
+    if (wknd > 0 && (!work || wknd / work >= T.rhythmRatio) && weekendRepeat >= T.rhythmPersistence) rhythm.push({ title: "\u5468\u672B\u652F\u51FA\u9AD8\u5CF0\u5728\u591A\u4E2A\u661F\u671F\u91CD\u590D\u51FA\u73B0", ratio: work ? wknd / work : null, peak: wknd, reference: work, repeat: weekendRepeat, observation: "\u6309\u6BCF\u5929\u6807\u51C6\u5316\u540E\uFF0C\u5468\u672B\u652F\u51FA\u66F4\u9AD8\uFF0C\u5E76\u5728\u591A\u6570\u5B8C\u6574\u5468\u91CD\u590D\uFF0C\u63D0\u793A\u7A33\u5B9A\u7684\u661F\u671F\u8282\u594F\u3002" });
+    if (work > 0 && (!wknd || work / wknd >= T.rhythmRatio) && workRepeat >= T.rhythmPersistence) rhythm.push({ title: "\u5DE5\u4F5C\u65E5\u652F\u51FA\u660E\u663E\u9AD8\u4E8E\u5468\u672B", ratio: wknd ? work / wknd : null, peak: work, reference: wknd, repeat: workRepeat, observation: "\u6309\u6BCF\u5929\u6807\u51C6\u5316\u540E\uFF0C\u5DE5\u4F5C\u65E5\u652F\u51FA\u66F4\u9AD8\uFF0C\u5E76\u5728\u591A\u6570\u5B8C\u6574\u5468\u91CD\u590D\uFF0C\u4E0D\u80FD\u76F4\u63A5\u65AD\u8A00\u901A\u52E4\u6216\u5DE5\u4F5C\u539F\u56E0\u3002" });
+    for (let d = 0; d < 7; d++) {
+      const other = reportMedian(means.filter((_n, i) => i !== d)), repeat = vectors.filter((v) => v[d] > 0 && v.filter((n) => n > v[d]).length < 2).length / weeks.length;
+      if (means[d] > 0 && (!other || means[d] / other >= T.rhythmDayRatio) && repeat >= T.rhythmPersistence) rhythm.push({ title: `\u6BCF${["\u5468\u4E00", "\u5468\u4E8C", "\u5468\u4E09", "\u5468\u56DB", "\u5468\u4E94", "\u5468\u516D", "\u5468\u65E5"][d]}\u662F\u91CD\u590D\u7684\u652F\u51FA\u9AD8\u5CF0`, ratio: other ? means[d] / other : null, peak: means[d], reference: other, repeat, observation: "\u8FD9\u4E00\u661F\u671F\u65E5\u5728\u591A\u6570\u5B8C\u6574\u5468\u5904\u4E8E\u6700\u9AD8\u6216\u6B21\u9AD8\u6C34\u5E73\uFF0C\u4E0D\u662F\u5355\u6B21\u5927\u989D\u4ED8\u6B3E\u5C31\u80FD\u89E3\u91CA\u7684\u8282\u594F\u3002" });
+    }
+    rhythm.sort((a, b) => {
+      var _a2, _b2;
+      return b.repeat - a.repeat || ((_a2 = b.ratio) != null ? _a2 : Infinity) - ((_b2 = a.ratio) != null ? _b2 : Infinity);
+    });
+    const best = rhythm[0], similarities = vectors.slice(1).map((v, i) => cosine(vectors[i], v));
+    if (best) add("rhythm", "rhythm", best.title, best.observation, Math.min(1, best.repeat), temporal, { ...weekdayFacts, ...best.ratio !== null ? { ratio: fact("\u9AD8\u5CF0\u4E0E\u5BF9\u7167\u65E5\u5747\u91D1\u989D\u4E4B\u6BD4", best.ratio, "\u500D") } : {}, peak_daily: fact("\u9AD8\u5CF0\u65E5\u5747\u91D1\u989D", best.peak / 100, "\u5143"), reference_daily: fact("\u5BF9\u7167\u65E5\u5747\u91D1\u989D", best.reference / 100, "\u5143"), repeat_share: fact("\u91CD\u590D\u9AD8\u5CF0\u7684\u5468\u5360\u6BD4", best.repeat * 100, "%"), persistence: fact("\u76F8\u90BB\u5468\u5206\u5E03\u76F8\u4F3C\u5EA6\u4E2D\u4F4D\u6570", reportMedian(similarities) * 100, "%") }, [...timeLimits, "\u65E5\u5747\u91D1\u989D\u4E0E\u91CD\u590D\u5468\u540C\u65F6\u6838\u5BF9\uFF1B\u76F8\u4F3C\u5EA6\u4E0D\u4EE3\u8868\u9884\u7B97\u5408\u7406\u6216\u751F\u6D3B\u539F\u56E0\u3002"], temporalRanges);
+  }
+  if (weeks.length >= T.associationMinWeeks) {
+    const objects = objectGroups(temporal), frequent = [...objects.entries()].filter(([, g]) => g.kind === "object" && new Set(g.records.map((r) => r.date)).size >= T.associationMinDays).sort((a, b) => b[1].records.length - a[1].records.length || a[0].localeCompare(b[0])).slice(0, T.associationMaxObjects), dd = dates(temporalRange);
+    const meal = (key) => ["object:\u65E9\u9910", "object:\u5348\u9910", "object:\u665A\u9910"].includes(key);
+    let pairs = 0;
+    for (let i = 0; i < frequent.length; i++) for (let j = i + 1; j < frequent.length; j++) if (!(meal(frequent[i][0]) && meal(frequent[j][0]))) pairs++;
+    for (let i = 0; i < frequent.length; i++) for (let j = i + 1; j < frequent.length; j++) {
+      const [aKey, a] = frequent[i], [bKey, b] = frequent[j];
+      if ([aKey, bKey].every((k2) => ["object:\u65E9\u9910", "object:\u5348\u9910", "object:\u665A\u9910"].includes(k2))) continue;
+      const ar = group(a.records, (r) => r.date), br = group(b.records, (r) => r.date), ad = new Set(ar.keys()), bd = new Set(br.keys()), together = [...ad].filter((d) => bd.has(d) && ar.get(d).some((ra) => br.get(d).some((rb) => ra.id !== rb.id)));
+      if (together.length < T.associationTogether) continue;
+      const direction = (aa, bb) => {
+        let expected = 0;
+        for (let day = 0; day < 7; day++) {
+          const exposed = [...aa].filter((d) => weekday(d) === day).length, controls = dd.filter((d) => weekday(d) === day && !aa.has(d));
+          if (exposed && !controls.length) return null;
+          if (exposed) expected += exposed * controls.filter((d) => bb.has(d)).length / controls.length;
+        }
+        return expected > 0 ? { expected, lift: together.length / expected } : null;
+      };
+      const forward = direction(ad, bd), reverse = direction(bd, ad);
+      const chosen = forward && (!reverse || forward.lift >= reverse.lift) ? { ...forward, a: a.label, b: b.label } : reverse ? { ...reverse, a: b.label, b: a.label } : null;
+      if (!chosen || chosen.lift < T.associationLift) continue;
+      const test = stratifiedAssociationTail(Array.from({ length: 7 }, (_, d) => ({ days: weeks.length, a: [...ad].filter((day) => weekday(day) === d).length, b: [...bd].filter((day) => weekday(day) === d).length })), together.length);
+      if (test.p >= T.associationAlpha / Math.max(1, pairs)) continue;
+      add([aKey, bKey].sort().join("+"), "association", `${chosen.a}\u4E0E${chosen.b}\u7ECF\u5E38\u5728\u540C\u4E00\u5929\u51FA\u73B0`, `\u5728\u6709${chosen.a}\u8BB0\u5F55\u7684\u65E5\u671F\uFF0C${chosen.b}\u66F4\u5E38\u51FA\u73B0\uFF1B\u6309\u661F\u671F\u5BF9\u7167\u5E76\u63A7\u5236\u6BD4\u8F83\u5BF9\u6570\u540E\u4ECD\u6709\u7EBF\u7D22\u3002\u53EA\u63CF\u8FF0\u540C\u65E5\u5173\u8054\uFF0C\u4E0D\u4EE3\u8868\u5148\u540E\u3001\u89E6\u53D1\u6216\u56E0\u679C\u3002`, Math.min(1, together.length / (T.associationTogether * 2)), [...a.records, ...b.records], { together: fact("\u4E0D\u540C\u8BB0\u5F55\u5171\u540C\u51FA\u73B0\u5929\u6570", together.length, "\u5929"), lift: fact("\u661F\u671F\u5339\u914D\u5BF9\u7167\u540E\u7684\u6BD4\u4F8B\u500D\u6570", chosen.lift, "\u500D"), expected_together: fact("\u661F\u671F\u5339\u914D\u5BF9\u7167\u9884\u8BA1\u5171\u540C\u51FA\u73B0\u5929\u6570", chosen.expected, "\u5929"), independent_expected: fact("\u56FA\u5B9A\u661F\u671F\u9891\u7387\u4E0B\u9884\u8BA1\u5171\u540C\u51FA\u73B0\u5929\u6570", test.expected, "\u5929"), tested_pairs: fact("\u5B9E\u9645\u6BD4\u8F83\u5BF9\u6570", pairs, "\u5BF9"), adjusted_p: fact("\u63A2\u7D22\u68C0\u9A8C\u6821\u6B63\u5C3E\u6982\u7387", Math.min(1, test.p * pairs) * 100, "%") }, [...timeLimits, "\u6309\u661F\u671F\u5206\u5C42\u7684\u56FA\u5B9A\u9891\u7387\u7CBE\u786E\u5C3E\u6982\u7387\u4F5C\u63A2\u7D22\u7B5B\u9009\uFF1B\u8FDE\u7EED\u65E5\u671F\u4F9D\u8D56\u548C\u672A\u8BB0\u5F55\u60C5\u5883\u4ECD\u53EF\u80FD\u5F71\u54CD\u5173\u8054\uFF0C\u4E0D\u662F\u53EF\u4FE1\u6982\u7387\u3002"], temporalRanges);
+    }
+  }
+  if (coverage[0].complete && snapshot.historicalRanges.length >= T.historyPeriods) for (const [key, s] of subjects) {
+    if (!["category", "object"].includes(s.kind) || s.a.length < T.minSubjectCount) continue;
+    const historyRows = snapshot.historicalRanges.map((range) => selected(range).filter((r) => s.kind === "category" ? r.category === s.label : identifyReportObjects(r.note, rules).some((o) => o.key === key)));
+    const values = historyRows.map((rs, i) => total(rs) / reportDays(snapshot.historicalRanges[i])), median3 = reportMedian(values), mad = reportMedian(values.map((v) => Math.abs(v - median3))), daily = total(s.a) / Math.max(1, observed[0]), diff = daily - median3, margin = Math.max(T.historyMadMultiplier * T.historyScale * mad, T.amountDeltaCents / Math.max(1, observed[0]));
+    if (Math.abs(diff) > margin) add(key, "history", `${s.label}\u660E\u663E${diff > 0 ? "\u9AD8" : "\u4F4E"}\u4E8E\u8FD1${values.length}\u671F\u8BB0\u5F55\u5E38\u6001`, "\u6309\u5B8C\u6574\u5386\u53F2\u5468\u671F\u7684\u65E5\u5747\u8BB0\u5F55\u91D1\u989D\u6BD4\u8F83\uFF0C\u672C\u671F\u504F\u79BB\u5386\u53F2\u4E2D\u4F4D\u6570\uFF1B\u5386\u53F2\u8F83\u5C11\u6216\u6CE2\u52A8\u5F88\u5C0F\u65F6\u4ECD\u91C7\u7528\u7EDD\u5BF9\u5F71\u54CD\u95E8\u69DB\uFF0C\u4E0D\u628A\u504F\u79BB\u89E3\u91CA\u4E3A\u539F\u56E0\u6216\u5931\u63A7\u3002", Math.min(1, Math.abs(diff) / Math.max(1, margin * 2)), [...s.a, ...historyRows.flat()], { current_daily: fact("\u672C\u671F\u6BCF\u89C2\u5BDF\u65E5\u91D1\u989D", daily / 100, "\u5143"), history_median: fact("\u5386\u53F2\u65E5\u5747\u91D1\u989D\u4E2D\u4F4D\u6570", median3 / 100, "\u5143"), history_mad: fact("\u5386\u53F2\u65E5\u5747\u91D1\u989D\u7EDD\u5BF9\u504F\u5DEE\u4E2D\u4F4D\u6570", mad / 100, "\u5143"), periods_used: fact("\u5B8C\u6574\u5386\u53F2\u5468\u671F\u6570", values.length, "\u671F") }, limits, [ranges[0], ...snapshot.historicalRanges.map((r) => ({ label: "\u5B8C\u6574\u5386\u53F2\u5468\u671F", range: r }))]);
+  }
+  for (const c of cats) {
+    const historical = all.filter((r2) => r2.category === c && snapshot.historicalRanges.some((h) => r2.date >= h.start && r2.date <= h.end));
+    if (historical.length < T.outlierHistoryCount) continue;
+    const p90 = quantile(historical.map((r2) => r2.cents), 0.9), threshold = Math.max(T.outlierP90Multiplier * p90, T.outlierFloorCents), r = [...(_h = aCats.get(c)) != null ? _h : []].sort((a, b) => b.cents - a.cents)[0];
+    if (r && r.cents >= threshold) add(`category:${c}`, "outlier", `${c}\u6709\u4E00\u7B14\u660E\u663E\u9AD8\u4E8E\u5386\u53F2\u7684\u4ED8\u6B3E`, "\u8FD9\u7B14\u4ED8\u6B3E\u660E\u663E\u9AD8\u4E8E\u8BE5\u5206\u7C7B\u5B8C\u6574\u5386\u53F2\u671F\u7684\u591A\u6570\u8BB0\u5F55\u3002\u5B83\u662F\u53EF\u6838\u5BF9\u7684\u5927\u989D\u7EBF\u7D22\uFF0C\u4E0D\u76F4\u63A5\u5224\u5B9A\u6D6A\u8D39\u3001\u5F02\u5E38\u4EA4\u6613\u6216\u6D88\u8D39\u5931\u63A7\u3002", Math.min(1, r.cents / (threshold * 2)), [r, ...historical], { outlier_amount: fact("\u672C\u671F\u5355\u7B14\u91D1\u989D", r.cents / 100, "\u5143"), history_p90: fact("\u5386\u53F2\u5355\u7B14\u91D1\u989DP90", p90 / 100, "\u5143"), outlier_share: fact("\u5360\u672C\u671F\u8BE5\u5206\u7C7B\u91D1\u989D", r.cents / Math.max(1, total((_i = aCats.get(c)) != null ? _i : [])) * 100, "%") }, limits, [ranges[0], ...snapshot.historicalRanges.map((range) => ({ label: "\u5B8C\u6574\u5386\u53F2\u5468\u671F", range }))]);
+  }
+  const evidenceById = new Map(snapshot.evidence.map((e) => [e.id, e])), recordSet = (f) => new Set(f.evidenceIds.flatMap((id) => {
+    var _a2, _b2;
+    return (_b2 = (_a2 = evidenceById.get(id)) == null ? void 0 : _a2.recordIds) != null ? _b2 : [];
+  }));
+  const ordered = snapshot.findings.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id)), merged = [], aliases = /* @__PURE__ */ new Map();
+  for (const candidate of ordered) {
+    const ids = recordSet(candidate), existing = merged.find((f) => {
+      if (f.subject === candidate.subject || f.subject === aliases.get(candidate.subject)) return true;
+      const outlier = f.type === "outlier" ? f : candidate.type === "outlier" ? candidate : void 0, comparison = f.type === "comparison" ? f : candidate.type === "comparison" ? candidate : void 0;
+      if (outlier && comparison) {
+        const outlierEvidence = evidenceById.get(outlier.id), comparisonEvidence = evidenceById.get(comparison.id);
+        if (outlierEvidence && (comparisonEvidence == null ? void 0 : comparisonEvidence.facts.top3_contribution) && comparisonEvidence.recordIds.includes(outlierEvidence.recordIds[0])) return true;
+      }
+      return f.evidenceIds.some((id) => {
+        var _a2, _b2;
+        const type = id.split(":")[0];
+        if (!(FAMILY[type] === "change" && FAMILY[candidate.type] === "change") && !(type === candidate.type && FAMILY[type] === "time")) return false;
+        const other = new Set((_b2 = (_a2 = evidenceById.get(id)) == null ? void 0 : _a2.recordIds) != null ? _b2 : []), intersection = [...ids].filter((id2) => other.has(id2)).length;
+        return intersection / Math.max(1, ids.size + other.size - intersection) >= T.dedupJaccard;
+      });
+    });
+    if (!existing) {
+      merged.push({ ...candidate, evidenceIds: [...candidate.evidenceIds], limits: [...candidate.limits], signals: [...(_j = candidate.signals) != null ? _j : []] });
+      continue;
+    }
+    existing.evidenceIds = [.../* @__PURE__ */ new Set([...existing.evidenceIds, ...candidate.evidenceIds])];
+    existing.limits = [.../* @__PURE__ */ new Set([...existing.limits, ...candidate.limits])];
+    const extraSignals = [...(_k = existing.signals) != null ? _k : [], { type: candidate.type, title: candidate.title }, ...(_l = candidate.signals) != null ? _l : []];
+    const oldSubject = existing.subject;
+    if (candidate.subject.startsWith("object:") && !existing.subject.startsWith("object:")) {
+      existing.subject = candidate.subject;
+      if (existing.type === candidate.type) {
+        extraSignals.push({ type: existing.type, title: existing.title });
+        existing.id = candidate.id;
+        existing.title = candidate.title;
+        existing.observation = candidate.observation;
+      }
+    }
+    if (existing.type === "outlier" && candidate.type === "comparison") {
+      extraSignals.push({ type: existing.type, title: existing.title });
+      existing.id = candidate.id;
+      existing.type = candidate.type;
+      existing.subject = candidate.subject;
+      existing.title = candidate.title;
+      existing.observation = candidate.observation;
+    }
+    if (oldSubject !== existing.subject) {
+      for (const [key, value] of aliases) if (value === oldSubject) aliases.set(key, existing.subject);
+      aliases.set(oldSubject, existing.subject);
+    }
+    aliases.set(candidate.subject, existing.subject);
+    existing.signals = [...new Map(extraSignals.filter((s) => s.title !== existing.title).map((s) => [s.title, s])).values()];
+  }
+  const isTime = (f) => f.evidenceIds.some((id) => FAMILY[id.split(":")[0]] === "time");
+  const hasTime = merged.some(isTime);
+  let changeCount = 0;
+  snapshot.findings = merged.filter((f) => {
+    if (FAMILY[f.type] === "change" && hasTime) {
+      if (changeCount >= T.maxComparisonFamily) return false;
+      changeCount++;
+    }
+    return true;
+  }).slice(0, T.topFindings);
+  if (hasTime && !snapshot.findings.some(isTime)) {
+    const time = merged.find(isTime);
+    let base = snapshot.findings.slice(0, T.topFindings - 1);
+    if (FAMILY[time.type] === "change" && base.filter((f) => FAMILY[f.type] === "change").length >= T.maxComparisonFamily) {
+      const last = base.map((f) => FAMILY[f.type]).lastIndexOf("change");
+      base = base.filter((_f2, i) => i !== last);
+    }
+    snapshot.findings = [...base, time].sort((a, b) => b.score - a.score);
+  }
+  const used = /* @__PURE__ */ new Set(["overview", ...snapshot.findings.flatMap((f) => f.evidenceIds)]);
+  snapshot.evidence = snapshot.evidence.filter((e) => used.has(e.id));
+  snapshot.fingerprint = reportHash(JSON.stringify({ rule: REPORT_RULE_VERSION, thresholds: T, objectRules: rules.source, preferences, excludedCategories, periods, effectiveRange, previousRange, trimmedDates, stars: preferences.includeStarred ? [] : [...starredIds].sort(), files: files.filter((f) => !f.date || f.date >= allRange.start && f.date <= periods.range.end).map((f) => [f.path, f.date, f.frontmatterTotalCents, f.diagnostics, f.records.map((r) => [r.id, r.date, r.time, r.category, r.cents, r.note])]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))) }));
+  return snapshot;
+}
+
+// src/report-presentation.ts
+var NUMBER = "[+\u2212-]?\\d+(?:,\\d{3})*(?:\\.\\d+)?";
+function decimal(value, places) {
+  const n = Number(value.replace(/,/g, "").replace("\u2212", "-"));
+  const digits = Math.abs(n).toFixed(places);
+  return `${n < 0 && Number(digits) ? "\u2212" : value.startsWith("+") ? "+" : ""}${digits}`;
+}
+function reportPlainLanguage(text) {
+  return text.replace(/基期/g, "\u4E0A\u671F").replace(/笔数变化的金额贡献（对称分解）|笔数贡献/g, "\u6B21\u6570\u53D8\u5316\u5E26\u6765\u7684\u5F71\u54CD").replace(/笔均变化的金额贡献（对称分解）|笔均贡献/g, "\u6BCF\u7B14\u91D1\u989D\u53D8\u5316\u5E26\u6765\u7684\u5F71\u54CD").replace(/头部大额记录/g, "\u6700\u8D35\u7684\u51E0\u7B14").replace(/头部三笔|最大三笔/g, "\u6700\u8D35\u7684\u4E09\u7B14").replace(/解释边界/g, "\u6CE8\u610F\u4E8B\u9879").replace(/单笔更便宜|单笔变便宜了/g, "\u6BCF\u7B14\u4ED8\u6B3E\u91D1\u989D\u66F4\u4F4E").replace(/每笔均价|均价/g, "\u5E73\u5747\u6BCF\u7B14\u91D1\u989D");
+}
+function formatReportText(text) {
+  return reportPlainLanguage(text).replace(new RegExp(`(${NUMBER})([\uFF5E~\u81F3])(${NUMBER})(\u5143|\u5757\u94B1|\u5757)`, "g"), (_m, a, sep, b, unit) => `${decimal(a, 2)}${sep}${decimal(b, 2)}${unit}`).replace(new RegExp(`([\xA5\uFFE5]\\s*)?(${NUMBER})\\s*(\u5143|\u5757\u94B1|\u5757)`, "g"), (_m, currency, amount, unit) => `${currency != null ? currency : ""}${decimal(amount, 2)}${unit}`).replace(new RegExp(`([\xA5\uFFE5])\\s*(${NUMBER})(?![\\d.])`, "g"), (_m, currency, amount) => `${currency}${decimal(amount, 2)}`).replace(new RegExp(`(${NUMBER})\\s*[%\uFF05]`, "g"), (_m, value) => `${decimal(value, 1)}%`).replace(/-(\d+(?:\.\d+)?)(笔|天)/g, "\u2212$1$2");
+}
+function reportTextParts(text, emphasis) {
+  const parts = [];
+  const add = (value, bold) => {
+    const pattern2 = /[+−](?:[¥￥])?\d+(?:\.\d+)?(?:元|块钱|块|%|笔|天)|[¥￥][+−]\d+(?:\.\d+)?/g;
+    let cursor2 = 0;
+    for (const m of value.matchAll(pattern2)) {
+      if (m.index > cursor2) parts.push({ text: value.slice(cursor2, m.index), bold });
+      parts.push({ text: m[0], bold, tone: m[0].includes("\u2212") ? "decrease" : "increase" });
+      cursor2 = m.index + m[0].length;
+    }
+    if (cursor2 < value.length) parts.push({ text: value.slice(cursor2), bold });
+  };
+  const formatted = formatReportText(text), pattern = /\*\*([^\n]+?)\*\*/g;
+  let cursor = 0;
+  for (const m of formatted.matchAll(pattern)) {
+    add(formatted.slice(cursor, m.index), false);
+    const bold = emphasis.remaining > 0;
+    if (bold) emphasis.remaining--;
+    add(m[1], bold);
+    cursor = m.index + m[0].length;
+  }
+  add(formatted.slice(cursor), false);
+  return parts;
+}
+function reportProgress(snapshot) {
+  var _a, _b;
+  const elapsed = reportDays(snapshot.range), analyzed = reportDays((_a = snapshot.effectiveRange) != null ? _a : snapshot.range), full = reportDays(snapshot.fullRange), previous = reportDays(snapshot.previousRange);
+  const custom = snapshot.preferences.mode === "custom", ongoing = snapshot.range.end < snapshot.fullRange.end;
+  const progress = ongoing ? `${custom ? "\u6240\u9009\u8303\u56F4" : "\u672C\u5468\u671F"}\u5DF2\u8FC7 ${elapsed} / ${full} \u5929` : `${custom ? "\u6240\u9009\u8303\u56F4" : "\u672C\u5468\u671F"}\u5171 ${full} \u5929`;
+  const comparison = ongoing ? previous === analyzed ? `\u4E0A\u671F\u53D6\u540C\u6837\u7684\u524D ${analyzed} \u5929\u5BF9\u6BD4` : `\u4E0A\u671F\u4EC5 ${previous} \u5929\uFF0C\u91D1\u989D\u4E0E\u9891\u6B21\u6309\u89C2\u5BDF\u65E5\u6298\u7B97` : custom ? `\u4E0E\u524D\u4E00\u7B49\u957F\u8303\u56F4\uFF08${previous} \u5929\uFF09\u5BF9\u6BD4` : `\u4E0E\u4E0A\u671F\u5B8C\u6574\u5468\u671F\uFF08${previous} \u5929\uFF09\u5BF9\u6BD4`;
+  const cutoff = ((_b = snapshot.trimmedDates) == null ? void 0 : _b.length) ? ` \xB7 \u622A\u81F3 ${snapshot.effectiveRange.end} \u5206\u6790\uFF08\u6700\u8FD1 ${snapshot.trimmedDates.length} \u5929\u672A\u8BB0\u8D26\uFF09` : "";
+  return `${progress}${cutoff} \xB7 ${comparison}${snapshot.degraded ? " \xB7 \u90E8\u5206\u65E5\u671F\u7F3A\u5931\uFF0C\u5DF2\u6309\u89C2\u5BDF\u65E5\u6298\u7B97" : snapshot.comparable ? "" : " \xB7 \u6570\u636E\u5F85\u6838\u5BF9"}`;
+}
+function findingKeyNumbers(f, evidence) {
+  var _a, _b;
+  const facts = (_b = (_a = evidence.find((e) => e.id === f.id)) != null ? _a : evidence[0]) == null ? void 0 : _b.facts;
+  if (!facts) return "";
+  const n = (key) => {
+    var _a2, _b2;
+    return (_b2 = (_a2 = facts[key]) == null ? void 0 : _a2.value) != null ? _b2 : 0;
+  }, money = (key) => `\xA5${n(key).toFixed(2)}`;
+  const number = (key) => Number.isInteger(n(key)) ? `${n(key)}` : n(key).toFixed(2);
+  if (f.type === "repeat") return `\u6700\u8FD1\u56DB\u5468 ${number("count")} \u7B14\uFF0C\u51FA\u73B0\u5728 ${number("days")} \u5929\u3002`;
+  if (f.type === "trend") return `\u524D\u56DB\u5468\u4E2D\u4F4D\u6570 ${number("early")} \u7B14/\u5468 \u2192 \u540E\u56DB\u5468 ${number("late")} \u7B14/\u5468\u3002`;
+  if (f.type === "level") return `\u5206\u754C\u524D\u5468\u4E2D\u4F4D\u6570 ${number("before")} \u7B14 \u2192 \u5206\u754C\u540E ${number("after")} \u7B14\u3002`;
+  if (f.type === "rhythm") return facts.ratio ? `\u9AD8\u5CF0\u65E5\u5747\u91D1\u989D\u7EA6\u4E3A\u5BF9\u7167\u7684 ${n("ratio").toFixed(1)} \u500D\uFF0C\u5728 ${n("repeat_share").toFixed(1)}% \u7684\u5B8C\u6574\u5468\u91CD\u590D\u3002` : `\u9AD8\u5CF0\u65E5\u5747 ${money("peak_daily")}\uFF0C\u5BF9\u7167\u65E5\u5747 ${money("reference_daily")}\uFF1B\u5728 ${n("repeat_share").toFixed(1)}% \u7684\u5B8C\u6574\u5468\u91CD\u590D\u3002`;
+  if (f.type === "association") return `\u4E0D\u540C\u8BB0\u5F55\u5171\u540C\u51FA\u73B0 ${number("together")} \u5929\uFF0C\u7EA6\u4E3A\u661F\u671F\u5339\u914D\u5BF9\u7167\u7684 ${n("lift").toFixed(1)} \u500D\u3002`;
+  if (f.type === "history") return `\u672C\u671F\u65E5\u5747 ${money("current_daily")}\uFF0C\u8FD1 ${number("periods_used")} \u4E2A\u5B8C\u6574\u5468\u671F\u7684\u65E5\u5747\u4E2D\u4F4D\u6570 ${money("history_median")}\u3002`;
+  if (f.type === "outlier") return `\u672C\u671F\u5355\u7B14 ${money("outlier_amount")}\uFF0C\u5386\u53F2\u8BE5\u5206\u7C7B\u5355\u7B14P90\u4E3A ${money("history_p90")}\u3002`;
+  if (f.type === "mix") return `\u76F8\u5173\u5206\u7C7B\u91D1\u989D\u5360\u6BD4 ${n("previous_amount_share").toFixed(1)}% \u2192 ${n("current_amount_share").toFixed(1)}%\uFF0C\u7B14\u6570\u5360\u6BD4 ${n("previous_share").toFixed(1)}% \u2192 ${n("current_share").toFixed(1)}%\u3002`;
+  const baseline = facts.previous_amount_scaled ? "previous_amount_scaled" : "previous_amount";
+  const previousCount = facts.previous_count_scaled ? "previous_count_scaled" : "previous_count";
+  return `\u672C\u671F ${number("current_count")} \u7B14 / ${money("current_amount")}\uFF0C\u4E0A\u671F${facts.previous_amount_scaled ? "\u6298\u7B97\u540E" : ""} ${number(previousCount)} \u7B14 / ${money(baseline)}\u3002`;
+}
+function formatReportFact(key, f) {
+  const change = ["frequency_contribution", "ticket_contribution", "top3_difference", "increase", "decrease"].includes(key);
+  const value = key === "decrease" ? -Math.abs(f.value) : f.value;
+  const places = f.unit === "\u5143" ? 2 : f.unit === "%" ? 1 : Number.isInteger(value) ? 0 : 2;
+  const text = `${decimal(`${change && value > 0 ? "+" : ""}${value}`, places)}${f.unit}`;
+  return { text, ...change && value !== 0 ? { tone: value < 0 ? "decrease" : "increase" } : {} };
+}
+
 // src/report.ts
-var REPORT_RULE_VERSION = "1";
+var REPORT_RULE_VERSION = "2";
 function defaultReportPreferences(now = /* @__PURE__ */ new Date()) {
   return { mode: "salary", offset: 0, customRange: { start: isoFromDate(now), end: isoFromDate(now) }, scope: "consumption", category: "", keyword: "", includeStarred: true };
 }
@@ -1677,12 +2260,7 @@ function reportPeriods(p, now) {
   const previous = p.offset === 0 ? { start: history[0].start, end: addDays(history[0].start, Math.min(elapsed, reportDays(history[0])) - 1) } : history[0];
   return { range, fullRange, previous, history };
 }
-function reportCoverage(files, range) {
-  const byDate = /* @__PURE__ */ new Map();
-  files.forEach((f) => {
-    var _a;
-    if (f.date) byDate.set(f.date, [...(_a = byDate.get(f.date)) != null ? _a : [], f]);
-  });
+function reportCoverageIndexed(byDate, range) {
   const missingDates = [], problems = [];
   for (let day = range.start; day <= range.end; day = addDays(day, 1)) {
     const entries = byDate.get(day);
@@ -1698,27 +2276,18 @@ function reportCoverage(files, range) {
   }
   return { range, complete: reportDays(range) > 0 && !missingDates.length && !problems.length, missingDates, problems };
 }
-var OBJECT_RULES = [
-  ["\u5496\u5561", /咖啡|拿铁|美式/],
-  ["\u5976\u8336", /奶茶/],
-  ["\u77FF\u6CC9\u6C34", /矿泉水/],
-  ["\u65E9\u9910", /早餐|早饭/],
-  ["\u5348\u9910", /午餐|午饭/],
-  ["\u665A\u9910", /晚餐|晚饭/],
-  ["\u96F6\u98DF", /零食/],
-  ["\u6C34\u679C", /水果|西瓜(?!霜)|榴莲|香蕉|葡萄/],
-  ["\u751F\u6D3B\u7528\u54C1", /洗发水|洗衣液|牙膏|牙线|纸巾|面巾纸|洗脸巾|洗面巾|洗衣粉|香皂|沐浴露/]
-];
-function identifyReportObjects(note) {
+var DEFAULT_OBJECT_RULES = parseObjectRules(DEFAULT_REPORT_OBJECT_RULES);
+function identifyReportObjects(note, rules = DEFAULT_OBJECT_RULES) {
   const text = normalizeLedgerText(note).trim().toLocaleLowerCase("zh-CN").replace(/\s+/g, " ");
   if (!text) return [];
-  const matches = OBJECT_RULES.filter(([, re]) => re.test(text));
+  const matches = rules.objects.filter(([, re]) => re.test(text));
   const mixed = matches.length > 1 && (/超市|购物|[+、]/.test(text) || matches.some(([label]) => ["\u6C34\u679C", "\u751F\u6D3B\u7528\u54C1", "\u96F6\u98DF"].includes(label)));
   const result = mixed ? [{ key: "mixed:\u8D2D\u7269", label: "\u6DF7\u5408\u8D2D\u7269", kind: "mixed" }] : matches.map(([label]) => ({ key: `object:${label}`, label, kind: "object" }));
-  for (const [brand, re] of [["\u745E\u5E78", /瑞幸/], ["\u871C\u96EA\u51B0\u57CE", /蜜雪冰城/], ["\u6D77\u5E95\u635E", /海底捞/]]) {
+  for (const [brand, re] of rules.brands) {
     if (re.test(text)) result.push({ key: `brand:${brand}`, label: `${brand}\uFF08\u54C1\u724C\uFF09`, kind: "brand" });
   }
-  if (!result.length) result.push({ key: `note:${text}`, label: text, kind: "note" });
+  const normalized = text.replace(/\d+(?:\.\d+)?\s*(份|杯|个|次)(?=$|[\s，,。])/g, "").replace(/[，,。!！；;]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!result.length && normalized) result.push({ key: `note:${normalized}`, label: normalized, kind: "note" });
   return result;
 }
 function reportHash(value) {
@@ -1729,7 +2298,6 @@ function reportHash(value) {
   }
   return `${(a >>> 0).toString(16)}${(b >>> 0).toString(16)}`;
 }
-var total = (r) => r.reduce((s, t) => s + t.cents, 0);
 function reportMedian(a) {
   const b = [...a].sort((x, y) => x - y);
   return b.length ? (b[Math.floor((b.length - 1) / 2)] + b[Math.floor(b.length / 2)]) / 2 : 0;
@@ -1749,398 +2317,29 @@ function symmetricDecomposition(n0, a0, n1, a1) {
   const p0 = n0 ? a0 / n0 : 0, p1 = n1 ? a1 / n1 : 0;
   return { frequency: (n1 - n0) * (p0 + p1) / 2, ticket: (p1 - p0) * (n0 + n1) / 2 };
 }
-function stats(r) {
-  return { n: r.length, cents: total(r), mean: r.length ? total(r) / r.length : 0, median: reportMedian(r.map((t) => t.cents)), days: new Set(r.map((t) => t.date)).size };
-}
-function unique(r) {
-  return [...new Map(r.map((t) => [t.id, t])).values()];
-}
-function group(r, key) {
-  const out = /* @__PURE__ */ new Map();
-  r.forEach((t) => {
-    var _a;
-    return out.set(key(t), [...(_a = out.get(key(t))) != null ? _a : [], t]);
-  });
-  return out;
-}
-function dateList(r) {
-  return Array.from({ length: reportDays(r) }, (_, i) => addDays(r.start, i));
-}
-function weekday(d) {
-  return ((/* @__PURE__ */ new Date(`${d}T12:00:00`)).getDay() + 6) % 7;
-}
-function buildReportSnapshot(files, preferences, now, excludedCategories, starredIds) {
-  var _a, _b, _c, _d, _e;
-  const periods = reportPeriods(preferences, now);
-  const coverage = [periods.range, periods.previous, ...periods.history].map((r) => reportCoverage(files, r));
-  const undatedPaths = files.filter((f) => !f.date).map((f) => f.path);
-  const selected = (range) => budgetScopedRecords(flattenRecords(files).filter((r) => recordMatches(r, {
-    range,
-    scope: preferences.scope,
-    excludedCategories,
-    categories: preferences.category ? [preferences.category] : [],
-    keyword: preferences.keyword
-  })), preferences.includeStarred, starredIds);
-  const allRange = { start: periods.history[5].start, end: periods.range.end };
-  const all = selected(allRange), current = selected(periods.range), previous = selected(periods.previous);
-  const snapshot = {
-    ruleVersion: REPORT_RULE_VERSION,
-    fingerprint: "",
-    label: preferences.mode === "salary" ? "\u5DE5\u8D44\u5468\u671F\u652F\u51FA\u62A5\u544A" : preferences.mode === "month" ? "\u81EA\u7136\u6708\u652F\u51FA\u62A5\u544A" : "\u81EA\u5B9A\u4E49\u652F\u51FA\u62A5\u544A",
-    range: periods.range,
-    fullRange: periods.fullRange,
-    previousRange: periods.previous,
-    historicalRanges: periods.history.filter((_, i) => coverage[i + 2].complete),
-    coverage,
-    undatedPaths,
-    comparable: coverage[0].complete && coverage[1].complete && !undatedPaths.length,
-    findings: [],
-    evidence: [],
-    records: all,
-    preferences: { ...preferences },
-    excludedCategories: [...excludedCategories]
-  };
-  const objectGroups = (rs) => {
-    var _a2;
-    const g = /* @__PURE__ */ new Map();
-    for (const r of rs) for (const o of identifyReportObjects(r.note)) {
-      const value = (_a2 = g.get(o.key)) != null ? _a2 : { label: o.label, records: [] };
-      value.records.push(r);
-      g.set(o.key, value);
-    }
-    return g;
-  };
-  const objectsNow = objectGroups(current), objectsPrev = objectGroups(previous), objectsAll = objectGroups(all);
-  const add = (subject, type, title, observation, score, rs, facts, limits, ranges = [{ label: "\u672C\u671F", range: periods.range }, { label: "\u57FA\u671F", range: periods.previous }], narrativeSubject = subject) => {
-    const id = `${type}:${reportHash(subject)}`;
-    if (snapshot.findings.some((f) => f.id === id)) return;
-    snapshot.findings.push({ id, subject: narrativeSubject, type, title, observation, score, evidenceIds: [id], limits });
-    const weekDays = ranges.length === 1 && ranges[0].label.includes("\u5468") ? reportDays(ranges[0].range) : 0;
-    snapshot.evidence.push({ id, label: title, ranges, facts: { ...facts, ...weekDays && weekDays % 7 === 0 ? { observed_weeks: { label: "\u89C2\u5BDF\u5B8C\u6574\u5468\u6570", value: weekDays / 7, unit: "\u5468" } } : {} }, recordIds: unique(rs).map((r) => r.id), limits });
-  };
-  const fact = (label, value, unit) => ({ label, value: Number(value.toFixed(2)), unit });
-  const comparisonFacts = (x, y) => {
-    const a = stats(x), b = stats(y), decomposition = symmetricDecomposition(b.n, b.cents, a.n, a.cents);
-    return {
-      current_amount: fact("\u672C\u671F\u91D1\u989D", a.cents / 100, "\u5143"),
-      previous_amount: fact("\u57FA\u671F\u91D1\u989D", b.cents / 100, "\u5143"),
-      current_count: fact("\u672C\u671F\u7B14\u6570", a.n, "\u7B14"),
-      previous_count: fact("\u57FA\u671F\u7B14\u6570", b.n, "\u7B14"),
-      current_mean: fact("\u672C\u671F\u5E73\u5747\u6BCF\u7B14", a.mean / 100, "\u5143"),
-      previous_mean: fact("\u57FA\u671F\u5E73\u5747\u6BCF\u7B14", b.mean / 100, "\u5143"),
-      current_median: fact("\u672C\u671F\u4E2D\u4F4D\u6570", a.median / 100, "\u5143"),
-      previous_median: fact("\u57FA\u671F\u4E2D\u4F4D\u6570", b.median / 100, "\u5143"),
-      current_days: fact("\u672C\u671F\u51FA\u73B0\u5929\u6570", a.days, "\u5929"),
-      previous_days: fact("\u57FA\u671F\u51FA\u73B0\u5929\u6570", b.days, "\u5929"),
-      current_calendar_days: fact("\u672C\u671F\u89C2\u5BDF\u81EA\u7136\u65E5\u6570", reportDays(periods.range), "\u5929"),
-      previous_calendar_days: fact("\u57FA\u671F\u89C2\u5BDF\u81EA\u7136\u65E5\u6570", reportDays(periods.previous), "\u5929"),
-      current_daily_count: fact("\u672C\u671F\u6BCF\u81EA\u7136\u65E5\u7B14\u6570", a.n / Math.max(1, reportDays(periods.range)), "\u7B14"),
-      previous_daily_count: fact("\u57FA\u671F\u6BCF\u81EA\u7136\u65E5\u7B14\u6570", b.n / Math.max(1, reportDays(periods.previous)), "\u7B14"),
-      current_active_day_count: fact("\u672C\u671F\u6BCF\u4E2A\u6D88\u8D39\u65E5\u7B14\u6570", a.days ? a.n / a.days : 0, "\u7B14"),
-      previous_active_day_count: fact("\u57FA\u671F\u6BCF\u4E2A\u6D88\u8D39\u65E5\u7B14\u6570", b.days ? b.n / b.days : 0, "\u7B14"),
-      frequency_contribution: fact("\u7B14\u6570\u53D8\u5316\u7684\u91D1\u989D\u8D21\u732E\uFF08\u5BF9\u79F0\u5206\u89E3\uFF09", decomposition.frequency / 100, "\u5143"),
-      ticket_contribution: fact("\u7B14\u5747\u53D8\u5316\u7684\u91D1\u989D\u8D21\u732E\uFF08\u5BF9\u79F0\u5206\u89E3\uFF09", decomposition.ticket / 100, "\u5143")
-    };
-  };
-  const boundaries = ["\u8D26\u76EE\u7B14\u6570\u4E0D\u7B49\u4E8E\u5546\u54C1\u6570\u91CF\uFF1B\u5E73\u5747\u6BCF\u7B14\u91D1\u989D\u4E0D\u662F\u5546\u54C1\u5355\u4EF7\u3002", "\u5907\u6CE8\u8BC6\u522B\u53CD\u6620\u5DF2\u8BB0\u5F55\u7528\u9014\uFF0C\u4E0D\u8BC1\u660E\u6CA1\u6709\u6F0F\u8BB0\u6216\u8BB0\u8D26\u65B9\u5F0F\u53D8\u5316\u3002"];
-  if (snapshot.comparable) {
-    const subjects = /* @__PURE__ */ new Map();
-    for (const [category, rs] of group(current, (r) => r.category)) subjects.set(`category:${category}`, { label: category, a: rs, b: previous.filter((r) => r.category === category), object: false });
-    for (const [category, rs] of group(previous, (r) => r.category)) if (!subjects.has(`category:${category}`)) subjects.set(`category:${category}`, { label: category, a: [], b: rs, object: false });
-    for (const key of /* @__PURE__ */ new Set([...objectsNow.keys(), ...objectsPrev.keys()])) subjects.set(key, { label: ((_a = objectsNow.get(key)) != null ? _a : objectsPrev.get(key)).label, a: unique((_c = (_b = objectsNow.get(key)) == null ? void 0 : _b.records) != null ? _c : []), b: unique((_e = (_d = objectsPrev.get(key)) == null ? void 0 : _d.records) != null ? _e : []), object: true });
-    for (const [key, s] of subjects) {
-      const a = stats(s.a), b = stats(s.b);
-      if (Math.max(a.n, b.n) < 5) continue;
-      const rate = b.n ? a.n / Math.max(1, reportDays(periods.range)) / (b.n / Math.max(1, reportDays(periods.previous))) - 1 : null;
-      const frequency = Math.abs(a.n - b.n) >= 5 && (rate === null || Math.abs(rate) >= 0.2);
-      const amount = Math.abs(a.cents - b.cents) >= 1e4 && (!b.cents || Math.abs(a.cents / b.cents - 1) >= 0.2);
-      let title = "", observation = "", score = 0;
-      if (frequency || amount) {
-        title = !b.n ? `${s.label}\u5728\u672C\u671F\u65B0\u589E\u8BB0\u5F55` : frequency ? `${s.label}\u7684\u8BB0\u5F55\u9891\u7387${a.n > b.n ? "\u589E\u52A0" : "\u4E0B\u964D"}` : `${s.label}\u7684\u91D1\u989D\u53D8\u5316\u9700\u8981\u62C6\u5F00\u7406\u89E3`;
-        observation = !b.n ? "\u57FA\u671F\u6CA1\u6709\u8FD9\u7EC4\u8BB0\u5F55\uFF0C\u672C\u671F\u51FA\u73B0\u4E86\u591A\u7B14\uFF1B\u76EE\u524D\u53EF\u4EE5\u786E\u8BA4\u65B0\u589E\u8BB0\u5F55\uFF0C\u8FD8\u4E0D\u80FD\u8BA4\u5B9A\u5F62\u6210\u957F\u671F\u4E60\u60EF\u3002" : frequency ? `\u5DF2\u8BB0\u5F55\u7684${s.label}\u5728\u7B14\u6570\u548C\u6BCF\u5929\u9891\u6B21\u4E0A\u5747\u6709\u53D8\u5316\u3002\u5E94\u540C\u65F6\u89C2\u5BDF\u51FA\u73B0\u5929\u6570\u3001\u5355\u65E5\u7B14\u6570\u548C\u7B14\u5747\u91D1\u989D\uFF0C\u5224\u65AD\u53D8\u5316\u6765\u81EA\u66F4\u591A\u6D88\u8D39\u65E5\u8FD8\u662F\u540C\u65E5\u66F4\u591A\u8BB0\u5F55\u3002` : "\u91D1\u989D\u53D8\u5316\u540C\u65F6\u53D7\u7B14\u6570\u548C\u5E73\u5747\u6BCF\u7B14\u5F71\u54CD\uFF1B\u5BF9\u79F0\u5206\u89E3\u63D0\u4F9B\u4E24\u90E8\u5206\u8D21\u732E\uFF0C\u4E0D\u5C06\u7B14\u5747\u53D8\u5316\u76F4\u63A5\u89E3\u91CA\u4E3A\u5546\u54C1\u6DA8\u4EF7\u3002";
-        score = (s.object ? 35 : 20) + Math.min(25, Math.abs(a.n - b.n)) + Math.min(20, Math.abs(a.cents - b.cents) / 1e4);
-      }
-      const top = (r) => [...r].sort((x, y) => y.cents - x.cents).slice(0, 3);
-      const delta = a.cents - b.cents, topDelta = total(top(s.a)) - total(top(s.b));
-      const big = a.n >= 10 && b.n >= 10 && delta >= 1e4 && topDelta / delta >= 0.5;
-      if (big) {
-        title = `${s.label}\u4E0A\u6DA8\u4E3B\u8981\u96C6\u4E2D\u5728\u5C11\u6570\u8F83\u5927\u8BB0\u5F55`;
-        observation = "\u4E24\u671F\u5404\u81EA\u6700\u5927\u7684\u4E09\u7B14\u8BB0\u5F55\uFF0C\u5176\u91D1\u989D\u5DEE\u989D\u89E3\u91CA\u4E86\u672C\u671F\u589E\u91CF\u7684\u4E00\u534A\u4EE5\u4E0A\u3002\u603B\u989D\u53D8\u5316\u4E0D\u80FD\u76F4\u63A5\u63A8\u5E7F\u5230\u6BCF\u4E00\u7B14\u65E5\u5E38\u6D88\u8D39\u3002";
-        score += 40;
-      }
-      const distribution = a.n >= 10 && b.n >= 10;
-      const smallA = a.n ? s.a.filter((r) => r.cents < 2e3).length / a.n : 0, smallB = b.n ? s.b.filter((r) => r.cents < 2e3).length / b.n : 0;
-      if (distribution && a.mean > b.mean && a.median <= b.median && amount) {
-        title = `${s.label}\u5E73\u5747\u91D1\u989D\u4E0A\u5347\uFF0C\u5178\u578B\u5355\u7B14\u6CA1\u6709\u540C\u6B65\u53D8\u8D35`;
-        observation = `\u5E73\u5747\u6BCF\u7B14\u4E0A\u5347\uFF0C\u4E2D\u4F4D\u6570\u5374\u6CA1\u6709\u4E0A\u5347\uFF0C\u8BF4\u660E\u91D1\u989D\u5206\u5E03\u5185\u90E8\u53D8\u5316\u3002${big ? "\u4E24\u671F\u6700\u5927\u4E09\u7B14\u7684\u5DEE\u989D\u89E3\u91CA\u4E86\u589E\u91CF\u7684\u4E00\u534A\u4EE5\u4E0A\uFF0C\u8F83\u5927\u8BB0\u5F55\u62C9\u9AD8\u4E86\u5E73\u5747\u6570\uFF0C\u4E0D\u80FD\u63A8\u5E7F\u5230\u6BCF\u4E00\u7B14\u65E5\u5E38\u6D88\u8D39\u3002" : "\u8F83\u5927\u8BB0\u5F55\u53EF\u80FD\u62C9\u9AD8\u5E73\u5747\u6570\uFF0C\u5E94\u7ED3\u5408\u5176\u589E\u91CF\u8D21\u732E\u7406\u89E3\u3002"}`;
-        score += 35;
-      } else if (distribution && Math.abs(smallA - smallB) >= 0.1) {
-        if (!title) {
-          title = `${s.label}\u7684\u5C0F\u989D\u8BB0\u5F55\u5360\u6BD4\u6539\u53D8`;
-          observation = "\u4E8C\u5341\u5143\u4EE5\u4E0B\u8BB0\u5F55\u7684\u5360\u6BD4\u53D8\u5316\u8D85\u8FC7\u5341\u4E2A\u767E\u5206\u70B9\uFF0C\u91D1\u989D\u5206\u5E03\u7684\u53D8\u5316\u53EF\u80FD\u88AB\u603B\u989D\u63A9\u76D6\u3002";
-        }
-        score += 15;
-      }
-      if (s.object && a.days - b.days >= 5) {
-        title = `${s.label}\u51FA\u73B0\u5728\u66F4\u591A\u65E5\u5B50\u91CC`;
-        observation = "\u8FD9\u7EC4\u6D88\u8D39\u4E0D\u4EC5\u7B14\u6570\u6539\u53D8\uFF0C\u4E5F\u5206\u5E03\u5230\u66F4\u591A\u65E5\u671F\uFF0C\u8F83\u5355\u6B21\u96C6\u4E2D\u8D2D\u4E70\u66F4\u63A5\u8FD1\u65E5\u5E38\u91CD\u590D\u51FA\u73B0\uFF1B\u662F\u5426\u6301\u7EED\u4ECD\u9700\u8DE8\u5468\u89C2\u5BDF\u3002";
-        score += 35;
-      }
-      const limits = [...boundaries];
-      let narrativeSubject = key;
-      let componentFacts = {};
-      const binFacts = {};
-      if (distribution) for (const [i, lower, upper, label] of [[0, 0, 1e3, "\u5341\u5143\u4EE5\u4E0B"], [1, 1e3, 3e3, "\u5341\u5143\u81F3\u4E09\u5341\u5143\uFF08\u4E0D\u542B\uFF09"], [2, 3e3, 5e3, "\u4E09\u5341\u5143\u81F3\u4E94\u5341\u5143\uFF08\u4E0D\u542B\uFF09"], [3, 5e3, Infinity, "\u4E94\u5341\u5143\u53CA\u4EE5\u4E0A"]]) {
-        binFacts[`current_bin_${i}`] = fact(`\u672C\u671F${label}\u7B14\u6570`, s.a.filter((r) => r.cents >= lower && r.cents < upper).length, "\u7B14");
-        binFacts[`previous_bin_${i}`] = fact(`\u57FA\u671F${label}\u7B14\u6570`, s.b.filter((r) => r.cents >= lower && r.cents < upper).length, "\u7B14");
-      }
-      if (!s.object && (frequency || amount || Math.abs(a.n - b.n) >= 5)) {
-        const contributions = [...objectsNow.entries()].map(([objectKey, g]) => {
-          var _a2, _b2;
-          return {
-            key: objectKey,
-            label: g.label,
-            a: g.records.filter((r) => r.category === s.label),
-            b: ((_b2 = (_a2 = objectsPrev.get(objectKey)) == null ? void 0 : _a2.records) != null ? _b2 : []).filter((r) => r.category === s.label)
-          };
-        }).filter((o) => o.key.startsWith("object:") || o.key.startsWith("mixed:")).sort((x, y) => Math.abs(y.a.length - y.b.length) - Math.abs(x.a.length - x.b.length));
-        const lead = contributions[0];
-        if (lead && Math.abs(lead.a.length - lead.b.length) >= 5 && Math.abs(lead.a.length - lead.b.length) >= Math.abs(a.n - b.n) * 0.5) {
-          const residual = a.n - lead.a.length - (b.n - lead.b.length);
-          componentFacts = {
-            component_current_count: fact(`${lead.label}\u672C\u671F\u7B14\u6570\uFF08\u8BE5\u539F\u5206\u7C7B\u5185\uFF09`, lead.a.length, "\u7B14"),
-            component_previous_count: fact(`${lead.label}\u57FA\u671F\u7B14\u6570\uFF08\u8BE5\u539F\u5206\u7C7B\u5185\uFF09`, lead.b.length, "\u7B14"),
-            residual_current_count: fact("\u672C\u671F\u6263\u9664\u8BE5\u5BF9\u8C61\u540E\u7684\u7B14\u6570", a.n - lead.a.length, "\u7B14"),
-            residual_previous_count: fact("\u57FA\u671F\u6263\u9664\u8BE5\u5BF9\u8C61\u540E\u7684\u7B14\u6570", b.n - lead.b.length, "\u7B14")
-          };
-          title = !b.n ? `${s.label}\u5728\u672C\u671F\u65B0\u589E\uFF0C\u4E3B\u8981\u6765\u81EA${lead.label}\u8BB0\u5F55` : `${s.label}\u7B14\u6570\u53D8\u5316\u4E3B\u8981\u6765\u81EA${lead.label}\u8BB0\u5F55`;
-          observation = `\u5206\u7C7B\u7B14\u6570\u7684\u53D8\u5316\u4E2D\uFF0C${lead.label}\u8BB0\u5F55\u8D21\u732E\u660E\u663E\uFF1B\u6263\u9664\u8FD9\u4E9B\u8BB0\u5F55\u540E\uFF0C\u5176\u4F59\u7B14\u6570${residual > 0 ? "\u589E\u52A0" : residual < 0 ? "\u51CF\u5C11" : "\u4E0D\u53D8"}\uFF0C\u4E0D\u80FD\u628A\u5206\u7C7B\u53D8\u5316\u6CDB\u5316\u6210\u6BCF\u4E00\u79CD\u6D88\u8D39\u90FD\u53D8\u9891\u7E41\u3002${observation} ${big ? "\u91D1\u989D\u589E\u91CF\u4E3B\u8981\u96C6\u4E2D\u5728\u5C11\u6570\u8F83\u5927\u8BB0\u5F55\uFF0C\u91D1\u989D\u4E0E\u7B14\u6570\u7684\u53D8\u5316\u6709\u4E0D\u540C\u6765\u6E90\u3002" : ""}`;
-          score += 45;
-          const leadNowIds = new Set(lead.a.map((r) => r.id)), leadPreviousIds = new Set(lead.b.map((r) => r.id));
-          const remainderNow = s.a.filter((r) => !leadNowIds.has(r.id)), remainderPrevious = s.b.filter((r) => !leadPreviousIds.has(r.id));
-          if (!big && remainderNow.length === remainderPrevious.length && total(remainderNow) === total(remainderPrevious)) {
-            narrativeSubject = lead.key;
-            score = Math.min(score, 60);
-          }
-        }
-      }
-      if (title) add(key, "comparison", title, observation, score, [...s.a, ...s.b], {
-        ...comparisonFacts(s.a, s.b),
-        ...componentFacts,
-        ...binFacts,
-        small_threshold: fact("\u5C0F\u989D\u533A\u95F4\u4E0A\u754C\uFF08\u4E0D\u542B\uFF09", 20, "\u5143"),
-        current_small_share: fact("\u672C\u671F\u4E8C\u5341\u5143\u4EE5\u4E0B\u5360\u6BD4", smallA * 100, "%"),
-        previous_small_share: fact("\u57FA\u671F\u4E8C\u5341\u5143\u4EE5\u4E0B\u5360\u6BD4", smallB * 100, "%"),
-        top3_current_n: fact("\u672C\u671F\u6700\u5927\u8BB0\u5F55\u53D6\u6837\u7B14\u6570", Math.min(3, a.n), "\u7B14"),
-        top3_previous_n: fact("\u57FA\u671F\u6700\u5927\u8BB0\u5F55\u53D6\u6837\u7B14\u6570", Math.min(3, b.n), "\u7B14"),
-        top3_current_amount: fact("\u672C\u671F\u6700\u5927\u4E09\u7B14\u5408\u8BA1", total(top(s.a)) / 100, "\u5143"),
-        top3_previous_amount: fact("\u57FA\u671F\u6700\u5927\u4E09\u7B14\u5408\u8BA1", total(top(s.b)) / 100, "\u5143"),
-        top3_difference: fact("\u4E24\u671F\u5404\u81EA\u6700\u5927\u4E09\u7B14\u5408\u8BA1\u5DEE", topDelta / 100, "\u5143"),
-        ...big ? { top3_contribution: fact("\u6700\u5927\u4E09\u7B14\u5DEE\u989D\u5360\u589E\u91CF", topDelta / delta * 100, "%") } : {}
-      }, limits, void 0, narrativeSubject);
-      if (s.object && s.a.length > 0 && s.b.length > 0 && Math.max(s.a.length, s.b.length) >= 5) {
-        const ca = new Set(s.a.map((r) => r.category)), cb = new Set(s.b.map((r) => r.category));
-        if ([...ca].some((c) => !cb.has(c)) || [...cb].some((c) => !ca.has(c))) add(key, "classification", `${s.label}\u7684\u5206\u7C7B\u5F52\u5C5E\u53D1\u751F\u53D8\u5316`, "\u540C\u4E00\u5907\u6CE8\u5BF9\u8C61\u5728\u4E24\u671F\u51FA\u73B0\u7684\u539F\u5206\u7C7B\u4E0D\u540C\uFF0C\u5206\u7C7B\u62A5\u8868\u4E2D\u7684\u53D8\u5316\u53EF\u80FD\u90E8\u5206\u6765\u81EA\u5F52\u7C7B\u65B9\u5F0F\u3002\u5B9E\u9645\u8D2D\u4E70\u53D8\u5316\u9700\u8981\u8DE8\u5206\u7C7B\u5408\u5E76\u540E\u518D\u5224\u65AD\u3002", 85, [...s.a, ...s.b], comparisonFacts(s.a, s.b), [...boundaries, `\u672C\u671F\u539F\u5206\u7C7B\uFF1A${[...ca].join("\u3001")}\uFF1B\u57FA\u671F\u539F\u5206\u7C7B\uFF1A${[...cb].join("\u3001")}`]);
-      }
-    }
-    const aCats = group(current, (r) => r.category), bCats = group(previous, (r) => r.category);
-    const cats = [.../* @__PURE__ */ new Set([...aCats.keys(), ...bCats.keys()])];
-    const changes = cats.map((c) => {
-      var _a2, _b2;
-      return { c, a: total((_a2 = aCats.get(c)) != null ? _a2 : []), b: total((_b2 = bCats.get(c)) != null ? _b2 : []) };
-    }).sort((a, b) => Math.abs(b.a - b.b) - Math.abs(a.a - a.b));
-    const rising = changes.find((c) => c.a - c.b >= 1e4), falling = changes.find((c) => c.b - c.a >= 1e4);
-    if (rising && falling && Math.abs(total(current) - total(previous)) <= Math.max(total(previous) * 0.1, 1e4)) add(
-      "structure",
-      "structure",
-      "\u603B\u989D\u76F8\u8FD1\uFF0C\u5185\u90E8\u652F\u51FA\u91CD\u5FC3\u5374\u5728\u53D8\u5316",
-      `${rising.c}\u589E\u52A0\u4E0E${falling.c}\u51CF\u5C11\u5728\u91D1\u989D\u4E0A\u76F8\u4E92\u62B5\u6D88\u3002\u603B\u989D\u7A33\u5B9A\u63A9\u76D6\u4E86\u5206\u7C7B\u6784\u6210\u53D8\u5316\uFF0C\u4E0D\u80FD\u636E\u6B64\u8BC1\u660E\u4E24\u79CD\u6D88\u8D39\u5B58\u5728\u8D44\u91D1\u8F6C\u79FB\u5173\u7CFB\u3002`,
-      80,
-      [...current, ...previous],
-      { increase: fact(`${rising.c}\u589E\u52A0\u91D1\u989D`, (rising.a - rising.b) / 100, "\u5143"), decrease: fact(`${falling.c}\u51CF\u5C11\u91D1\u989D`, (falling.b - falling.a) / 100, "\u5143"), ...comparisonFacts(current, previous) },
-      ["\u91D1\u989D\u62B5\u6D88\u4E0D\u7B49\u4E8E\u6D88\u8D39\u66FF\u4EE3\u6216\u56E0\u679C\u5173\u7CFB\u3002"]
-    );
-    const union = /* @__PURE__ */ new Set([...aCats.keys(), ...bCats.keys()]), intersection = [...aCats.keys()].filter((c) => bCats.has(c)).length;
-    const entropy = (groups, n) => union.size <= 1 || !n ? 0 : -[...groups.values()].reduce((s, r) => {
-      const p = r.length / n;
-      return s + p * Math.log(p);
-    }, 0) / Math.log(union.size);
-    const hA = entropy(aCats, current.length), hB = entropy(bCats, previous.length);
-    const shares = cats.map((c) => {
-      var _a2, _b2, _c2, _d2;
-      return { c, a: current.length ? ((_b2 = (_a2 = aCats.get(c)) == null ? void 0 : _a2.length) != null ? _b2 : 0) / current.length : 0, b: previous.length ? ((_d2 = (_c2 = bCats.get(c)) == null ? void 0 : _c2.length) != null ? _d2 : 0) / previous.length : 0 };
-    }).sort((a, b) => Math.abs(b.a - b.b) - Math.abs(a.a - a.b));
-    if (current.length >= 10 && previous.length >= 10 && shares[0] && (Math.abs(shares[0].a - shares[0].b) >= 0.1 || Math.abs(hA - hB) >= 0.1)) add(
-      "structure",
-      "mix",
-      "\u8D2D\u4E70\u6784\u6210\u53D1\u751F\u53D8\u5316\uFF0C\u9700\u540C\u65F6\u770B\u7B14\u6570\u548C\u91D1\u989D",
-      `${shares[0].c}\u7684\u7B14\u6570\u5360\u6BD4\u6216\u6574\u4F53\u7C7B\u522B\u5206\u6563\u7A0B\u5EA6\u53D8\u5316\u660E\u663E\u3002\u5360\u6BD4\u53D8\u5316\u65E2\u53EF\u80FD\u6765\u81EA\u8BE5\u7C7B\u589E\u52A0\uFF0C\u4E5F\u53EF\u80FD\u6765\u81EA\u5176\u4ED6\u7C7B\u51CF\u5C11\uFF1B\u8BC1\u636E\u540C\u65F6\u5217\u51FA\u4E24\u671F\u603B\u91CF\u3002`,
-      55,
-      [...current, ...previous],
-      { ...comparisonFacts(current, previous), current_share: fact(`${shares[0].c}\u672C\u671F\u7B14\u6570\u5360\u6BD4`, shares[0].a * 100, "%"), previous_share: fact(`${shares[0].c}\u57FA\u671F\u7B14\u6570\u5360\u6BD4`, shares[0].b * 100, "%"), category_overlap: fact("\u7C7B\u522B\u96C6\u5408\u91CD\u5408\u5EA6", union.size ? intersection / union.size * 100 : 0, "%"), current_diversity: fact("\u672C\u671F\u7C7B\u522B\u5206\u6563\u7A0B\u5EA6", hA * 100, "%"), previous_diversity: fact("\u57FA\u671F\u7C7B\u522B\u5206\u6563\u7A0B\u5EA6", hB * 100, "%") },
-      ["\u5206\u7C7B\u8C03\u6574\u4F1A\u5F71\u54CD\u7C7B\u522B\u7ED3\u6784\uFF1B\u5F52\u4E00\u5316\u71B5\u4F7F\u7528\u4E24\u671F\u76F8\u540C\u7C7B\u522B\u96C6\u5408\u3002"]
-    );
-  }
-  const weekRanges = [];
-  const start = addDays(allRange.start, (7 - weekday(allRange.start)) % 7);
-  for (let d = start; addDays(d, 6) <= periods.range.end; d = addDays(d, 7)) weekRanges.push({ start: d, end: addDays(d, 6) });
-  const consecutive = [];
-  const verifiedPeriods = [coverage[0], ...coverage.slice(2)].filter((c) => c.complete).map((c) => c.range);
-  if (!undatedPaths.length) for (const w of weekRanges) {
-    const verified = dateList(w).every((d) => verifiedPeriods.some((r) => d >= r.start && d <= r.end));
-    if (verified && reportCoverage(files, w).complete) consecutive.push(w);
-    else consecutive.length = 0;
-  }
-  const weeks = consecutive.slice(-24);
-  const temporalRange = weeks.length ? { start: weeks[0].start, end: weeks[weeks.length - 1].end } : periods.range;
-  const temporal = selected(temporalRange);
-  const temporalRanges = [{ label: "\u8FDE\u7EED\u5B8C\u6574\u5468", range: temporalRange }];
-  for (const [key, g] of objectsAll) {
-    const records = unique(g.records.filter((r) => r.date >= temporalRange.start && r.date <= temporalRange.end));
-    const last4 = weeks.slice(-4), counts = weeks.map((w) => records.filter((r) => r.date >= w.start && r.date <= w.end).length);
-    const lastRecords = last4.length ? records.filter((r) => r.date >= last4[0].start) : [];
-    const ordinaryMeal = ["object:\u65E9\u9910", "object:\u5348\u9910", "object:\u665A\u9910"].includes(key);
-    const changedSubject = snapshot.findings.some((f) => f.subject === key);
-    if (last4.length === 4 && counts.slice(-4).filter((n) => n > 0).length >= 3 && lastRecords.length >= 8 && objectsNow.has(key) && (!ordinaryMeal || changedSubject)) {
-      const days = [...new Set(lastRecords.map((r) => r.date))].sort(), intervals = days.slice(1).map((d, i) => reportDays({ start: days[i], end: d }) - 1);
-      const lastCounts = counts.slice(-4), concentration = Math.max(...lastCounts) / lastRecords.length;
-      add(
-        key,
-        "repeat",
-        `${g.label}\u5DF2\u7ECF\u8FDE\u7EED\u591A\u5468\u51FA\u73B0`,
-        "\u6700\u8FD1\u56DB\u4E2A\u5B8C\u6574\u5468\u81F3\u5C11\u4E09\u4E2A\u5468\u6709\u8FD9\u7EC4\u8BB0\u5F55\u3002\u5B83\u5DF2\u53CD\u590D\u51FA\u73B0\u5728\u4E0D\u540C\u5468\uFF0C\u800C\u975E\u53EA\u53D1\u751F\u4E8E\u67D0\u4E00\u6B21\u96C6\u4E2D\u8D2D\u4E70\uFF1B\u662F\u5426\u957F\u671F\u4FDD\u6301\u4ECD\u9700\u7EE7\u7EED\u89C2\u5BDF\u3002",
-        25 + Math.min(10, lastRecords.length),
-        lastRecords,
-        { count: fact("\u6700\u8FD1\u56DB\u5468\u7B14\u6570", lastRecords.length, "\u7B14"), days: fact("\u51FA\u73B0\u5929\u6570", days.length, "\u5929"), interval: fact("\u76F8\u90BB\u6D88\u8D39\u65E5\u95F4\u9694\u4E2D\u4F4D\u6570", reportMedian(intervals), "\u5929"), concentration: fact("\u6700\u591A\u4E00\u5468\u7B14\u6570\u5360\u6BD4", concentration * 100, "%") },
-        boundaries,
-        [{ label: "\u6700\u8FD1\u56DB\u4E2A\u5B8C\u6574\u5468", range: { start: last4[0].start, end: last4[3].end } }]
-      );
-    }
-    if (weeks.length < 8 || records.length < 10 || !objectsNow.has(key)) continue;
-    const slope = theilSen(counts), early = reportMedian(counts.slice(0, 4)), late = reportMedian(counts.slice(-4));
-    if (Math.abs(late - early) >= 5 && (!early || Math.abs(late / early - 1) >= 0.3) && Math.abs(slope) >= 0.3) add(
-      key,
-      "trend",
-      `${g.label}\u7684\u5468\u9891\u6B21\u5448\u6301\u7EED${slope > 0 ? "\u4E0A\u5347" : "\u4E0B\u964D"}`,
-      "\u8FDE\u7EED\u5B8C\u6574\u5468\u7684\u7B14\u6570\u53D8\u5316\u5177\u6709\u4E00\u81F4\u65B9\u5411\uFF0C\u524D\u540E\u56DB\u5468\u4E2D\u4F4D\u6570\u4E5F\u6709\u660E\u663E\u5DEE\u5F02\u3002\u53EF\u4EE5\u786E\u8BA4\u8BB0\u5F55\u9891\u7387\u7684\u6301\u7EED\u53D8\u5316\uFF0C\u4E0D\u80FD\u636E\u6B64\u786E\u5B9A\u751F\u6D3B\u539F\u56E0\u3002",
-      80,
-      records,
-      { early: fact("\u524D\u56DB\u5468\u5468\u7B14\u6570\u4E2D\u4F4D\u6570", early, "\u7B14"), late: fact("\u540E\u56DB\u5468\u5468\u7B14\u6570\u4E2D\u4F4D\u6570", late, "\u7B14"), slope: fact("\u7A33\u5065\u8D8B\u52BF\u6BCF\u5468\u7B14\u6570\u53D8\u5316", slope, "\u7B14") },
-      boundaries,
-      temporalRanges
-    );
-    let split = null;
-    for (let i = 4; i <= counts.length - 4; i++) {
-      const before = reportMedian(counts.slice(0, i)), after = reportMedian(counts.slice(i)), difference = Math.abs(after - before);
-      if (difference >= 5 && (!before || difference / before >= 0.3) && (!split || difference > split.difference)) split = { index: i, before, after, difference };
-    }
-    if (split) add(
-      key,
-      "level",
-      `${g.label}\u7684\u9891\u7387\u5728\u67D0\u4E00\u5468\u524D\u540E\u6539\u53D8`,
-      `\u4EE5${weeks[split.index].start}\u5F00\u59CB\u7684\u5468\u9644\u8FD1\u4E3A\u5206\u754C\uFF0C\u524D\u540E\u5468\u7B14\u6570\u4E2D\u4F4D\u6570\u660E\u663E\u4E0D\u540C\u3002\u8FD9\u662F\u5019\u9009\u6C34\u5E73\u53D8\u5316\u4F4D\u7F6E\uFF0C\u4E0D\u80FD\u7CBE\u786E\u5230\u67D0\u4E00\u5929\u6216\u65AD\u8A00\u539F\u56E0\u3002`,
-      75,
-      records,
-      { before: fact("\u5206\u754C\u524D\u5468\u7B14\u6570\u4E2D\u4F4D\u6570", split.before, "\u7B14"), after: fact("\u5206\u754C\u540E\u5468\u7B14\u6570\u4E2D\u4F4D\u6570", split.after, "\u7B14") },
-      [...boundaries, "\u5206\u754C\u6765\u81EA\u63A2\u7D22\u6027\u626B\u63CF\uFF0C\u4E0D\u4EE3\u8868\u7EDF\u8BA1\u663E\u8457\u6027\u3002"],
-      temporalRanges
-    );
-  }
-  if (weeks.length >= 8 && temporal.length >= 10) {
-    const vectors = weeks.map((w) => Array.from({ length: 7 }, (_, day) => total(temporal.filter((r) => r.date === addDays(w.start, day)))));
-    const similarities = vectors.slice(1).map((v, i) => cosine(vectors[i], v));
-    const wknd = temporal.filter((r) => weekday(r.date) >= 5), work = temporal.filter((r) => weekday(r.date) < 5);
-    const ratio = work.length && total(work) ? total(wknd) / (weeks.length * 2) / (total(work) / (weeks.length * 5)) : 0;
-    const repeated = vectors.filter((v) => (v[5] + v[6]) / 2 >= v.slice(0, 5).reduce((s, n) => s + n, 0) / 5 * 1.5 && v[5] + v[6] > 0).length;
-    const weekdayFacts = {};
-    for (let day = 0; day < 7; day++) {
-      const rs = temporal.filter((r) => weekday(r.date) === day), label = ["\u5468\u4E00", "\u5468\u4E8C", "\u5468\u4E09", "\u5468\u56DB", "\u5468\u4E94", "\u5468\u516D", "\u5468\u65E5"][day];
-      weekdayFacts[`weekday_amount_${day}`] = fact(`${label}\u65E5\u5747\u91D1\u989D`, total(rs) / weeks.length / 100, "\u5143");
-      weekdayFacts[`weekday_count_${day}`] = fact(`${label}\u65E5\u5747\u7B14\u6570`, rs.length / weeks.length, "\u7B14");
-    }
-    if (ratio >= 1.5 && repeated >= Math.ceil(weeks.length * 0.6)) add(
-      "rhythm",
-      "rhythm",
-      "\u5468\u672B\u652F\u51FA\u9AD8\u5CF0\u5728\u591A\u4E2A\u661F\u671F\u91CD\u590D\u51FA\u73B0",
-      "\u6309\u6BCF\u4E00\u5929\u6807\u51C6\u5316\u540E\uFF0C\u5468\u672B\u652F\u51FA\u4ECD\u660E\u663E\u9AD8\u4E8E\u5468\u4E00\u81F3\u5468\u4E94\uFF0C\u5E76\u5728\u591A\u6570\u5B8C\u6574\u5468\u91CD\u590D\u3002\u5B83\u66F4\u63A5\u8FD1\u7A33\u5B9A\u8282\u594F\uFF0C\u4E0D\u80FD\u5C06\u5355\u4E2A\u5468\u672B\u76F4\u63A5\u79F0\u4E3A\u5F02\u5E38\u3002",
-      70,
-      temporal,
-      { ...weekdayFacts, ratio: fact("\u5468\u672B\u4E0E\u5468\u4E00\u81F3\u5468\u4E94\u65E5\u5747\u91D1\u989D\u4E4B\u6BD4", ratio, "\u500D"), repeat_share: fact("\u91CD\u590D\u51FA\u73B0\u5468\u672B\u9AD8\u5CF0\u7684\u5468\u5360\u6BD4", repeated / weeks.length * 100, "%"), persistence: fact("\u76F8\u90BB\u5468\u5206\u5E03\u5E73\u5747\u76F8\u4F3C\u5EA6", similarities.reduce((s, n) => s + n, 0) / similarities.length * 100, "%") },
-      ["\u76F8\u4F3C\u5EA6\u8861\u91CF\u5206\u5E03\u5F62\u72B6\uFF0C\u4E0D\u4EE3\u8868\u9884\u7B97\u5408\u7406\u6216\u751F\u6D3B\u539F\u56E0\u3002"],
-      temporalRanges
-    );
-    const objects = objectGroups(temporal), frequent = [...objects.entries()].filter(([key, g]) => key.startsWith("object:") && new Set(g.records.map((r) => r.date)).size >= 10).sort((a, b) => b[1].records.length - a[1].records.length).slice(0, 12);
-    const dates = dateList(temporalRange);
-    for (let i = 0; i < frequent.length; i++) for (let j = 0; j < frequent.length; j++) {
-      if (i === j) continue;
-      const [aKey, a] = frequent[i], [bKey, b] = frequent[j], aDays = new Set(a.records.map((r) => r.date)), bDays = new Set(b.records.map((r) => r.date));
-      if ([aKey, bKey].every((k) => ["object:\u65E9\u9910", "object:\u5348\u9910", "object:\u665A\u9910"].includes(k))) continue;
-      const together = [...aDays].filter((d) => bDays.has(d));
-      if (together.length < 5) continue;
-      let matched = 0, weight = 0;
-      for (let day = 0; day < 7; day++) {
-        const exposed = [...aDays].filter((d) => weekday(d) === day).length;
-        const controls = dates.filter((d) => weekday(d) === day && !aDays.has(d));
-        if (exposed && !controls.length) {
-          weight = -1;
-          break;
-        }
-        if (exposed) {
-          matched += exposed * controls.filter((d) => bDays.has(d)).length / controls.length;
-          weight += exposed;
-        }
-      }
-      if (weight <= 0 || matched <= 0) continue;
-      const lift = together.length / matched;
-      if (lift >= 2) add(
-        [aKey, bKey].sort().join("+"),
-        "association",
-        `${a.label}\u4E0E${b.label}\u7ECF\u5E38\u5728\u540C\u4E00\u5929\u51FA\u73B0`,
-        "\u5728\u51FA\u73B0\u524D\u4E00\u5BF9\u8C61\u7684\u65E5\u5B50\uFF0C\u540E\u4E00\u5BF9\u8C61\u66F4\u5E38\u51FA\u73B0\uFF1B\u6309\u661F\u671F\u5339\u914D\u540E\u4ECD\u6709\u5DEE\u5F02\u3002\u8FD9\u53EA\u662F\u540C\u65E5\u5173\u8054\u7EBF\u7D22\uFF0C\u4E0D\u80FD\u8BC1\u660E\u5148\u540E\u987A\u5E8F\u3001\u89E6\u53D1\u5173\u7CFB\u6216\u539F\u56E0\u3002",
-        45 + Math.min(20, together.length),
-        [...a.records, ...b.records],
-        { together: fact("\u5171\u540C\u51FA\u73B0\u5929\u6570", together.length, "\u5929"), lift: fact("\u5339\u914D\u5BF9\u7167\u540E\u7684\u53D1\u751F\u6BD4\u4F8B\u500D\u6570", lift, "\u500D") },
-        ["\u591A\u5BF9\u8C61\u63A2\u7D22\u53EF\u80FD\u4EA7\u751F\u5076\u7136\u5173\u8054\uFF0C\u4ECD\u9700\u540E\u7EED\u5468\u671F\u89C2\u5BDF\u3002"],
-        temporalRanges
-      );
-    }
-  }
-  const merged = /* @__PURE__ */ new Map();
-  for (const f of snapshot.findings.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))) {
-    const existing = merged.get(f.subject);
-    if (!existing) merged.set(f.subject, { ...f, evidenceIds: [...f.evidenceIds], limits: [...f.limits] });
-    else {
-      existing.evidenceIds.push(...f.evidenceIds);
-      existing.observation += ` ${f.observation}`;
-      existing.limits = [.../* @__PURE__ */ new Set([...existing.limits, ...f.limits])];
-    }
-  }
-  snapshot.findings = [...merged.values()].slice(0, 5);
-  const used = new Set(snapshot.findings.flatMap((f) => f.evidenceIds));
-  snapshot.evidence = snapshot.evidence.filter((e) => used.has(e.id));
-  const relevantFiles = files.filter((f) => !f.date || f.date >= allRange.start && f.date <= allRange.end);
-  snapshot.fingerprint = reportHash(JSON.stringify({
-    rule: REPORT_RULE_VERSION,
-    preferences,
-    excludedCategories,
-    periods,
-    stars: preferences.includeStarred ? [] : [...starredIds].sort(),
-    files: relevantFiles.map((f) => [f.path, f.date, f.frontmatterTotalCents, f.diagnostics, f.records.map((r) => [r.id, r.date, r.time, r.category, r.cents, r.note])]).sort((a, b) => String(a[0]).localeCompare(String(b[0])))
-  }));
-  return snapshot;
+function buildReportSnapshot(files, preferences, now, excludedCategories, starredIds, options = {}) {
+  return analyzeReport(files, preferences, now, excludedCategories, starredIds, options);
 }
 function localSpendingReport(snapshot) {
-  return {
-    title: snapshot.label,
-    summary: snapshot.findings.length ? "\u672C\u671F\u503C\u5F97\u5173\u6CE8\u7684\u662F\u4EE5\u4E0B\u6D88\u8D39\u53D8\u5316\u548C\u91CD\u590D\u6A21\u5F0F\u3002\u5177\u4F53\u6BD4\u8F83\u4E0E\u76F8\u5173\u8D26\u76EE\u53EF\u4ECE\u6BCF\u6BB5\u8BC1\u636E\u67E5\u770B\u3002" : snapshot.comparable ? "\u672C\u671F\u672A\u53D1\u73B0\u8BC1\u636E\u5145\u5206\u7684\u660E\u663E\u53D8\u5316\u3002\u73B0\u6709\u8BB0\u5F55\u672A\u8FBE\u5230\u62A5\u544A\u7684\u7B5B\u9009\u95E8\u69DB\u3002" : "\u53EF\u6BD4\u6570\u636E\u4E0D\u8DB3\uFF0C\u6682\u4E0D\u5224\u65AD\u672C\u671F\u6574\u4F53\u53D8\u5316\u3002\u8BF7\u5148\u6838\u5BF9\u7F3A\u5931\u65E5\u671F\u548C\u5F02\u5E38\u8D26\u672C\uFF1B\u5B8C\u6574\u5468\u4E2D\u7684\u53EF\u9760\u53D1\u73B0\u4ECD\u53EF\u67E5\u770B\u3002",
-    paragraphs: snapshot.findings.map((f) => ({ heading: f.title, text: f.observation, findingIds: [f.id], evidenceIds: f.evidenceIds }))
-  };
+  var _a, _b, _c, _d, _e;
+  const overview = snapshot.overview;
+  const amount = (_a = overview == null ? void 0 : overview.facts.current_amount.value) != null ? _a : 0, count = (_b = overview == null ? void 0 : overview.facts.current_count.value) != null ? _b : 0;
+  const baseline = (_e = (_d = (_c = overview == null ? void 0 : overview.facts.previous_amount_scaled) == null ? void 0 : _c.value) != null ? _d : overview == null ? void 0 : overview.facts.previous_amount.value) != null ? _e : 0;
+  const difference = amount - baseline;
+  const comparison = snapshot.comparable ? baseline ? `\u8F83\u4E0A\u671F${(overview == null ? void 0 : overview.facts.previous_amount_scaled) ? "\u6309\u89C2\u5BDF\u65E5\u6298\u7B97\u540E" : "\u540C\u671F"}${difference < 0 ? "\u2212" : "+"}\xA5${Math.abs(difference).toFixed(2)}\uFF08${difference < 0 ? "\u2212" : "+"}${Math.abs(difference / baseline * 100).toFixed(1)}%\uFF09\u3002` : count ? "\u4E0A\u671F\u6CA1\u6709\u6D88\u8D39\u8BB0\u5F55\uFF0C\u672C\u671F\u65B0\u589E\u3002" : "" : "";
+  const summary = "\u672C\u671F\u5DF2\u8BB0\u5F55\u652F\u51FA \xA5" + amount.toFixed(2) + "\uFF0C\u5171" + count + "\u7B14\u3002" + comparison + (snapshot.findings.length ? "\u4EE5\u4E0B\u53D1\u73B0\u805A\u7126\u6D88\u8D39\u53D8\u5316\u548C\u91CD\u590D\u6A21\u5F0F\uFF0C\u8BE6\u7EC6\u6570\u636E\u53EF\u67E5\u770B\u4F9D\u636E\u3002" : snapshot.comparable ? "\u672A\u53D1\u73B0\u8BC1\u636E\u5145\u5206\u7684\u660E\u663E\u53D8\u5316\u3002" : "\u53EF\u6BD4\u6570\u636E\u4E0D\u8DB3\uFF0C\u8BF7\u6838\u5BF9\u7F3A\u5931\u65E5\u671F\u548C\u5F02\u5E38\u8D26\u672C\u3002");
+  const paragraphs = snapshot.findings.map((f) => {
+    var _a2;
+    return { heading: f.title, text: findingKeyNumbers(f, snapshot.evidence.filter((e) => f.evidenceIds.includes(e.id))) + "\n\n" + f.observation + (((_a2 = f.signals) == null ? void 0 : _a2.length) ? "\n\n\u76F8\u5173\u7EBF\u7D22\uFF1A" + f.signals.map((s) => s.title).join("\uFF1B") + "\u3002" : ""), findingIds: [f.id], evidenceIds: f.evidenceIds };
+  });
+  return { title: snapshot.label, summary, paragraphs };
 }
 
 // src/settings.ts
 var DEFAULT_SETTINGS = {
   reportPreferences: defaultReportPreferences(),
   reportCaches: [],
+  reportObjectRules: DEFAULT_REPORT_OBJECT_RULES,
   fixedExpenses: [],
   insightHistory: [],
   ledgerFolder: "\u8BB0\u8D26",
@@ -2232,6 +2431,16 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
     const balancePanel = panels.get("balance");
     const aiPanel = panels.get("ai");
     const budgetPanel = panels.get("budget");
+    const ruleErrors = ledgerPanel.createEl("p", { cls: "ledger-report-limit" });
+    const showRuleErrors = () => {
+      ruleErrors.setText(parseObjectRules(this.plugin.settings.reportObjectRules).errors.join("\uFF1B"));
+    };
+    new import_obsidian4.Setting(ledgerPanel).setName("\u652F\u51FA\u62A5\u544A\u5BF9\u8C61\u8BC6\u522B\u89C4\u5219").setDesc("\u6BCF\u884C \u6807\u7B7E=\u6B63\u5219\uFF1B\u54C1\u724C\u7528 @\u54C1\u724C=\u6B63\u5219\u3002\u7528\u9014\u53EF\u8DE8\u5206\u7C7B\u8BC6\u522B\uFF0C\u54C1\u724C\u4E0D\u4F1A\u81EA\u52A8\u63A8\u65AD\u5546\u54C1\u3002\u65E0\u6548\u89C4\u5219\u4F1A\u8DF3\u8FC7\u5E76\u63D0\u793A\u3002").addTextArea((text) => text.setValue(this.plugin.settings.reportObjectRules).onChange(async (value) => {
+      this.plugin.settings.reportObjectRules = value;
+      showRuleErrors();
+      await this.plugin.saveSettings(false);
+    }));
+    showRuleErrors();
     new import_obsidian4.Setting(ledgerPanel).setName("\u8BB0\u8D26\u6587\u4EF6\u5939").setDesc("\u4ED3\u5E93\u6839\u76EE\u5F55\u4E0B\u7684\u76F8\u5BF9\u8DEF\u5F84\u3002\u63D2\u4EF6\u53EA\u8BFB\u53D6\u5176\u4E2D\u7684 Markdown \u6587\u4EF6\u3002").addText((text) => text.setPlaceholder("\u8BB0\u8D26").setValue(this.plugin.settings.ledgerFolder).onChange(async (value) => {
       this.plugin.settings.ledgerFolder = value.trim().replace(/^\/+|\/+$/g, "") || "\u8BB0\u8D26";
       await this.plugin.saveSettings(true);
@@ -3409,17 +3618,18 @@ function reportAiInput(snapshot) {
   };
   return JSON.stringify({
     report_kind: snapshot.label,
-    range: snapshot.range,
+    range: snapshot.effectiveRange,
+    requested_range: snapshot.range,
     previous_range: snapshot.previousRange,
     recorded_totals: {
-      current: recordedTotals(snapshot.range),
+      current: recordedTotals(snapshot.effectiveRange),
       previous: recordedTotals(snapshot.previousRange),
       history: snapshot.historicalRanges.map(recordedTotals),
       note: "\u4EC5\u6C47\u603B\u5DF2\u8BB0\u5F55\u6D41\u6C34\uFF1B\u7F3A\u5931\u65E5\u671F\u662F\u672A\u77E5\uFF0C\u4E0D\u586B\u5145\u4E3A\u96F6\u3002\u91D1\u989D\u5355\u4F4D\u4E3A\u5206\u3002"
     },
     historical_complete_periods: snapshot.historicalRanges,
     comparable: snapshot.comparable,
-    data_quality: { missing_dates: snapshot.coverage.slice(0, 2).map((c) => c.missingDates), problem_count: snapshot.coverage.slice(0, 2).reduce((s, c) => s + c.problems.length, 0), undated_count: snapshot.undatedPaths.length },
+    data_quality: { trimmed_dates: snapshot.trimmedDates, degraded: snapshot.degraded, observed_days: snapshot.observedDays, missing_dates: snapshot.coverage.slice(0, 2).map((c) => c.missingDates), problem_count: snapshot.coverage.slice(0, 2).reduce((s, c) => s + c.problems.length, 0), undated_count: snapshot.undatedPaths.length },
     findings: snapshot.findings,
     evidence_catalog: snapshot.evidence.map((e) => ({ id: e.id, label: e.label, ranges: e.ranges, limits: e.limits })),
     samples: snapshot.findings.map((f) => {
@@ -4515,58 +4725,6 @@ function createButton(parent, text, active = false) {
   return button;
 }
 
-// src/report-presentation.ts
-var NUMBER = "[+\u2212-]?\\d+(?:,\\d{3})*(?:\\.\\d+)?";
-function decimal(value, places) {
-  const n = Number(value.replace(/,/g, "").replace("\u2212", "-"));
-  const digits = Math.abs(n).toFixed(places);
-  return `${n < 0 && Number(digits) ? "\u2212" : value.startsWith("+") ? "+" : ""}${digits}`;
-}
-function reportPlainLanguage(text) {
-  return text.replace(/基期/g, "\u4E0A\u671F").replace(/笔数变化的金额贡献（对称分解）|笔数贡献/g, "\u6B21\u6570\u53D8\u5316\u5E26\u6765\u7684\u5F71\u54CD").replace(/笔均变化的金额贡献（对称分解）|笔均贡献/g, "\u6BCF\u7B14\u91D1\u989D\u53D8\u5316\u5E26\u6765\u7684\u5F71\u54CD").replace(/头部大额记录/g, "\u6700\u8D35\u7684\u51E0\u7B14").replace(/头部三笔|最大三笔/g, "\u6700\u8D35\u7684\u4E09\u7B14").replace(/解释边界/g, "\u6CE8\u610F\u4E8B\u9879").replace(/单笔更便宜|单笔变便宜了/g, "\u6BCF\u7B14\u4ED8\u6B3E\u91D1\u989D\u66F4\u4F4E").replace(/每笔均价|均价/g, "\u5E73\u5747\u6BCF\u7B14\u91D1\u989D");
-}
-function formatReportText(text) {
-  return reportPlainLanguage(text).replace(new RegExp(`(${NUMBER})([\uFF5E~\u81F3])(${NUMBER})(\u5143|\u5757\u94B1|\u5757)`, "g"), (_m, a, sep, b, unit) => `${decimal(a, 2)}${sep}${decimal(b, 2)}${unit}`).replace(new RegExp(`([\xA5\uFFE5]\\s*)?(${NUMBER})\\s*(\u5143|\u5757\u94B1|\u5757)`, "g"), (_m, currency, amount, unit) => `${currency != null ? currency : ""}${decimal(amount, 2)}${unit}`).replace(new RegExp(`([\xA5\uFFE5])\\s*(${NUMBER})(?![\\d.])`, "g"), (_m, currency, amount) => `${currency}${decimal(amount, 2)}`).replace(new RegExp(`(${NUMBER})\\s*[%\uFF05]`, "g"), (_m, value) => `${decimal(value, 1)}%`).replace(/-(\d+(?:\.\d+)?)(笔|天)/g, "\u2212$1$2");
-}
-function reportTextParts(text, emphasis) {
-  const parts = [];
-  const add = (value, bold) => {
-    const pattern2 = /[+−](?:[¥￥])?\d+(?:\.\d+)?(?:元|块钱|块|%|笔|天)|[¥￥][+−]\d+(?:\.\d+)?/g;
-    let cursor2 = 0;
-    for (const m of value.matchAll(pattern2)) {
-      if (m.index > cursor2) parts.push({ text: value.slice(cursor2, m.index), bold });
-      parts.push({ text: m[0], bold, tone: m[0].includes("\u2212") ? "decrease" : "increase" });
-      cursor2 = m.index + m[0].length;
-    }
-    if (cursor2 < value.length) parts.push({ text: value.slice(cursor2), bold });
-  };
-  const formatted = formatReportText(text), pattern = /\*\*([^\n]+?)\*\*/g;
-  let cursor = 0;
-  for (const m of formatted.matchAll(pattern)) {
-    add(formatted.slice(cursor, m.index), false);
-    const bold = emphasis.remaining > 0;
-    if (bold) emphasis.remaining--;
-    add(m[1], bold);
-    cursor = m.index + m[0].length;
-  }
-  add(formatted.slice(cursor), false);
-  return parts;
-}
-function reportProgress(snapshot) {
-  const elapsed = reportDays(snapshot.range), full = reportDays(snapshot.fullRange), previous = reportDays(snapshot.previousRange);
-  const custom = snapshot.preferences.mode === "custom", ongoing = snapshot.range.end < snapshot.fullRange.end;
-  const progress = ongoing ? `${custom ? "\u6240\u9009\u8303\u56F4" : "\u672C\u5468\u671F"}\u5DF2\u8FC7 ${elapsed} / ${full} \u5929` : `${custom ? "\u6240\u9009\u8303\u56F4" : "\u672C\u5468\u671F"}\u5171 ${full} \u5929`;
-  const comparison = ongoing ? previous === elapsed ? `\u4E0A\u671F\u53D6\u540C\u6837\u7684\u524D ${elapsed} \u5929\u5BF9\u6BD4` : `\u4E0A\u671F\u4EC5 ${previous} \u5929\uFF0C\u9891\u6B21\u6309\u81EA\u7136\u65E5\u6298\u7B97` : custom ? `\u4E0E\u524D\u4E00\u7B49\u957F\u8303\u56F4\uFF08${previous} \u5929\uFF09\u5BF9\u6BD4` : `\u4E0E\u4E0A\u671F\u5B8C\u6574\u5468\u671F\uFF08${previous} \u5929\uFF09\u5BF9\u6BD4`;
-  return `${progress} \xB7 ${comparison}${snapshot.comparable ? "" : " \xB7 \u6570\u636E\u5F85\u6838\u5BF9"}`;
-}
-function formatReportFact(key, f) {
-  const change = ["frequency_contribution", "ticket_contribution", "top3_difference", "increase", "decrease"].includes(key);
-  const value = key === "decrease" ? -Math.abs(f.value) : f.value;
-  const places = f.unit === "\u5143" ? 2 : f.unit === "%" ? 1 : Number.isInteger(value) ? 0 : 2;
-  const text = `${decimal(`${change && value > 0 ? "+" : ""}${value}`, places)}${f.unit}`;
-  return { text, ...change && value !== 0 ? { tone: value < 0 ? "decrease" : "increase" } : {} };
-}
-
 // src/report-ui.ts
 var ReportEvidenceModal = class extends import_obsidian6.Modal {
   constructor(plugin, snapshot, evidenceIds, openRecord) {
@@ -4629,6 +4787,7 @@ var ReportPanel = class {
     this.disposed = false;
     this.lastFingerprint = "";
     this.stale = false;
+    this.snapshotKey = "";
   }
   get preferences() {
     return normalizeReportPreferences(this.plugin.settings.reportPreferences);
@@ -4637,7 +4796,12 @@ var ReportPanel = class {
     return { endpoint: this.plugin.settings.financeAiEndpoint, model: this.plugin.settings.financeAiModel, apiKey: this.plugin.settings.financeAiApiKey };
   }
   snapshot(now = /* @__PURE__ */ new Date()) {
-    return buildReportSnapshot([...this.plugin.repository.files.values()], this.preferences, now, this.plugin.settings.excludedCategories, this.plugin.settings.starredRecordIds);
+    var _a;
+    const repository = this.plugin.repository;
+    const key = JSON.stringify([(_a = repository.contentRevision) != null ? _a : [...repository.files.values()], this.preferences, isoFromDate(now), this.plugin.settings.excludedCategories, this.plugin.settings.starredRecordIds, this.plugin.settings.reportObjectRules]);
+    if (this.cachedSnapshot && key === this.snapshotKey) return this.cachedSnapshot;
+    this.snapshotKey = key;
+    return this.cachedSnapshot = buildReportSnapshot([...repository.files.values()], this.preferences, now, this.plugin.settings.excludedCategories, this.plugin.settings.starredRecordIds, { objectRules: this.plugin.settings.reportObjectRules });
   }
   cancel() {
     var _a;
@@ -4792,6 +4956,11 @@ function renderReportArticle(parent, report, snapshot, evidence) {
     }
   };
   if (report.summary) prose(article, report.summary, "ledger-report-summary");
+  if (snapshot.overview) {
+    const b = createButton(article, "\u67E5\u770B\u672C\u671F\u6982\u51B5");
+    b.addClass("ledger-report-overview-citation");
+    b.addEventListener("click", () => evidence([snapshot.overview.id]));
+  }
   report.paragraphs.forEach((p, i) => {
     var _a;
     const section = article.createEl("section");
@@ -5141,8 +5310,8 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian7.
     (0, import_obsidian7.setIcon)(nextPeriodIcon, "chevron-right");
     nextPeriod.disabled = this.preset === "custom";
     nextPeriod.addEventListener("click", () => this.shiftPeriod(-1));
-    const dates = toolbar.createDiv({ cls: "ledger-date-range", attr: { "aria-label": "\u65E5\u671F\u8303\u56F4" } });
-    addDateInput(dates, "\u5F00\u59CB", this.filter.range.start, (value) => {
+    const dates2 = toolbar.createDiv({ cls: "ledger-date-range", attr: { "aria-label": "\u65E5\u671F\u8303\u56F4" } });
+    addDateInput(dates2, "\u5F00\u59CB", this.filter.range.start, (value) => {
       if (isValidIsoDate(value) && value <= this.filter.range.end) {
         this.clearDrillContext();
         this.preset = "custom";
@@ -5151,7 +5320,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian7.
         this.render();
       }
     });
-    addDateInput(dates, "\u7ED3\u675F", this.filter.range.end, (value) => {
+    addDateInput(dates2, "\u7ED3\u675F", this.filter.range.end, (value) => {
       if (isValidIsoDate(value) && value >= this.filter.range.start) {
         this.clearDrillContext();
         this.preset = "custom";
@@ -5612,26 +5781,26 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian7.
     let previous;
     let description;
     if (this.compareMode === "custom") {
-      const dates = controls.createDiv({ cls: "ledger-compare-dates" });
-      addDateInput(dates, "\u672C\u671F\u5F00\u59CB", this.customCurrent.start, (value) => {
+      const dates2 = controls.createDiv({ cls: "ledger-compare-dates" });
+      addDateInput(dates2, "\u672C\u671F\u5F00\u59CB", this.customCurrent.start, (value) => {
         if (isValidIsoDate(value)) {
           this.customCurrent.start = value;
           this.render();
         }
       });
-      addDateInput(dates, "\u672C\u671F\u7ED3\u675F", this.customCurrent.end, (value) => {
+      addDateInput(dates2, "\u672C\u671F\u7ED3\u675F", this.customCurrent.end, (value) => {
         if (isValidIsoDate(value)) {
           this.customCurrent.end = value;
           this.render();
         }
       });
-      addDateInput(dates, "\u57FA\u671F\u5F00\u59CB", this.customPrevious.start, (value) => {
+      addDateInput(dates2, "\u57FA\u671F\u5F00\u59CB", this.customPrevious.start, (value) => {
         if (isValidIsoDate(value)) {
           this.customPrevious.start = value;
           this.render();
         }
       });
-      addDateInput(dates, "\u57FA\u671F\u7ED3\u675F", this.customPrevious.end, (value) => {
+      addDateInput(dates2, "\u57FA\u671F\u7ED3\u675F", this.customPrevious.end, (value) => {
         if (isValidIsoDate(value)) {
           this.customPrevious.end = value;
           this.render();
@@ -6019,6 +6188,7 @@ var LedgerStatisticsPlugin = class extends import_obsidian8.Plugin {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
     this.settings.reportPreferences = normalizeReportPreferences(this.settings.reportPreferences);
     this.settings.reportCaches = normalizeReportCaches(this.settings.reportCaches);
+    if (typeof this.settings.reportObjectRules !== "string") this.settings.reportObjectRules = DEFAULT_SETTINGS.reportObjectRules;
     this.settings.fixedExpenses = Array.isArray(this.settings.fixedExpenses) ? this.settings.fixedExpenses.filter((item) => item && typeof item.name === "string" && typeof item.id === "string" && item.payments && typeof item.payments === "object") : [];
     this.settings.insightHistory = Array.isArray(this.settings.insightHistory) ? this.settings.insightHistory.filter((item) => item && typeof item.id === "string" && typeof item.cycle === "string" && typeof item.date === "string" && Number.isFinite(item.impact)) : [];
     if (!isBalanceCalibration(this.settings.balanceCalibration)) this.settings.balanceCalibration = null;

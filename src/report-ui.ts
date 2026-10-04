@@ -53,10 +53,18 @@ export class ReportPanel {
   private disposed = false;
   private lastFingerprint = "";
   private stale = false;
+  private cachedSnapshot?: ReportSnapshot;
+  private snapshotKey = "";
   constructor(private plugin: LedgerStatisticsPlugin, private redraw: () => void, private openRecord: (r: LedgerRecord) => Promise<void>) {}
   get preferences(): ReportPreferences { return normalizeReportPreferences(this.plugin.settings.reportPreferences); }
   private config() { return { endpoint: this.plugin.settings.financeAiEndpoint, model: this.plugin.settings.financeAiModel, apiKey: this.plugin.settings.financeAiApiKey }; }
-  snapshot(now = new Date()): ReportSnapshot { return buildReportSnapshot([...this.plugin.repository.files.values()], this.preferences, now, this.plugin.settings.excludedCategories, this.plugin.settings.starredRecordIds); }
+  snapshot(now = new Date()): ReportSnapshot {
+    const repository = this.plugin.repository;
+    const key = JSON.stringify([repository.contentRevision ?? [...repository.files.values()], this.preferences, isoFromDate(now), this.plugin.settings.excludedCategories, this.plugin.settings.starredRecordIds, this.plugin.settings.reportObjectRules]);
+    if (this.cachedSnapshot && key === this.snapshotKey) return this.cachedSnapshot;
+    this.snapshotKey = key;
+    return this.cachedSnapshot = buildReportSnapshot([...repository.files.values()], this.preferences, now, this.plugin.settings.excludedCategories, this.plugin.settings.starredRecordIds, {objectRules:this.plugin.settings.reportObjectRules});
+  }
   cancel(): void { this.controller?.abort(); this.controller = null; this.loading = false; }
   dispose(): void { this.disposed = true; this.cancel(); }
   private change(patch: Partial<ReportPreferences>): void {
@@ -176,6 +184,10 @@ export function renderReportArticle(parent: HTMLElement, report: SpendingReport,
     }
   };
   if (report.summary) prose(article, report.summary, "ledger-report-summary");
+  if (snapshot.overview) {
+    const b = createButton(article, "查看本期概况"); b.addClass("ledger-report-overview-citation");
+    b.addEventListener("click", () => evidence([snapshot.overview!.id]));
+  }
   report.paragraphs.forEach((p, i) => {
     const section = article.createEl("section");
     if (p.heading) section.createEl("h3", { text: formatReportText(p.heading).replace(/\*\*/g, "") });

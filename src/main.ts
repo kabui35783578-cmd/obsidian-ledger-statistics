@@ -20,6 +20,7 @@ export default class LedgerStatisticsPlugin extends Plugin {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<LedgerSettings> | null);
     this.settings.reportPreferences = normalizeReportPreferences(this.settings.reportPreferences);
     this.settings.reportCaches = normalizeReportCaches(this.settings.reportCaches);
+    if (typeof this.settings.reportObjectRules !== "string") this.settings.reportObjectRules = DEFAULT_SETTINGS.reportObjectRules;
     this.settings.fixedExpenses = Array.isArray(this.settings.fixedExpenses) ? this.settings.fixedExpenses.filter((item) => item && typeof item.name === "string" && typeof item.id === "string" && item.payments && typeof item.payments === "object") : [];
     this.settings.insightHistory = Array.isArray(this.settings.insightHistory) ? this.settings.insightHistory.filter((item) => item && typeof item.id === "string" && typeof item.cycle === "string" && typeof item.date === "string" && Number.isFinite(item.impact)) : [];
     if (!isBalanceCalibration(this.settings.balanceCalibration)) this.settings.balanceCalibration = null;

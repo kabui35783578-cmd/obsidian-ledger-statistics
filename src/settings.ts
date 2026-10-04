@@ -10,6 +10,7 @@ import type { SeenInsight } from "./insights";
 import { FixedExpenseModal, StarRepairModal } from "./management";
 import type { ReportCache, ReportPreferences } from "./report";
 import { defaultReportPreferences } from "./report";
+import { DEFAULT_REPORT_OBJECT_RULES, parseObjectRules } from "./report-config";
 
 export type LedgerViewId = "overview" | "category" | "trend" | "calendar" | "details" | "compare" | "report";
 export type DefaultDatePreset = "today" | "week" | "month" | "salary" | "year";
@@ -17,6 +18,7 @@ export type DefaultDatePreset = "today" | "week" | "month" | "salary" | "year";
 export interface LedgerSettings {
   reportPreferences: ReportPreferences;
   reportCaches: ReportCache[];
+  reportObjectRules: string;
   fixedExpenses: FixedExpense[];
   insightHistory: SeenInsight[];
   ledgerFolder: string;
@@ -42,6 +44,7 @@ export interface LedgerSettings {
 export const DEFAULT_SETTINGS: LedgerSettings = {
   reportPreferences: defaultReportPreferences(),
   reportCaches: [],
+  reportObjectRules: DEFAULT_REPORT_OBJECT_RULES,
   fixedExpenses: [],
   insightHistory: [],
   ledgerFolder: "记账",
@@ -136,6 +139,15 @@ export class LedgerSettingTab extends PluginSettingTab {
     const balancePanel = panels.get("balance")!;
     const aiPanel = panels.get("ai")!;
     const budgetPanel = panels.get("budget")!;
+
+    const ruleErrors = ledgerPanel.createEl("p", { cls:"ledger-report-limit" });
+    const showRuleErrors = () => { ruleErrors.setText(parseObjectRules(this.plugin.settings.reportObjectRules).errors.join("；")); };
+    new Setting(ledgerPanel).setName("支出报告对象识别规则")
+      .setDesc("每行 标签=正则；品牌用 @品牌=正则。用途可跨分类识别，品牌不会自动推断商品。无效规则会跳过并提示。")
+      .addTextArea(text => text.setValue(this.plugin.settings.reportObjectRules).onChange(async value => {
+        this.plugin.settings.reportObjectRules=value; showRuleErrors(); await this.plugin.saveSettings(false);
+      }));
+    showRuleErrors();
 
     new Setting(ledgerPanel)
       .setName("记账文件夹")

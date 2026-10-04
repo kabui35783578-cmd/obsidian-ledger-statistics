@@ -32,11 +32,11 @@ export function reportAiInput(snapshot: ReportSnapshot): string {
     return { range, recorded_amount_cents: records.reduce((sum, r) => sum + r.cents, 0), recorded_count: records.length,
       consumption_days: new Set(records.map(r => r.date)).size, calendar_days: reportDays(range) };
   };
-  return JSON.stringify({ report_kind: snapshot.label, range: snapshot.range, previous_range: snapshot.previousRange,
-    recorded_totals: { current: recordedTotals(snapshot.range), previous: recordedTotals(snapshot.previousRange),
+  return JSON.stringify({ report_kind: snapshot.label, range: snapshot.effectiveRange, requested_range:snapshot.range, previous_range: snapshot.previousRange,
+    recorded_totals: { current: recordedTotals(snapshot.effectiveRange), previous: recordedTotals(snapshot.previousRange),
       history: snapshot.historicalRanges.map(recordedTotals), note: "仅汇总已记录流水；缺失日期是未知，不填充为零。金额单位为分。" },
     historical_complete_periods: snapshot.historicalRanges, comparable: snapshot.comparable,
-    data_quality: { missing_dates: snapshot.coverage.slice(0, 2).map(c => c.missingDates), problem_count: snapshot.coverage.slice(0, 2).reduce((s, c) => s + c.problems.length, 0), undated_count: snapshot.undatedPaths.length },
+    data_quality: { trimmed_dates:snapshot.trimmedDates, degraded:snapshot.degraded, observed_days:snapshot.observedDays, missing_dates: snapshot.coverage.slice(0, 2).map(c => c.missingDates), problem_count: snapshot.coverage.slice(0, 2).reduce((s, c) => s + c.problems.length, 0), undated_count: snapshot.undatedPaths.length },
     findings: snapshot.findings,
     evidence_catalog: snapshot.evidence.map(e => ({ id: e.id, label: e.label, ranges: e.ranges, limits: e.limits })),
     samples: snapshot.findings.map(f => {
