@@ -5,6 +5,7 @@ import { buildReportSnapshot, localSpendingReport, normalizeReportPreferences, r
 import { appendReportCache, findReportCache, reportConfiguration, requestSpendingReport } from "./report-ai";
 import { sharedRequestGate } from "./request-gate";
 import { createButton } from "./ui";
+import { formatReportFact, formatReportText, reportPlainLanguage, reportProgress, reportTextParts } from "./report-presentation";
 
 export class ReportEvidenceModal extends Modal {
   constructor(plugin: LedgerStatisticsPlugin, private snapshot: ReportSnapshot, private evidenceIds: string[], private openRecord: (r: LedgerRecord) => Promise<void>) { super(plugin.app); }
@@ -14,14 +15,15 @@ export class ReportEvidenceModal extends Modal {
     const entries = this.snapshot.evidence.filter(e => this.evidenceIds.includes(e.id));
     for (const e of entries) {
       const section = this.contentEl.createDiv({ cls: "ledger-report-evidence-section" });
-      section.createEl("h3", { text: e.label });
-      e.ranges.forEach(r => section.createEl("p", { cls: "ledger-report-muted", text: `${r.label}：${r.range.start} 至 ${r.range.end}` }));
+      section.createEl("h3", { text: reportPlainLanguage(e.label) });
+      e.ranges.forEach(r => section.createEl("p", { cls: "ledger-report-muted", text: `${reportPlainLanguage(r.label)}：${r.range.start} 至 ${r.range.end}` }));
       const list = section.createEl("dl", { cls: "ledger-report-facts" });
-      for (const f of Object.values(e.facts)) {
-        list.createEl("dt", { text: f.label });
-        list.createEl("dd", { text: f.unit === "元" ? formatCents(Math.round(f.value * 100)) : `${f.value}${f.unit}` });
+      for (const [key, f] of Object.entries(e.facts)) {
+        const value = formatReportFact(key, f);
+        list.createEl("dt", { text: formatReportText(f.label) });
+        list.createEl("dd", { text: value.text, cls: value.tone ? `ledger-report-${value.tone}` : "" });
       }
-      e.limits.forEach(t => section.createEl("p", { cls: "ledger-report-limit", text: t }));
+      e.limits.forEach(t => section.createEl("p", { cls: "ledger-report-limit", text: formatReportText(t) }));
     }
     const ids = new Set(entries.flatMap(e => e.recordIds));
     const records = this.snapshot.records.filter(r => ids.has(r.id)).sort((a, b) => b.date.localeCompare(a.date) || b.cents - a.cents);
@@ -128,7 +130,7 @@ export class ReportPanel {
     details.createEl("p", { text: "缺失日期视为未知；明确零消费账本视为零。笔数是记账记录，不代表杯数、人数或商品单价。按日期分析，不推断小时级购买顺序。" });
     for (const [i, c] of snapshot.coverage.entries()) {
       if (i >= 2 && c.complete) continue;
-      details.createEl("p", { text: `${i === 0 ? "本期" : i === 1 ? "基期" : `历史第${i - 1}期`} ${c.range.start} 至 ${c.range.end}：${c.complete ? "账本核验通过" : `缺少 ${c.missingDates.length} 天账本，${c.problems.length} 个异常账本`}` });
+      details.createEl("p", { text: `${i === 0 ? "本期" : i === 1 ? "上期" : `历史第${i - 1}期`} ${c.range.start} 至 ${c.range.end}：${c.complete ? "账本核验通过" : `缺少 ${c.missingDates.length} 天账本，${c.problems.length} 个异常账本`}` });
       if (c.missingDates.length) details.createEl("p", { cls: "ledger-report-muted", text: c.missingDates.join("、") });
       for (const problem of c.problems) {
         const b = createButton(details, `${problem.date}：${problem.reason}`);
@@ -159,22 +161,35 @@ export class ReportPanel {
 
 export function renderReportArticle(parent: HTMLElement, report: SpendingReport, snapshot: ReportSnapshot, evidence: (ids: string[]) => void): void {
   const article = parent.createEl("article", { cls: "ledger-report-article" });
-  article.createEl("h2", { text: report.title });
-  if (report.summary) article.createEl("p", { cls: "ledger-report-summary", text: report.summary });
+  article.createEl("h2", { text: formatReportText(report.title).replace(/\*\*/g, "") });
+  article.createEl("p", { cls: "ledger-report-progress", text: reportProgress(snapshot) });
+  const prose = (parent: HTMLElement, text: string, cls = "") => {
+    const emphasis = { remaining: 2 };
+    for (const paragraph of text.split(/\n\s*\n/).filter(t => t.trim())) {
+      const el = parent.createEl("p", { cls });
+      let strong: HTMLElement | undefined;
+      for (const part of reportTextParts(paragraph, emphasis)) {
+        if (!part.bold) strong = undefined;
+        else if (!strong) strong = el.createEl("strong");
+        (part.bold ? strong! : el).createSpan({ text: part.text, cls: part.tone ? `ledger-report-${part.tone}` : "" });
+      }
+    }
+  };
+  if (report.summary) prose(article, report.summary, "ledger-report-summary");
   report.paragraphs.forEach((p, i) => {
     const section = article.createEl("section");
-    if (p.heading) section.createEl("h3", { text: p.heading });
-    section.createEl("p", { text: p.text });
+    if (p.heading) section.createEl("h3", { text: formatReportText(p.heading).replace(/\*\*/g, "") });
+    prose(section, p.text);
     const ids = p.evidenceIds.filter(id => snapshot.evidence.some(e => e.id === id));
     if (!ids.length) return;
-    const b = createButton(section, `证据${["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧"][i] ?? i + 1}`); b.addClass("ledger-report-citation");
+    const b = createButton(section, `查看依据 ${["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧"][i] ?? i + 1}`); b.addClass("ledger-report-citation");
     b.addEventListener("click", () => evidence(ids));
   });
   if ((!report.paragraphs.length || report.paragraphs.some(p => !p.evidenceIds.some(id => snapshot.evidence.some(e => e.id === id)))) && snapshot.findings.length) {
     const local = article.createEl("details", { cls: "ledger-report-quality" });
     local.createEl("summary", { text: "查看本地分析与证据" });
     snapshot.findings.forEach(f => {
-      const b = createButton(local, f.title); b.addClass("ledger-report-citation");
+      const b = createButton(local, formatReportText(f.title)); b.addClass("ledger-report-citation");
       b.addEventListener("click", () => evidence(f.evidenceIds));
     });
   }

@@ -313,6 +313,47 @@ class Element {
   addEventListener(k, f) { this.listeners[k] = f; } empty() { this.children = []; }
   all() { return [this, ...this.children.flatMap(e => e.all())]; }
 }
+test('report presentation formats amounts, percentages and terms without confusing prices, dates or counts', () => {
+  const P = require('../dist/report-presentation.cjs');
+  const original = '基期140元；237.32元；+54.8元；-11.6元；￥1,200；5块；+19%；-8.24%；20笔；2026-09-15；10～30元。笔均贡献，笔数贡献，头部大额记录，解释边界，每笔均价。';
+  const formatted = P.formatReportText(original);
+  assert.equal(formatted, '上期140.00元；237.32元；+54.80元；−11.60元；￥1200.00；5.00块；+19.0%；−8.2%；20笔；2026-09-15；10.00～30.00元。每笔金额变化带来的影响，次数变化带来的影响，最贵的几笔，注意事项，平均每笔金额。');
+  assert.equal(P.formatReportText(formatted), formatted);
+  assert.equal(P.formatReportFact('ticket_contribution', {value:-11.6,unit:'元'}).text, '−11.60元');
+  assert.deepEqual(P.formatReportFact('decrease', {value:100,unit:'元'}), {text:'−100.00元',tone:'decrease'});
+  assert.equal(P.formatReportFact('share', {value:19,unit:'%'}).text, '19.0%');
+  assert.equal(P.formatReportFact('days', {value:3,unit:'天'}).text, '3天');
+  assert.equal(P.formatReportFact('rate', {value:1/3,unit:'笔'}).text, '0.33笔');
+});
+
+test('progress states distinguish matching elapsed days, short history, completed cycles and custom ranges', () => {
+  const P = require('../dist/report-presentation.cjs'), s = snapshot(ledgers('2026-08-15','2026-10-04'), R.defaultReportPreferences(new Date(2026,9,4)), new Date(2026,9,4));
+  assert.equal(P.reportProgress(s), '本周期已过 20 / 30 天 · 上期取同样的前 20 天对比');
+  const short = {...s,range:{start:'2026-03-15',end:'2026-04-13'},fullRange:{start:'2026-03-15',end:'2026-04-14'},previousRange:{start:'2026-02-15',end:'2026-03-14'}};
+  assert.equal(P.reportProgress(short), '本周期已过 30 / 31 天 · 上期仅 28 天，频次按自然日折算');
+  const complete = {...short,range:short.fullRange};
+  assert.equal(P.reportProgress(complete), '本周期共 31 天 · 与上期完整周期（28 天）对比');
+  assert.match(P.reportProgress({...complete,comparable:false}), /数据待核对$/);
+  assert.equal(P.reportProgress({...s,range:{start:'2026-09-01',end:'2026-09-10'},fullRange:{start:'2026-09-01',end:'2026-09-10'},previousRange:{start:'2026-08-22',end:'2026-08-31'},preferences:{...prefs,mode:'custom'}}), '所选范围共 10 天 · 与前一等长范围（10 天）对比');
+});
+
+test('article formats cached narrative locally, caps emphasis per section and retains safe text and bindings', () => {
+  const s = snapshot(coffeeData()), report = R.localSpendingReport(s), root = new Element();
+  report.paragraphs[0].text = '**次数变化带来的影响为+54.8元**，**每笔金额变化为-11.6元**。\n\n**解释边界**：<img src=x onerror=alert(1)>；上升19%。';
+  const original = JSON.stringify(report);
+  renderReportArticle(root, report, s, () => {});
+  assert.equal(JSON.stringify(report), original);
+  const first = root.all().find(e => e.tag === 'section');
+  assert.equal(first.all().filter(e => e.tag === 'p').length, 2);
+  assert.equal(first.all().filter(e => e.tag === 'strong').length, 2);
+  assert.ok(first.all().some(e => e.classes.has('ledger-report-increase') && e.textContent === '+54.80元'));
+  assert.ok(first.all().some(e => e.classes.has('ledger-report-decrease') && e.textContent === '−11.60元'));
+  assert.ok(first.all().some(e => e.textContent.includes('<img')));
+  assert.ok(!first.all().some(e => e.tag === 'img'));
+  assert.ok(root.all().some(e => e.classes.has('ledger-report-progress')));
+  assert.ok(root.all().some(e => e.textContent.startsWith('查看依据')));
+});
+
 test('article keeps narrative readable, evidence buttons use known IDs and text is inserted literally', () => {
   const s = snapshot(coffeeData()), report = R.localSpendingReport(s), root = new Element(); let clicked;
   report.paragraphs[0].text += '<script>not executable</script>';
