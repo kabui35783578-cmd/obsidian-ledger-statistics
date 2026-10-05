@@ -123,19 +123,21 @@ test('AI output is retained without content rejection while evidence links remai
   assert.match(ai.parseFinanceAdvice(JSON.stringify({ ...payload, category_insights: [{ category: '不存在', opinion: '继续观察这个分类的变化。' }] }), snapshot).judgment, /继续观察这个分类的变化/);
 });
 
-test('manual AI refresh skips a paid request when the verified snapshot has not changed', async () => {
+test('manual AI refresh requests regeneration even when the snapshot has not changed', async () => {
   const snapshot = core.buildFinanceAdvisorSnapshot([], new Date(2026, 8, 21), 300000, [], []);
   const fingerprint = ai.financeSnapshotFingerprint(snapshot);
   let requests = 0;
-  global.__ledgerTestRequest = async () => { requests++; throw new Error('should not request'); };
+  global.__ledgerTestRequest = async () => { requests++; throw new Error('offline'); };
   global.__ledgerTestNotices = [];
   const view = Object.create(LedgerStatisticsView.prototype);
   Object.assign(view, { closed: false, financeAdviceLoading: false, financeController: null,
-    plugin: { settings: { financeAiEnabled: true, financeAdviceCache: { date: snapshot.currentRange.end, fingerprint, advice: { primaryEventId: 'stable' }, updatedAt: new Date().toISOString() } } },
+    plugin: { settings: { financeAiEnabled: true, financeAiEndpoint: 'https://example.invalid/v1', financeAiApiKey: '', financeAiModel: 'test', financeAdviceCache: { date: snapshot.currentRange.end, fingerprint, advice: { primaryEventId: 'stable' }, updatedAt: new Date().toISOString() } } },
+    app: { vault: { getName: () => 'manual-test' } },
     refreshFinanceSection: () => {} });
   await view.loadFinanceAdvice(snapshot, true);
-  assert.equal(requests, 0);
-  assert.deepEqual(global.__ledgerTestNotices, ['当前判断仍有效，没有需要重新分析的重要变化']);
+  assert.equal(requests, 1);
+  assert.match(view.financeAdviceError, /连接失败/);
+  assert.equal(view.plugin.settings.financeAdviceCache.fingerprint, fingerprint);
   delete global.__ledgerTestRequest;
   delete global.__ledgerTestNotices;
 });
@@ -213,7 +215,7 @@ test('closing a view during AI request prevents cache writes after response', as
   Object.assign(view, { closed: false, financeAdviceLoading: false, financeAutoTimer: null, financeController: null,
     plugin: { settings: { financeAiEnabled: true, financeAiEndpoint: 'https://example.invalid/v1', financeAiApiKey: '', financeAiModel: 'test', financeAdviceCache: null }, saveSettings: async () => { saves++; } },
     app: { vault: { getName: () => 'request-lifecycle-test' } }, refreshFinanceSection: () => {} });
-  const request = view.loadFinanceAdvice(snapshot, false); await flush();
+  const request = view.loadFinanceAdvice(snapshot, true); await flush();
   view.closed = true; view.cancelFinanceRequest(); await request;
   task.resolve({ json: { choices: [{ message: { content: JSON.stringify({ primary_event_id: 'stable', action_id: 'observe', category_names: [] }) } }] } });
   await flush(); assert.equal(saves, 0); assert.equal(view.plugin.settings.financeAdviceCache, null);

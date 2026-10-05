@@ -195,18 +195,18 @@ function view(data, cache = null) {
   return result;
 }
 
-test('first daily analysis auto-schedules, debounces and needs no salary configuration', () => {
+test('first daily analysis requires a manual refresh and needs no salary configuration', async () => {
   const data = snapshot(); data.salaryCents = 0;
   const v = view(data);
-  let queued = [], requested;
-  const original = global.setTimeout;
-  global.setTimeout = (fn, delay) => { queued.push({ fn, delay }); return queued.length; };
+  let requests = 0;
+  global.__ledgerTestRequest = async () => { requests++; return { status: 200, json: { choices: [{ message: { content: JSON.stringify(payload(data)) } }] } }; };
   try {
-    v.scheduleFinanceAdviceUpdate(); v.scheduleFinanceAdviceUpdate();
-    assert.equal(queued.length, 1); assert.equal(queued[0].delay, 1500);
-    v.loadFinanceAdvice = value => { requested = value; };
-    queued[0].fn(); assert.equal(requested, data);
-  } finally { global.setTimeout = original; }
+    await v.loadFinanceAdvice(data, false);
+    assert.equal(requests, 0);
+    await v.loadFinanceAdvice(data, true);
+    assert.equal(requests, 1);
+    assert.ok(v.plugin.settings.financeAdviceCache);
+  } finally { delete global.__ledgerTestRequest; }
 });
 
 test('manual refresh can regenerate a current daily analysis', async () => {
@@ -222,7 +222,7 @@ test('late responses from yesterday cannot replace today and failures fall back 
   let resolve;
   global.__ledgerTestRequest = () => new Promise(done => { resolve = done; });
   try {
-    const pending = v.loadFinanceAdvice(data, false);
+    const pending = v.loadFinanceAdvice(data, true);
     await new Promise(done => setImmediate(done));
     const next = snapshot([], {}, new Date(2026, 9, 3));
     v.currentFinanceSnapshot = () => next;

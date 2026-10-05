@@ -7,6 +7,51 @@ const ai = require('../dist/ai.cjs');
 const { createFinanceAdviceCache, assessFinanceAdvice } = require('../dist/advice-lifecycle.cjs');
 const { markInsightSeen, withInsightHistory } = require('../dist/insights.cjs');
 const now = new Date(2026, 9, 5, 8);
+
+class Element {
+  constructor(options = {}) { this.textContent = options.text ?? ''; this.classes = new Set((options.cls ?? '').split(' ')); this.children = []; this.listeners = {}; this.ownerDocument = { hidden: true, querySelector: () => null }; }
+  createEl(tag, options) { const child = new Element(options); this.children.push(child); return child; }
+  createDiv(options) { return this.createEl('div', options); }
+  createSpan(options) { return this.createEl('span', options); }
+  setAttribute() {}
+  addEventListener(name, fn) { this.listeners[name] = fn; }
+  getBoundingClientRect() { return { top: 0, bottom: 100 }; }
+  all() { return [this, ...this.children.flatMap(child => child.all())]; }
+  querySelector(selector) { return this.all().find(el => el.classes.has(selector.slice(1))); }
+}
+
+test('reopening, rollover and backfills retain the saved text and original week without AI requests', async () => {
+  const data = files(), original = snapshot(data);
+  const cache = JSON.parse(JSON.stringify(createFinanceAdviceCache(original, ai.parseFinanceAdvice('上次保存的分析。', original))));
+  let requests = 0;
+  global.__ledgerTestRequest = async () => { requests++; throw new Error('offline'); };
+  try {
+    for (const next of [original, snapshot(data, {}, new Date(2026, 9, 6)), snapshot([...data, file('2026-10-04', 999)])]) {
+      const v = Object.create(LedgerStatisticsView.prototype), root = new Element();
+      const saved = JSON.parse(JSON.stringify(cache));
+      Object.assign(v, { closed: false, financeAdviceLoading: false, financeAdviceError: '', contentEl: root,
+        currentFinanceSnapshot: () => next, refreshFinanceSection: () => {},
+        app: { vault: { getName: () => 'manual-weekly-tests' } },
+        plugin: { repository: { files: new Map(data.map((f, i) => [i, f])) }, settings: { salaryCents: 600000, financeAiEnabled: true,
+          financeAiEndpoint: 'https://example.invalid/v1', financeAiApiKey: '', financeAiModel: 'test', financeAdviceCache: saved } } });
+      v.renderFinanceSection(root, false);
+      v.renderFinanceSection(root, false);
+      assert.equal(requests, 0);
+      assert.match(root.querySelector('.ledger-advisor-judgment').textContent, /上次保存的分析/);
+      assert.match(root.querySelector('.ledger-advisor-period').textContent, /2026\.09\.28 — 2026\.10\.04 · 手动刷新/);
+      assert.deepEqual(v.plugin.settings.financeAdviceCache, cache);
+      // Exercise the actual card button, including a failed request and re-render.
+      root.querySelector('.ledger-advisor-refresh').listeners.click();
+      await new Promise(done => setImmediate(done));
+      assert.equal(requests > 0, true);
+      assert.deepEqual(v.plugin.settings.financeAdviceCache, cache);
+      const after = new Element(); v.renderFinanceSection(after, false);
+      assert.match(after.querySelector('.ledger-advisor-judgment').textContent, /上次保存的分析/);
+      assert.match(after.querySelector('.ledger-advisor-ai-status').textContent, /保留上次分析/);
+      requests = 0;
+    }
+  } finally { delete global.__ledgerTestRequest; }
+});
 function file(date, amount, category = '餐饮', note = '午饭') {
   return core.parseLedgerFile(`private/${category}/${date}.md`, `---\ndate: ${date}\ntotal: ${amount}\n---\n# 今日消费记录\n${amount ? `- 12:00｜${category}｜￥${amount.toFixed(2)}（${note}）` : ''}`);
 }

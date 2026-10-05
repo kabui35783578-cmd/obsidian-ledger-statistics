@@ -131,10 +131,8 @@ export class LedgerStatisticsView extends ItemView {
   private lastDate = todayIso();
   private closed = false;
   private financeController: AbortController | null = null;
-  private financeAutoTimer: number | null = null;
   private financeAdviceLoading = false;
   private financeAdviceError = "";
-  private financeAdviceAttemptedKey = "";
   private advisorDetailsExpanded = false;
   private filtersExpanded = !Platform.isMobile;
   private drillContext: DrillContext | null = null;
@@ -203,17 +201,12 @@ export class LedgerStatisticsView extends ItemView {
   cancelFinanceRequest(): void {
     this.reportPanel?.cancel();
     this.financeController?.abort();
-    if (this.financeAutoTimer !== null) window.clearTimeout(this.financeAutoTimer);
-    this.financeAutoTimer = null;
   }
 
   refreshDate(now = new Date()): void {
     const date = isoFromDate(now);
     if (this.closed) return;
-    if (date === this.lastDate) {
-      this.scheduleFinanceAdviceUpdate();
-      return;
-    }
+    if (date === this.lastDate) return;
     this.lastDate = date;
     this.cancelFinanceRequest();
     if (this.periodOffset === 0 && this.preset !== "custom" && this.preset !== "previous") {
@@ -498,37 +491,12 @@ export class LedgerStatisticsView extends ItemView {
     ), files, now, this.plugin.settings), files, now, this.plugin.settings), this.plugin.settings.insightHistory ?? []);
   }
 
-  private financeSectionVisible(): boolean {
-    const host = this.contentEl.querySelector<HTMLElement>(".ledger-advisor-host");
-    if (!host || !this.containerEl.isConnected) return false;
-    const card = host.getBoundingClientRect();
-    const view = this.contentEl.getBoundingClientRect();
-    return !host.ownerDocument.hidden && !host.ownerDocument.querySelector(".modal-container")
-      && this.app.workspace.getActiveViewOfType(LedgerStatisticsView) === this
-      && card.bottom > view.top && card.top < view.bottom;
-  }
-
-  private scheduleFinanceAdviceUpdate(snapshot?: ReturnType<typeof buildFinanceAdvisorSnapshot>): void {
-    if (this.closed || !this.plugin?.repository?.loaded || this.financeAdviceLoading || this.financeAutoTimer !== null) return;
-    const settings = this.plugin.settings;
-    if (!settings.financeAiEnabled || !settings.financeAiEndpoint.trim() || !settings.financeAiModel.trim()
-      || !this.financeSectionVisible()) return;
-    const current = snapshot ?? this.currentFinanceSnapshot();
-    if (current.salaryCents <= 0 && !current.daily) return;
-    const assessment = assessFinanceAdvice(current, settings.financeAdviceCache);
-    if (!assessment.needsRefresh || this.financeAdviceAttemptedKey === assessment.refreshKey) return;
-    this.financeAutoTimer = window.setTimeout(() => {
-      this.financeAutoTimer = null;
-      if (!this.closed && this.financeSectionVisible()) void this.loadFinanceAdvice(this.currentFinanceSnapshot(), false);
-    }, 1500);
-  }
-
   private renderFinanceSection(parent: HTMLElement, animate = true): void {
     const files = [...this.plugin.repository.files.values()];
     const now = new Date();
     const financeSnapshot = this.currentFinanceSnapshot(now);
     const cache = this.plugin.settings.financeAdviceCache;
-    const assessment = assessFinanceAdvice(financeSnapshot, cache);
+    const retainedAdvice = cache?.advice ?? null;
     const updatedAt = cache?.updatedAt;
     const cacheTime = updatedAt && Number.isFinite(Date.parse(updatedAt)) ? new Date(updatedAt).toLocaleString() : "时间未知";
     const generated = cache ? `生成于：${cacheTime}。` : "";
@@ -537,19 +505,20 @@ export class LedgerStatisticsView extends ItemView {
       && Boolean(this.plugin.settings.financeAiModel.trim());
     let financeState: FinanceAdviceViewState;
     if (!this.plugin.settings.financeAiEnabled) {
-      financeState = { status: "local", advice: null, message: "AI 分析未启用，请在设置中开启。", canRefresh: false };
+      financeState = { status: "local", advice: retainedAdvice, message: "AI 分析未启用，请在设置中开启。", canRefresh: false };
     } else if (!configured) {
-      financeState = { status: "unconfigured", advice: null, message: "请先在设置中填写 AI 接口和模型。", canRefresh: false };
+      financeState = { status: "unconfigured", advice: retainedAdvice, message: "请先在设置中填写 AI 接口和模型。", canRefresh: false };
     } else if (this.financeAdviceLoading) {
-      financeState = { status: "loading", advice: assessment.advice, message: `正在评估变化，最长等待 60 秒…${assessment.advice ? "原判断仍有效，暂时保留。" + generated : ""}`, canRefresh: true };
-    } else if (assessment.advice) {
-      financeState = { status: this.financeAdviceError ? "error" : "ready", advice: assessment.advice, message: `${this.financeAdviceError ? `本次更新失败：${this.financeAdviceError}。原判断仍有效，继续保留。` : `${assessment.reason}。`}${generated}`, canRefresh: true };
-    } else if (cache) {
-      financeState = { status: this.financeAdviceError ? "error" : "local", advice: null, message: this.financeAdviceError ? `AI 分析暂未生成：${this.financeAdviceError}。可点击刷新重试。` : "等待生成截至昨天的近 7 天分析…", canRefresh: true };
+      financeState = { status: "loading", advice: retainedAdvice, message: `正在生成分析，最长等待 60 秒…${retainedAdvice ? "暂时显示上次分析。" + generated : ""}`, canRefresh: true };
+    } else if (retainedAdvice) {
+      financeState = { status: this.financeAdviceError ? "error" : "ready", advice: retainedAdvice, message: `${this.financeAdviceError ? `本次更新失败：${this.financeAdviceError}。保留上次分析，可点击刷新重试。` : ""}${generated}`, canRefresh: true };
     } else if (this.financeAdviceError) {
       financeState = { status: "error", advice: null, message: `AI 分析暂未生成：${this.financeAdviceError}。可点击刷新重试。`, canRefresh: true };
     } else {
-      financeState = { status: "local", advice: null, message: "等待生成截至昨天的近 7 天分析…", canRefresh: true };
+      financeState = { status: "local", advice: null, message: "点击“刷新”生成截至昨天的近 7 天分析。", canRefresh: true };
+    }
+    if (retainedAdvice && cache && isValidIsoDate(cache.date)) {
+      financeState.analysisRange = { start: addDays(cache.date, -6), end: cache.date };
     }
     renderFinanceAdvisor(parent, financeSnapshot, financeState, () => void this.loadFinanceAdvice(this.currentFinanceSnapshot(), true), animate,
       financeCoverageReport(files.filter(file => !file.date || file.date <= financeSnapshot.currentRange.end), insightAsOf(now)), (path) => void this.app.workspace.openLinkText(path, "", false),
@@ -568,9 +537,6 @@ export class LedgerStatisticsView extends ItemView {
         void this.plugin.saveSettings(false, false).catch(() => new Notice("提醒阅读状态保存失败"));
       }
     }
-    if (this.financeAutoTimer !== null) window.clearTimeout(this.financeAutoTimer);
-    this.financeAutoTimer = null;
-    this.scheduleFinanceAdviceUpdate(financeSnapshot);
   }
 
   private refreshFinanceSection(): void {
@@ -585,20 +551,11 @@ export class LedgerStatisticsView extends ItemView {
   }
 
   private async loadFinanceAdvice(snapshot: ReturnType<typeof buildFinanceAdvisorSnapshot>, manual: boolean): Promise<void> {
-    if (this.financeAdviceLoading || this.closed || !this.plugin.settings.financeAiEnabled) return;
+    if (!manual || this.financeAdviceLoading || this.closed || !this.plugin.settings.financeAiEnabled) return;
     if (snapshot.salaryCents <= 0 && !snapshot.daily) {
       if (manual) new Notice("请先在插件设置中填写每个工资周期到账工资");
       return;
     }
-    const assessment = assessFinanceAdvice(snapshot, this.plugin.settings.financeAdviceCache);
-    if (!assessment.needsRefresh && !(manual && snapshot.daily)) {
-      if (manual) new Notice("当前判断仍有效，没有需要重新分析的重要变化");
-      return;
-    }
-    if (!manual && this.financeAdviceAttemptedKey === assessment.refreshKey) return;
-    if (this.financeAutoTimer !== null) window.clearTimeout(this.financeAutoTimer);
-    this.financeAutoTimer = null;
-    this.financeAdviceAttemptedKey = assessment.refreshKey;
     this.financeAdviceLoading = true;
     const controller = new AbortController();
     this.financeController = controller;
@@ -613,7 +570,7 @@ export class LedgerStatisticsView extends ItemView {
       }
       const nextCache = createFinanceAdviceCache(snapshot, advice);
       if (assessFinanceAdvice(this.currentFinanceSnapshot(), nextCache).needsRefresh) {
-        throw new Error("分析期间相关依据已变化，本次结果已废弃，等待重新判断");
+        throw new Error("分析期间相关依据已变化，本次结果已废弃，请点击刷新重试");
       }
       this.plugin.settings.financeAdviceCache = nextCache;
       await this.plugin.saveSettings(false, false);

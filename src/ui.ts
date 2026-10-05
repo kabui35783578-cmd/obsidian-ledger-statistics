@@ -6,12 +6,14 @@ import { prepareDonut } from "./donut";
 import type { DonutSegment } from "./donut";
 import type { BoxReference, WaterfallStep } from "./chart-data";
 import type { BalanceStatus } from "./balance";
+import type { DateRange } from "./core";
 
 export interface FinanceAdviceViewState {
   status: "local" | "loading" | "ready" | "error" | "unconfigured";
   advice: FinanceAdvice | null;
   message: string;
   canRefresh: boolean;
+  analysisRange?: DateRange;
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -747,7 +749,8 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
       refresh.disabled = state.status === "loading";
       refresh.addEventListener("click", onRefresh);
     }
-    card.createDiv({ cls: "ledger-advisor-period", text: `近 7 天 · ${snapshot.weekly.range.start.replace(/-/g, ".")} — ${snapshot.weekly.range.end.replace(/-/g, ".")} · 截至昨天` });
+    const range = state.analysisRange ?? snapshot.weekly.range;
+    card.createDiv({ cls: "ledger-advisor-period", text: `近 7 天 · ${range.start.replace(/-/g, ".")} — ${range.end.replace(/-/g, ".")} · 手动刷新` });
     const analysis = card.createDiv({ cls: "ledger-advisor-observation" });
     if (state.advice) {
       analysis.createEl("h4", { text: state.advice.headline });

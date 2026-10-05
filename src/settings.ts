@@ -86,7 +86,7 @@ const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: stri
   { id: "ledger", label: "账本与显示", description: "账本来源、统计口径、默认视图与星标核对。" },
   { id: "salary", label: "工资周期", description: "管理固定支出及其周期末参考。" },
   { id: "balance", label: "余额校准", description: "按实际余额校准本周期剩余金额，并查看账面与实际的净差额。" },
-  { id: "ai", label: "AI 洞察", description: "每日消费简报及可选 AI 分析；工资用于周期参考，不影响今日简报。" },
+  { id: "ai", label: "AI 洞察", description: "截至昨天的近 7 天分析；仅点击刷新时生成。" },
   { id: "budget", label: "预算与提醒", description: "设置今日预算、统计范围与超额提醒。" }
 ];
 
@@ -306,7 +306,7 @@ export class LedgerSettingTab extends PluginSettingTab {
 
     new Setting(aiPanel)
       .setName("启用 AI 财务判断")
-      .setDesc("发送今日简报、汇总、候选事件及有限交易备注，不发送账本文件、路径或完整原始行。每天及账目变化后，在洞察可见时自动更新（可能产生模型费用）；也可随时手动刷新。允许引用程序核验数字。")
+      .setDesc("发送截至昨天的近 7 天数据、对比汇总及有限交易备注，不发送账本文件、路径或完整原始行。仅点击洞察卡片的刷新按钮时调用 AI（可能产生模型费用）；重新打开、跨天和账目变化均保留上次分析。")
       .addToggle((toggle) => toggle
         .setValue(this.plugin.settings.financeAiEnabled)
         .onChange(async (value) => {

@@ -161,7 +161,7 @@ function viewFor(data, cache) {
   return view;
 }
 
-test('same-day foreground checks schedule important changes only when the card is visible and data is loaded', () => {
+test('foreground checks never schedule AI requests even when records change', () => {
   const data = snapshot(), cache = cached(data); data.events.push(extraEvent('new', 'large-expense', 99));
   const view = viewFor(data, cache);
   view.plugin.repository = { loaded: true };
@@ -176,35 +176,48 @@ test('same-day foreground checks schedule important changes only when the card i
     view.refreshDate(new Date(2026, 8, 22)); assert.equal(queued.length, 0);
     view.plugin.repository.loaded = true;
     view.refreshDate(new Date(2026, 8, 22)); view.refreshDate(new Date(2026, 8, 22));
-    assert.equal(queued.length, 1);
-    let requested;
-    const newest = { ...data, currentSpentCents: data.currentSpentCents + 100 };
-    view.currentFinanceSnapshot = () => newest;
-    view.loadFinanceAdvice = value => { requested = value; };
-    queued[0](); assert.equal(requested, newest);
+    assert.equal(queued.length, 0);
+    assert.equal(view.plugin.settings.financeAdviceCache, cache);
   } finally { global.setTimeout = realSetTimeout; }
 });
 
-test('pending automatic updates do not send after the card is hidden or the view closes', () => {
+test('nonmanual requests cannot invoke AI with or without cached analysis', async () => {
+  let requests = 0;
+  global.__ledgerTestRequest = async () => { requests++; throw new Error('unexpected request'); };
+  try {
+    const data = snapshot();
+    for (const cache of [null, cached(data)]) {
+      const view = viewFor(data, cache);
+      await view.loadFinanceAdvice(data, false);
+      assert.equal(view.plugin.settings.financeAdviceCache, cache);
+    }
+    assert.equal(requests, 0);
+  } finally { delete global.__ledgerTestRequest; }
+});
+
+test('date rollover updates local filters without requesting AI or replacing cache', () => {
   for (const closed of [false, true]) {
     const data = snapshot(), cache = cached(data); data.events.push(extraEvent('new', 'large-expense', 99));
     const view = viewFor(data, cache); view.plugin.repository = { loaded: true };
-    let visible = true, callback, requests = 0;
-    view.financeSectionVisible = () => visible; view.loadFinanceAdvice = () => { requests++; };
+    let requests = 0, renders = 0;
+    Object.assign(view, { lastDate: '2026-09-22', periodOffset: 0, preset: 'custom', render: () => { renders++; } });
+    view.loadFinanceAdvice = () => { requests++; };
     const realSetTimeout = global.setTimeout;
-    global.setTimeout = next => { callback = next; return 1; };
+    global.setTimeout = () => assert.fail('AI must not be scheduled');
     try {
-      view.scheduleFinanceAdviceUpdate();
-      if (closed) view.closed = true; else visible = false;
-      callback(); assert.equal(requests, 0);
+      view.closed = closed;
+      view.refreshDate(new Date(2026, 8, 23));
+      assert.equal(requests, 0);
+      assert.equal(renders, closed ? 0 : 1);
+      assert.equal(view.plugin.settings.financeAdviceCache, cache);
     } finally { global.setTimeout = realSetTimeout; }
   }
 });
 
-test('next-day manual refresh does not call the model just because the date changed', async () => {
+test('next-day manual refresh explicitly requests a new analysis', async () => {
   const cache = cached(), view = viewFor(snapshot(23), cache);
   let calls = 0; global.__ledgerTestRequest = async () => { calls++; throw new Error('unexpected request'); };
-  try { await view.loadFinanceAdvice(snapshot(23), true); assert.equal(calls, 0); assert.equal(view.plugin.settings.financeAdviceCache, cache); }
+  try { await view.loadFinanceAdvice(snapshot(23), true); assert.equal(calls, 1); assert.equal(view.plugin.settings.financeAdviceCache, cache); }
   finally { delete global.__ledgerTestRequest; }
 });
 
@@ -213,7 +226,7 @@ test('failed reassessment retains valid prior insight and does not automatically
   const view = viewFor(data, cache); let calls = 0;
   global.__ledgerTestRequest = async () => { calls++; throw new Error('offline'); };
   try {
-    await view.loadFinanceAdvice(data, false); await view.loadFinanceAdvice(data, false);
+    await view.loadFinanceAdvice(data, true); await view.loadFinanceAdvice(data, false);
     assert.equal(calls, 1); assert.equal(view.plugin.settings.financeAdviceCache, cache);
     assert.equal(assessFinanceAdvice(data, cache).advice, cache.advice);
     assert.match(view.financeAdviceError, /连接失败/);
