@@ -1,6 +1,6 @@
 {
   "name": "obsidian-ledger-statistics",
-  "version": "2.9.3",
+  "version": "2.9.4",
   "private": true,
   "description": "Local, read-only ledger statistics for Obsidian desktop and mobile.",
   "main": "main.js",

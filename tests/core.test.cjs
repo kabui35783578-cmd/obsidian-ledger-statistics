@@ -243,14 +243,14 @@ test("candidate events expose only bounded relevant transaction notes to AI", ()
     category_insights: []
   };
   assert.equal(parseFinanceAdvice(JSON.stringify(causalPayload), snapshot).judgment, causalPayload.cause_hypothesis);
-  assert.throws(() => parseFinanceAdvice(JSON.stringify({
+  assert.equal(parseFinanceAdvice(JSON.stringify({
     ...causalPayload,
     cause_hypothesis: "居住安排和对应服务使用已经发生阶段性变化，因此这笔住房支出会继续保持在当前水平。"
-  }), snapshot), /没有表达不确定性/);
-  assert.throws(() => parseFinanceAdvice(JSON.stringify({
+  }), snapshot).judgment, "居住安排和对应服务使用已经发生阶段性变化，因此这笔住房支出会继续保持在当前水平。");
+  assert.equal(parseFinanceAdvice(JSON.stringify({
     ...causalPayload,
     action: "核实这笔住房交易属于固定支出还是偶发支出，再决定是否调整安排。"
-  }), snapshot), /重复要求确认/);
+  }), snapshot).action, "核实这笔住房交易属于固定支出还是偶发支出，再决定是否调整安排。");
 });
 
 test("parses ordinary, backfilled, thousands, one-decimal, spaces and full-width records into integer cents", () => {

@@ -734,13 +734,35 @@ export function renderEmpty(parent: HTMLElement, message: string): void {
 }
 
 export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvisorSnapshot, state: FinanceAdviceViewState, onRefresh: () => void, animate = true, coverage?: FinanceCoverageReport, onOpenFile?: (path: string) => void, onManageFixed?: () => void, detailsExpanded = false, onDetailsExpandedChange?: (expanded: boolean) => void, balance?: BalanceStatus): void {
+  if (snapshot.weekly) {
+    const card = parent.createDiv({ cls: `ledger-advisor-card is-weekly is-ai-only${animate ? " ledger-reveal" : ""}` });
+    card.setAttribute("aria-busy", String(state.status === "loading"));
+    const heading = card.createDiv({ cls: "ledger-advisor-heading" });
+    const copy = heading.createDiv({ cls: "ledger-advisor-heading-copy" });
+    copy.createEl("h3", { text: "洞察" });
+    copy.createDiv({ cls: "ledger-advisor-period", text: `近 7 天 · ${snapshot.weekly.range.start.replace(/-/g, ".")} — ${snapshot.weekly.range.end.replace(/-/g, ".")} · 截至昨天` });
+    if (state.canRefresh) {
+      const refresh = heading.createEl("button", { cls: "ledger-advisor-refresh", attr: { type: "button", "aria-label": "刷新 AI 分析" } });
+      setIcon(refresh, state.status === "loading" ? "loader-circle" : "refresh-cw");
+      refresh.createSpan({ text: state.status === "loading" ? "分析中" : "刷新" });
+      refresh.disabled = state.status === "loading";
+      refresh.addEventListener("click", onRefresh);
+    }
+    const analysis = card.createDiv({ cls: "ledger-advisor-observation" });
+    if (state.advice) {
+      analysis.createEl("h4", { text: state.advice.headline });
+      analysis.createEl("p", { cls: "ledger-advisor-judgment", text: [state.advice.judgment, state.advice.action].filter(Boolean).join("\n\n") });
+    }
+    if (state.status !== "ready" && state.message) analysis.createDiv({ cls: `ledger-advisor-ai-status is-${state.status}`, text: state.message });
+    return;
+  }
   const card = parent.createDiv({ cls: `ledger-advisor-card${animate ? " ledger-reveal" : ""}` });
   card.setAttribute("aria-busy", String(state.status === "loading"));
   const heading = card.createDiv({ cls: "ledger-advisor-heading" });
   const copy = heading.createDiv({ cls: "ledger-advisor-heading-copy" });
   copy.createDiv({ cls: "ledger-advisor-badge", text: "DAILY FINANCE BRIEF · LOCAL LEDGER" });
-  copy.createEl("h3", { text: "今日洞察" });
-  copy.createDiv({ cls: "ledger-advisor-period", text: snapshot.daily ? `${snapshot.daily.date.replace(/-/g, ".")} · 今日记录 · 不受下方筛选影响` : `${snapshot.currentRange.start.replace(/-/g, ".")} — ${snapshot.currentRange.end.replace(/-/g, ".")}` });
+  copy.createEl("h3", { text: "洞察" });
+  copy.createDiv({ cls: "ledger-advisor-period", text: snapshot.daily ? `截至 ${snapshot.daily.date.replace(/-/g, ".")} · 昨日记录 · 不受下方筛选影响` : `${snapshot.currentRange.start.replace(/-/g, ".")} — ${snapshot.currentRange.end.replace(/-/g, ".")}` });
 
   if (state.canRefresh) {
     const refresh = heading.createEl("button", { cls: "ledger-advisor-refresh", attr: { type: "button", "aria-label": "重新生成财务判断" } });
@@ -763,7 +785,7 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
   const remainingCents = balance?.remainingCents ?? snapshot.remainingSalaryCents;
   const remaining = heading.createDiv({ cls: `ledger-advisor-remaining${remainingCents < 0 ? " is-negative" : ""}` });
   remaining.createSpan({ text: snapshot.salaryCents <= 0 ? "工资尚未设置" : remainingCents < 0 ? "当前余额不足" : balance?.calibrated ? "目前还剩 · 已校准" : "目前还剩" });
-  remaining.createEl("strong", { text: snapshot.salaryCents > 0 ? formatCents(Math.abs(remainingCents)) : "今日简报可用" });
+  remaining.createEl("strong", { text: snapshot.salaryCents > 0 ? formatCents(Math.abs(remainingCents)) : "昨日简报可用" });
 
   const event = snapshot.events.find((item) => item.id === state.advice?.primaryEventId) ?? snapshot.events[0];
   const observation = card.createDiv({ cls: `ledger-advisor-observation is-${event.type}${state.advice?.tone === "warning" ? " is-warning" : ""}` });
@@ -772,7 +794,7 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
     attr: { type: "button", "aria-label": "查看洞察说明", "aria-expanded": "false" }
   });
   setIcon(infoToggle, "circle-alert");
-  observation.createDiv({ cls: "ledger-advisor-observation-label", text: state.advice ? "AI 今日分析" : "今日消费简报" });
+  observation.createDiv({ cls: "ledger-advisor-observation-label", text: state.advice ? "AI 洞察" : "昨日消费简报" });
   observation.createEl("h4", { text: state.advice?.headline ?? event.title });
   observation.createEl("p", { cls: "ledger-advisor-judgment", text: state.advice?.judgment ?? `${event.detail}${snapshot.daily?.action ?? eventAdvice(event)}` });
   if (state.advice?.action) {
@@ -784,7 +806,7 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
 
   if (snapshot.daily) {
     const daily = snapshot.daily;
-    observation.createDiv({ cls: "ledger-advisor-daily-facts", text: `今日已解析 ${formatCents(daily.spentCents)} · ${daily.count} 笔${daily.status === "incomplete" ? " · 待核对" : ""}` });
+    observation.createDiv({ cls: "ledger-advisor-daily-facts", text: `昨日已解析 ${formatCents(daily.spentCents)} · ${daily.count} 笔${daily.status === "incomplete" ? " · 待核对" : ""}` });
     if (daily.budgetCents > 0) observation.createDiv({ cls: "ledger-advisor-daily-facts", text: `日预算 ${formatCents(daily.budgetCents)} · ${daily.overCents ? "超出 " + formatCents(daily.overCents) : "还剩 " + formatCents(daily.remainingCents)} · ${daily.budgetCategory || "全部分类"}${daily.includeStarred ? "" : " · 不含星标"}${daily.status === "incomplete" || daily.status === "unrecorded" ? " · 仅按已解析记录" : ""}` });
     const ongoing = snapshot.events.filter(item => item.type !== "daily" && item.type !== "stable" && item.type !== "salary-pace");
     if (ongoing.length) {
@@ -822,7 +844,7 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
   if (snapshot.repeatedEvents?.length) {
     const repeated = infoPanel.createDiv({ cls: "ledger-advisor-info-section" });
     repeated.createEl("h5", { text: `已关注且仍有效 · ${snapshot.repeatedEvents.length}` });
-    repeated.createEl("p", { text: "今日简报每天更新；已经看过不代表周期异常已解决。仍有效的异常单独保留，不再占据今日主卡片。" });
+    repeated.createEl("p", { text: "洞察每天更新，数据截止到昨天；已经看过不代表周期异常已解决。仍有效的异常单独保留。" });
     for (const item of snapshot.repeatedEvents) {
       repeated.createEl("strong", { text: item.title });
       repeated.createEl("p", { text: item.detail });
@@ -845,7 +867,7 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
     const details = infoPanel.createDiv({ cls: "ledger-advisor-info-section" });
     const zeroDays = coverage.cycles.reduce((sum, cycle) => sum + cycle.assumedZeroDates.length, 0);
     details.createEl("h5", { text: issueCount ? `统计口径 · ${issueCount} 项待核对` : zeroDays ? `统计口径 · ${zeroDays} 天未记账按零消费` : "统计口径 · 记录齐全" });
-    details.createEl("p", { text: "未记账日期按 ¥0 参与洞察；若有漏记，补记后会重新计算。解析或金额核对异常仍需处理，不会当成零消费。" });
+    details.createEl("p", { text: snapshot.weekly ? "近 7 天和前 7 天缺失日期不按零消费，完整的明确零消费日计入覆盖。历史周均只取此前 4 个七天窗口中完整的窗口。以下工资周期背景仍沿用原有未记账日按零的统计口径，不能据此认定周趋势完整。" : "未记账日期按 ¥0 参与洞察；若有漏记，补记后会重新计算。解析或金额核对异常仍需处理，不会当成零消费。" });
     const problemLink = (path: string, reason: string) => {
       const row = details.createDiv({ cls: "ledger-advisor-data-issue" });
       const button = row.createEl("button", { text: path, attr: { type: "button" } });

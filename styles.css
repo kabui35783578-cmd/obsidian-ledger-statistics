@@ -3047,6 +3047,27 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
 .ledger-waterfall-note,
 .ledger-box-note { margin-top: 10px; color: var(--mono-muted); font-size: 11px; line-height: 1.5; }
 .ledger-advisor-daily-facts { margin-top: 8px; color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+.ledger-advisor-card.is-ai-only {
+  display: block;
+  padding: clamp(20px, 2.5vw, 32px);
+  background: var(--mono-ink);
+  color: var(--mono-paper);
+}
+.is-ai-only .ledger-advisor-heading { margin-bottom: 18px; gap: 16px; }
+.is-ai-only .ledger-advisor-heading-copy { min-width: 0; }
+.is-ai-only .ledger-advisor-heading h3 { color: var(--mono-paper); }
+.is-ai-only .ledger-advisor-period { color: color-mix(in srgb, var(--mono-paper) 72%, var(--mono-ink)); }
+.is-ai-only button.ledger-advisor-refresh { height: auto; min-height: 36px; max-height: none; background: var(--mono-paper); color: var(--mono-ink); flex-shrink: 0; }
+.is-ai-only .ledger-advisor-observation { min-height: 0; padding: 0; background: transparent; border-radius: 0; }
+.is-ai-only .ledger-advisor-observation h4 { margin: 0 0 14px; font-size: clamp(18px, 1.5vw, 22px); line-height: 1.5; overflow-wrap: anywhere; }
+.is-ai-only .ledger-advisor-observation > .ledger-advisor-judgment { margin: 0; max-width: none; font-size: 14px; line-height: 1.85; white-space: pre-wrap; overflow-wrap: anywhere; color: color-mix(in srgb, var(--mono-paper) 88%, var(--mono-ink)); }
+.is-ai-only .ledger-advisor-ai-status { margin-top: 12px; }
+@container (max-width: 540px) {
+  .is-ai-only .ledger-advisor-heading { display: flex; align-items: flex-start; }
+  .is-ai-only .ledger-advisor-observation h4 { font-size: 18px; }
+  .is-ai-only .ledger-advisor-observation > .ledger-advisor-judgment { font-size: 13px; }
+}
 .ledger-advisor-ongoing { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--background-modifier-border); border-radius: 12px; font-size: 12px; }
 .ledger-advisor-ongoing summary { cursor: pointer; color: var(--text-muted); }
 .ledger-advisor-ongoing strong { display: block; margin-top: 12px; }

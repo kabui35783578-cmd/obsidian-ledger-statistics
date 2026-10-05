@@ -92,7 +92,8 @@ export type FinanceInsightType =
   | "large-expense"
   | "mix-shift"
   | "stable"
-  | "daily";
+  | "daily"
+  | "weekly";
 
 export interface FinanceCategorySnapshot {
   category: string;
@@ -155,6 +156,7 @@ export interface FinanceAdvisorSnapshot {
   events: FinanceInsightEvent[];
   repeatedEvents?: FinanceInsightEvent[];
   daily?: DailyFinanceBrief;
+  weekly?: import("./weekly-insight").WeeklyFinanceBrief;
   fixedExpenses?: FixedExpenseAssessment;
 }
 

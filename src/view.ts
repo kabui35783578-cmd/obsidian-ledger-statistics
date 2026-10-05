@@ -6,7 +6,8 @@ import { assessFinanceAdvice, createFinanceAdviceCache } from "./advice-lifecycl
 import { markInsightSeen, withInsightHistory, unmatchedStarIds } from "./insights";
 import { BalanceCalibrationNoteModal, FixedExpenseModal, StarRepairModal } from "./management";
 import { balanceStatus } from "./balance";
-import { withDailyInsight } from "./daily-insight";
+import { insightAsOf, withDailyInsight } from "./daily-insight";
+import { withWeeklyInsight } from "./weekly-insight";
 import { ReportPanel } from "./report-ui";
 import { buildCategoryAnalysis, categoryPreviousRange } from "./category-analysis";
 import { renderCategoryAnalysis, showCategoryRecords } from "./category-ui";
@@ -484,15 +485,17 @@ export class LedgerStatisticsView extends ItemView {
   }
 
   private currentFinanceSnapshot(now = new Date()): ReturnType<typeof buildFinanceAdvisorSnapshot> {
-    const files = [...this.plugin.repository.files.values()];
-    return withInsightHistory(withDailyInsight(buildFinanceAdvisorSnapshot(
+    const asOf = insightAsOf(now);
+    const cutoff = isoFromDate(asOf);
+    const files = [...this.plugin.repository.files.values()].filter(file => !file.date || file.date <= cutoff);
+    return withInsightHistory(withWeeklyInsight(withDailyInsight(buildFinanceAdvisorSnapshot(
       flattenRecords(files),
-      now,
+      asOf,
       this.plugin.settings.salaryCents,
       this.plugin.settings.excludedCategories,
-      financeCompleteDates(files, now),
+      financeCompleteDates(files, asOf),
       this.plugin.settings.fixedExpenses ?? []
-    ), files, now, this.plugin.settings), this.plugin.settings.insightHistory ?? []);
+    ), files, now, this.plugin.settings), files, now, this.plugin.settings), this.plugin.settings.insightHistory ?? []);
   }
 
   private financeSectionVisible(): boolean {
@@ -534,7 +537,7 @@ export class LedgerStatisticsView extends ItemView {
       && Boolean(this.plugin.settings.financeAiModel.trim());
     let financeState: FinanceAdviceViewState;
     if (!this.plugin.settings.financeAiEnabled) {
-      financeState = { status: "local", advice: null, message: "AI 未启用，当前显示程序计算的今日简报。", canRefresh: false };
+      financeState = { status: "local", advice: null, message: "AI 分析未启用，请在设置中开启。", canRefresh: false };
     } else if (!configured) {
       financeState = { status: "unconfigured", advice: null, message: "请先在设置中填写 AI 接口和模型。", canRefresh: false };
     } else if (this.financeAdviceLoading) {
@@ -542,14 +545,14 @@ export class LedgerStatisticsView extends ItemView {
     } else if (assessment.advice) {
       financeState = { status: this.financeAdviceError ? "error" : "ready", advice: assessment.advice, message: `${this.financeAdviceError ? `本次更新失败：${this.financeAdviceError}。原判断仍有效，继续保留。` : `${assessment.reason}。`}${generated}`, canRefresh: true };
     } else if (cache) {
-      financeState = { status: this.financeAdviceError ? "error" : "local", advice: null, message: `${assessment.reason}，已撤下旧判断；当前显示本地判断。${this.financeAdviceError ? `本次更新失败：${this.financeAdviceError}。` : "等待更新。"}`, canRefresh: true };
+      financeState = { status: this.financeAdviceError ? "error" : "local", advice: null, message: this.financeAdviceError ? `AI 分析暂未生成：${this.financeAdviceError}。可点击刷新重试。` : "等待生成截至昨天的近 7 天分析…", canRefresh: true };
     } else if (this.financeAdviceError) {
-      financeState = { status: "error", advice: null, message: `${this.financeAdviceError}，已回退为本地判断。`, canRefresh: true };
+      financeState = { status: "error", advice: null, message: `AI 分析暂未生成：${this.financeAdviceError}。可点击刷新重试。`, canRefresh: true };
     } else {
-      financeState = { status: "local", advice: null, message: "今日简报已就绪，AI 将自动补充分析；跨天或账目变化后更新。", canRefresh: true };
+      financeState = { status: "local", advice: null, message: "等待生成截至昨天的近 7 天分析…", canRefresh: true };
     }
     renderFinanceAdvisor(parent, financeSnapshot, financeState, () => void this.loadFinanceAdvice(this.currentFinanceSnapshot(), true), animate,
-      financeCoverageReport(files, now), (path) => void this.app.workspace.openLinkText(path, "", false),
+      financeCoverageReport(files.filter(file => !file.date || file.date <= financeSnapshot.currentRange.end), insightAsOf(now)), (path) => void this.app.workspace.openLinkText(path, "", false),
       () => new FixedExpenseModal(this.plugin).open(), this.advisorDetailsExpanded,
       (expanded) => { this.advisorDetailsExpanded = expanded; },
       balanceStatus(flattenRecords(files), now, this.plugin.settings.salaryCents, this.plugin.settings.balanceCalibration));

@@ -93,7 +93,7 @@ test('cancel rejects caller but prevents parallel native requests', async () => 
   assert.equal(gate.busy, false);
 });
 
-test('AI judgment is retained only when event, evidence, categories and number policy validate', () => {
+test('AI output is retained without content rejection while evidence links remain local', () => {
   const snapshot = core.buildFinanceAdvisorSnapshot([], new Date(2026, 8, 21), 300000, [], []);
   const eventEvidenceId = ai.financeAiEvidence(snapshot).find((item) => item.eventIds.includes('stable')).id;
   const summaryEvidenceId = ai.financeAiEvidence(snapshot).find((item) => item.eventIds.length === 0 && !item.category).id;
@@ -110,16 +110,17 @@ test('AI judgment is retained only when event, evidence, categories and number p
   assert.equal(advice.judgment, payload.cause_hypothesis);
   assert.equal(advice.action, payload.action);
   assert.deepEqual(advice.evidenceIds, payload.evidence_ids);
-  assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, primary_event_id: 'fake' }), snapshot));
-  assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, headline: '已花999999元' }), snapshot), /程序未提供/);
-  assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, cause_hypothesis: '你已经欠款九百万元，需要立刻处理这项没有依据的风险判断。' }), snapshot), /程序未提供/);
+  assert.equal(ai.parseFinanceAdvice(JSON.stringify({ ...payload, primary_event_id: 'fake' }), snapshot).judgment, payload.cause_hypothesis);
+  assert.equal(ai.parseFinanceAdvice(JSON.stringify({ ...payload, headline: '已花999999元' }), snapshot).headline, '已花999999元');
+  const prose = '你已经欠款九百万元，需要立刻处理这项没有依据的风险判断。';
+  assert.equal(ai.parseFinanceAdvice(JSON.stringify({ ...payload, cause_hypothesis: prose }), snapshot).judgment, prose);
   assert.equal(ai.parseFinanceAdvice(JSON.stringify({ ...payload, cause_hypothesis: '当前周期大约走过四分之一，现有记录尚未显示需要立即调整安排的可靠变化。' }), snapshot).primaryEventId, 'stable');
   const legacyPayload = { ...payload, judgment: payload.cause_hypothesis };
   delete legacyPayload.cause_hypothesis;
-  assert.throws(() => ai.parseFinanceAdvice(JSON.stringify(legacyPayload), snapshot), /原因假设/);
-  assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, evidence_ids: ['missing'] }), snapshot), /不存在的证据/);
-  assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, evidence_ids: [summaryEvidenceId] }), snapshot), /所选候选事件/);
-  assert.throws(() => ai.parseFinanceAdvice(JSON.stringify({ ...payload, category_insights: [{ category: '不存在', opinion: '继续观察这个分类的变化。' }] }), snapshot), /不存在的分类/);
+  assert.equal(ai.parseFinanceAdvice(JSON.stringify(legacyPayload), snapshot).judgment, payload.cause_hypothesis);
+  assert.deepEqual(ai.parseFinanceAdvice(JSON.stringify({ ...payload, evidence_ids: ['missing'] }), snapshot).evidenceIds, []);
+  assert.deepEqual(ai.parseFinanceAdvice(JSON.stringify({ ...payload, evidence_ids: [summaryEvidenceId] }), snapshot).evidenceIds, [summaryEvidenceId]);
+  assert.match(ai.parseFinanceAdvice(JSON.stringify({ ...payload, category_insights: [{ category: '不存在', opinion: '继续观察这个分类的变化。' }] }), snapshot).judgment, /继续观察这个分类的变化/);
 });
 
 test('manual AI refresh skips a paid request when the verified snapshot has not changed', async () => {

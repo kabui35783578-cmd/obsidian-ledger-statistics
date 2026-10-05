@@ -91,22 +91,28 @@ export function createFinanceAdviceCache(snapshot: FinanceAdvisorSnapshot, advic
   const basis = financeAdviceBasis(snapshot);
   basis.supportingNotes = financeAiEvidence(snapshot)
     .filter((evidence) => evidence.untrustedNote && advice.evidenceIds.includes(evidence.id)).map((evidence) => stableTextHash(evidence.text));
-  return { date: snapshot.currentRange.end, fingerprint: financeSnapshotFingerprint(snapshot), advice, updatedAt, basis };
+  return { date: snapshot.daily?.date ?? snapshot.currentRange.end, fingerprint: financeSnapshotFingerprint(snapshot), advice, updatedAt, basis };
 }
 
 export function assessFinanceAdvice(snapshot: FinanceAdvisorSnapshot, cache: FinanceAdviceCache | null | undefined): FinanceAdviceAssessment {
   const current = financeAdviceBasis(snapshot);
-  const refreshKey = snapshot.daily ? financeSnapshotFingerprint(snapshot) : stableTextHash(JSON.stringify(current));
+  const refreshKey = snapshot.daily || snapshot.weekly ? financeSnapshotFingerprint(snapshot) : stableTextHash(JSON.stringify(current));
   const result = (advice: FinanceAdvice | null, needsRefresh: boolean, reason: string): FinanceAdviceAssessment => ({ advice, needsRefresh, reason, refreshKey });
   if (!cache) return result(null, true, "尚未生成洞察");
+  if (snapshot.weekly) {
+    const expected = `weekly:${snapshot.weekly.range.start}:${snapshot.weekly.range.end}`;
+    if (cache.date !== snapshot.weekly.range.end) return result(null, true, "洞察截止日期已变化");
+    if (cache.fingerprint !== financeSnapshotFingerprint(snapshot) || cache.advice.primaryEventId !== expected) return result(null, true, "近 7 天账目或判断依据已更新");
+    return result(cache.advice, false, "近 7 天洞察已更新");
+  }
   if (snapshot.daily) {
     const fingerprint = financeSnapshotFingerprint(snapshot);
     const dailyKey = fingerprint;
-    if (cache.date !== snapshot.daily.date) return { advice: null, needsRefresh: true, reason: "已进入新的一天", refreshKey: dailyKey };
+    if (cache.date !== snapshot.daily.date) return { advice: null, needsRefresh: true, reason: "洞察截止日期已变化", refreshKey: dailyKey };
     if (cache.fingerprint !== fingerprint || cache.advice.primaryEventId !== `daily:${snapshot.daily.date}`) {
-      return { advice: null, needsRefresh: true, reason: "今日账目或判断依据已更新", refreshKey: dailyKey };
+      return { advice: null, needsRefresh: true, reason: "截止日期内账目或判断依据已更新", refreshKey: dailyKey };
     }
-    return { advice: cache.advice, needsRefresh: false, reason: "今日洞察已更新", refreshKey: dailyKey };
+    return { advice: cache.advice, needsRefresh: false, reason: "洞察已更新", refreshKey: dailyKey };
   }
   const selected = current.events.find((event) => event.id === cache.advice.primaryEventId);
   if (!selected) return result(null, true, "原判断对应的事件已不再成立");
