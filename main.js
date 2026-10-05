@@ -4673,7 +4673,6 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
     const heading2 = card3.createDiv({ cls: "ledger-advisor-heading" });
     const copy2 = heading2.createDiv({ cls: "ledger-advisor-heading-copy" });
     copy2.createEl("h3", { text: "\u6D1E\u5BDF" });
-    copy2.createDiv({ cls: "ledger-advisor-period", text: `\u8FD1 7 \u5929 \xB7 ${snapshot.weekly.range.start.replace(/-/g, ".")} \u2014 ${snapshot.weekly.range.end.replace(/-/g, ".")} \xB7 \u622A\u81F3\u6628\u5929` });
     if (state.canRefresh) {
       const refresh = heading2.createEl("button", { cls: "ledger-advisor-refresh", attr: { type: "button", "aria-label": "\u5237\u65B0 AI \u5206\u6790" } });
       (0, import_obsidian5.setIcon)(refresh, state.status === "loading" ? "loader-circle" : "refresh-cw");
@@ -4681,6 +4680,7 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
       refresh.disabled = state.status === "loading";
       refresh.addEventListener("click", onRefresh);
     }
+    card3.createDiv({ cls: "ledger-advisor-period", text: `\u8FD1 7 \u5929 \xB7 ${snapshot.weekly.range.start.replace(/-/g, ".")} \u2014 ${snapshot.weekly.range.end.replace(/-/g, ".")} \xB7 \u622A\u81F3\u6628\u5929` });
     const analysis = card3.createDiv({ cls: "ledger-advisor-observation" });
     if (state.advice) {
       analysis.createEl("h4", { text: state.advice.headline });

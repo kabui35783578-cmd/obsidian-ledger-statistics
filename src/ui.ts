@@ -740,7 +740,6 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
     const heading = card.createDiv({ cls: "ledger-advisor-heading" });
     const copy = heading.createDiv({ cls: "ledger-advisor-heading-copy" });
     copy.createEl("h3", { text: "洞察" });
-    copy.createDiv({ cls: "ledger-advisor-period", text: `近 7 天 · ${snapshot.weekly.range.start.replace(/-/g, ".")} — ${snapshot.weekly.range.end.replace(/-/g, ".")} · 截至昨天` });
     if (state.canRefresh) {
       const refresh = heading.createEl("button", { cls: "ledger-advisor-refresh", attr: { type: "button", "aria-label": "刷新 AI 分析" } });
       setIcon(refresh, state.status === "loading" ? "loader-circle" : "refresh-cw");
@@ -748,6 +747,7 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
       refresh.disabled = state.status === "loading";
       refresh.addEventListener("click", onRefresh);
     }
+    card.createDiv({ cls: "ledger-advisor-period", text: `近 7 天 · ${snapshot.weekly.range.start.replace(/-/g, ".")} — ${snapshot.weekly.range.end.replace(/-/g, ".")} · 截至昨天` });
     const analysis = card.createDiv({ cls: "ledger-advisor-observation" });
     if (state.advice) {
       analysis.createEl("h4", { text: state.advice.headline });

@@ -3054,17 +3054,17 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
   background: var(--mono-ink);
   color: var(--mono-paper);
 }
-.is-ai-only .ledger-advisor-heading { margin-bottom: 18px; gap: 16px; }
+.is-ai-only .ledger-advisor-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; margin-bottom: 8px; gap: 12px; }
 .is-ai-only .ledger-advisor-heading-copy { min-width: 0; }
-.is-ai-only .ledger-advisor-heading h3 { color: var(--mono-paper); }
-.is-ai-only .ledger-advisor-period { color: color-mix(in srgb, var(--mono-paper) 72%, var(--mono-ink)); }
-.is-ai-only button.ledger-advisor-refresh { height: auto; min-height: 36px; max-height: none; background: var(--mono-paper); color: var(--mono-ink); flex-shrink: 0; }
+.is-ai-only .ledger-advisor-heading h3 { margin: 0; color: var(--mono-paper); white-space: nowrap; }
+.is-ai-only > .ledger-advisor-period { margin-bottom: 20px; line-height: 1.65; color: color-mix(in srgb, var(--mono-paper) 72%, var(--mono-ink)); word-break: normal; }
+.is-ai-only button.ledger-advisor-refresh { grid-column: 2; grid-row: 1; justify-self: end; width: auto; min-width: 0; max-width: 100%; height: auto; min-height: 44px; max-height: none; margin: 0; padding: 10px 14px; background: var(--mono-paper); color: var(--mono-ink); flex: 0 0 auto; white-space: nowrap; }
 .is-ai-only .ledger-advisor-observation { min-height: 0; padding: 0; background: transparent; border-radius: 0; }
 .is-ai-only .ledger-advisor-observation h4 { margin: 0 0 14px; font-size: clamp(18px, 1.5vw, 22px); line-height: 1.5; overflow-wrap: anywhere; }
 .is-ai-only .ledger-advisor-observation > .ledger-advisor-judgment { margin: 0; max-width: none; font-size: 14px; line-height: 1.85; white-space: pre-wrap; overflow-wrap: anywhere; color: color-mix(in srgb, var(--mono-paper) 88%, var(--mono-ink)); }
 .is-ai-only .ledger-advisor-ai-status { margin-top: 12px; }
 @container (max-width: 540px) {
-  .is-ai-only .ledger-advisor-heading { display: flex; align-items: flex-start; }
+  .ledger-advisor-card.is-ai-only { padding: 20px 18px; }
   .is-ai-only .ledger-advisor-observation h4 { font-size: 18px; }
   .is-ai-only .ledger-advisor-observation > .ledger-advisor-judgment { font-size: 13px; }
 }
