@@ -50,7 +50,10 @@ test('reopening, rollover and backfills retain the saved text and original week 
       const card = root.querySelector('.ledger-advisor-card');
       assert.ok(card.querySelector('.ledger-advisor-remaining'), 'original balance is retained');
       assert.match(card.querySelector('.ledger-advisor-action').children[1].textContent, /上次保存的建议/);
-      assert.equal(card.querySelector('.ledger-advisor-summary').children.length, 3, 'original salary-cycle summaries are retained');
+      const sidebar = card.querySelector('.ledger-advisor-summary');
+      assert.equal(sidebar.children.length, 4, 'refresh plus original three cycle cards form the sidebar');
+      assert.equal(sidebar.children[0], card.querySelector('.ledger-advisor-refresh'));
+      assert.equal(card.querySelector('.ledger-advisor-heading').querySelector('.ledger-advisor-refresh'), undefined);
       assert.ok(card.querySelector('.ledger-advisor-daily-facts'), 'original yesterday spending and budget rows are retained');
       assert.ok(card.querySelector('.ledger-advisor-categories'), 'original category references are retained');
       assert.equal(card.hasClass('is-ai-only'), false);
@@ -62,8 +65,10 @@ test('reopening, rollover and backfills retain the saved text and original week 
       const extra = card.querySelector('.ledger-advisor-extra');
       extra.querySelector('.ledger-advisor-extra-toggle').listeners.click();
       assert.equal(extra.hasClass('is-open'), true);
+      assert.equal(sidebar.hasClass('is-open'), true);
       extra.querySelector('.ledger-advisor-extra-toggle').listeners.click();
       assert.equal(extra.hasClass('is-open'), false);
+      assert.equal(sidebar.hasClass('is-open'), false);
       // Exercise the actual card button, including a failed request and re-render.
       root.querySelector('.ledger-advisor-refresh').listeners.click();
       await new Promise(done => setImmediate(done));

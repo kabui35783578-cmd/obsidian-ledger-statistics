@@ -4675,13 +4675,6 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
   copy.createEl("h3", { text: "\u6D1E\u5BDF" });
   const analysisRange = (_b = state.analysisRange) != null ? _b : (_a = snapshot.weekly) == null ? void 0 : _a.range;
   heading.createDiv({ cls: "ledger-advisor-period", text: analysisRange ? `\u8FD1 7 \u5929 \xB7 ${analysisRange.start.replace(/-/g, ".")} \u2014 ${analysisRange.end.replace(/-/g, ".")} \xB7 \u624B\u52A8\u5237\u65B0` : snapshot.daily ? `\u622A\u81F3 ${snapshot.daily.date.replace(/-/g, ".")} \xB7 \u6628\u65E5\u8BB0\u5F55 \xB7 \u4E0D\u53D7\u4E0B\u65B9\u7B5B\u9009\u5F71\u54CD` : `${snapshot.currentRange.start.replace(/-/g, ".")} \u2014 ${snapshot.currentRange.end.replace(/-/g, ".")}` });
-  if (state.canRefresh) {
-    const refresh = heading.createEl("button", { cls: "ledger-advisor-refresh", attr: { type: "button", "aria-label": "\u91CD\u65B0\u751F\u6210\u8D22\u52A1\u5224\u65AD" } });
-    (0, import_obsidian5.setIcon)(refresh, state.status === "loading" ? "loader-circle" : "refresh-cw");
-    refresh.createSpan({ text: state.status === "loading" ? "\u5206\u6790\u4E2D" : "\u5237\u65B0\u5224\u65AD" });
-    refresh.disabled = state.status === "loading";
-    refresh.addEventListener("click", onRefresh);
-  }
   if (snapshot.salaryCents <= 0 && !snapshot.daily) {
     card2.addClass("is-empty");
     const empty = card2.createDiv({ cls: "ledger-advisor-empty" });
@@ -4720,7 +4713,7 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
     if (daily.budgetCents > 0) observation.createDiv({ cls: "ledger-advisor-daily-facts", text: `\u65E5\u9884\u7B97 ${formatCents(daily.budgetCents)} \xB7 ${daily.overCents ? "\u8D85\u51FA " + formatCents(daily.overCents) : "\u8FD8\u5269 " + formatCents(daily.remainingCents)} \xB7 ${daily.budgetCategory || "\u5168\u90E8\u5206\u7C7B"}${daily.includeStarred ? "" : " \xB7 \u4E0D\u542B\u661F\u6807"}${daily.status === "incomplete" || daily.status === "unrecorded" ? " \xB7 \u4EC5\u6309\u5DF2\u89E3\u6790\u8BB0\u5F55" : ""}` });
     const ongoing = snapshot.events.filter((item) => item.type !== "weekly" && item.type !== "daily" && item.type !== "stable" && item.type !== "salary-pace");
     if (ongoing.length) {
-      const reminders = card2.createEl("details", { cls: "ledger-advisor-ongoing" });
+      const reminders = observation.createEl("details", { cls: "ledger-advisor-ongoing" });
       reminders.createEl("summary", { text: `\u4ECD\u9700\u5173\u6CE8 \xB7 ${ongoing.length} \u9879` });
       for (const item of ongoing) {
         reminders.createEl("strong", { text: item.title });
@@ -4792,6 +4785,12 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
       for (const problem of coverage2.undated) problemLink(problem.path, problem.reason);
     }
   }
+  const summary = card2.createDiv({ cls: `ledger-advisor-summary${detailsExpanded ? " is-open" : ""}` });
+  const refresh = summary.createEl("button", { cls: "ledger-advisor-summary-item ledger-advisor-refresh", attr: { type: "button", "aria-label": "\u91CD\u65B0\u751F\u6210\u8D22\u52A1\u5224\u65AD" } });
+  (0, import_obsidian5.setIcon)(refresh, state.status === "loading" ? "loader-circle" : "refresh-cw");
+  refresh.createSpan({ text: state.status === "loading" ? "\u5206\u6790\u4E2D" : "\u5237\u65B0\u5224\u65AD" });
+  refresh.disabled = state.status === "loading" || !state.canRefresh;
+  refresh.addEventListener("click", onRefresh);
   const extra = card2.createDiv({ cls: `ledger-advisor-extra${detailsExpanded ? " is-open" : ""}` });
   const extraToggle = extra.createEl("button", { cls: "ledger-advisor-extra-toggle", attr: { type: "button", "aria-expanded": String(detailsExpanded) } });
   extraToggle.createSpan({ cls: "ledger-advisor-extra-title", text: "\u5468\u671F\u6570\u636E\u4E0E\u5206\u7C7B\u53C2\u8003" });
@@ -4801,12 +4800,12 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
   extraToggle.addEventListener("click", () => {
     const expanded = !extra.hasClass("is-open");
     extra.toggleClass("is-open", expanded);
+    summary.toggleClass("is-open", expanded);
     extraToggle.setAttribute("aria-expanded", String(expanded));
     extraAction.setText(expanded ? "\u6536\u8D77" : "\u5C55\u5F00");
     onDetailsExpandedChange == null ? void 0 : onDetailsExpandedChange(expanded);
   });
   const extraBody = extra.createDiv({ cls: "ledger-advisor-extra-body" });
-  const summary = extraBody.createDiv({ cls: "ledger-advisor-summary" });
   const spent = summary.createDiv({ cls: "ledger-advisor-summary-item" });
   spent.createSpan({ text: "\u672C\u6B21\u81EA\u5DE5\u8D44\u65E5\u652F\u51FA" });
   spent.createEl("strong", { text: formatCents(snapshot.currentSpentCents) });

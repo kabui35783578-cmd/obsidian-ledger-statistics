@@ -2293,6 +2293,7 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
     grid-template-areas:
       "advisor-heading"
       "advisor-observation"
+      "advisor-summary"
       "advisor-extra";
   }
 
@@ -3067,14 +3068,20 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
 .ledger-advisor-daily-facts { margin-top: 8px; color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 
 .ledger-advisor-card .ledger-advisor-heading-copy h3 { white-space: nowrap; }
-.ledger-advisor-card .ledger-advisor-heading { grid-template-columns: minmax(0, 1fr) auto auto; }
-.ledger-advisor-card button.ledger-advisor-refresh { grid-column: 3; grid-row: 1; justify-self: end; width: auto; height: auto; min-height: 44px; max-height: none; white-space: nowrap; }
+.ledger-advisor-card .ledger-advisor-heading { grid-template-columns: minmax(0, 1fr) auto; }
+.ledger-advisor-summary > button.ledger-advisor-refresh { grid-column: auto; grid-row: auto; justify-self: stretch; width: 100%; height: auto; min-height: 80px; max-height: none; padding: 15px 16px; border-radius: 15px; background: var(--mono-paper); color: var(--mono-ink); font-size: 13px; white-space: nowrap; order: 0; }
+.ledger-advisor-summary > button.ledger-advisor-refresh span { color: inherit; font-size: inherit; }
+.ledger-advisor-summary > button.ledger-advisor-refresh:not(:disabled):hover { background: color-mix(in srgb, var(--mono-paper) 90%, var(--mono-grid)); color: var(--mono-ink); }
 .ledger-advisor-card .ledger-advisor-period { grid-column: 1 / -1; grid-row: 2; line-height: 1.65; overflow-wrap: anywhere; }
 
+@container (max-width: 900px) {
+  .ledger-advisor-summary > button.ledger-advisor-refresh { grid-column: 1 / -1; }
+}
+
 @container (max-width: 540px) {
-  .ledger-advisor-card .ledger-advisor-heading { grid-template-columns: minmax(0, 1fr) auto; }
-  .ledger-advisor-card button.ledger-advisor-refresh { grid-column: 2; grid-row: 2; width: auto; }
-  .ledger-advisor-card .ledger-advisor-period { grid-row: 3; }
+  .ledger-advisor-summary { grid-template-columns: minmax(0, 1fr); }
+  .ledger-advisor-summary > button.ledger-advisor-refresh { min-height: 52px; }
+  .ledger-advisor-summary:not(.is-open) > .ledger-advisor-summary-item:not(.ledger-advisor-refresh) { display: none; }
 }
 
 .ledger-advisor-ongoing { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--background-modifier-border); border-radius: 12px; font-size: 12px; }
