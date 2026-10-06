@@ -4666,37 +4666,15 @@ function renderEmpty(parent, message) {
   parent.createDiv({ cls: "ledger-empty", text: message });
 }
 function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true, coverage2, onOpenFile, onManageFixed, detailsExpanded = false, onDetailsExpandedChange, balance) {
-  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w;
-  if (snapshot.weekly) {
-    const card3 = parent.createDiv({ cls: `ledger-advisor-card is-weekly is-ai-only${animate ? " ledger-reveal" : ""}` });
-    card3.setAttribute("aria-busy", String(state.status === "loading"));
-    const heading2 = card3.createDiv({ cls: "ledger-advisor-heading" });
-    const copy2 = heading2.createDiv({ cls: "ledger-advisor-heading-copy" });
-    copy2.createEl("h3", { text: "\u6D1E\u5BDF" });
-    if (state.canRefresh) {
-      const refresh = heading2.createEl("button", { cls: "ledger-advisor-refresh", attr: { type: "button", "aria-label": "\u5237\u65B0 AI \u5206\u6790" } });
-      (0, import_obsidian5.setIcon)(refresh, state.status === "loading" ? "loader-circle" : "refresh-cw");
-      refresh.createSpan({ text: state.status === "loading" ? "\u5206\u6790\u4E2D" : "\u5237\u65B0" });
-      refresh.disabled = state.status === "loading";
-      refresh.addEventListener("click", onRefresh);
-    }
-    const range = (_a = state.analysisRange) != null ? _a : snapshot.weekly.range;
-    card3.createDiv({ cls: "ledger-advisor-period", text: `\u8FD1 7 \u5929 \xB7 ${range.start.replace(/-/g, ".")} \u2014 ${range.end.replace(/-/g, ".")} \xB7 \u624B\u52A8\u5237\u65B0` });
-    const analysis = card3.createDiv({ cls: "ledger-advisor-observation" });
-    if (state.advice) {
-      analysis.createEl("h4", { text: state.advice.headline });
-      analysis.createEl("p", { cls: "ledger-advisor-judgment", text: [state.advice.judgment, state.advice.action].filter(Boolean).join("\n\n") });
-    }
-    if (state.status !== "ready" && state.message) analysis.createDiv({ cls: `ledger-advisor-ai-status is-${state.status}`, text: state.message });
-    return;
-  }
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u;
   const card2 = parent.createDiv({ cls: `ledger-advisor-card${animate ? " ledger-reveal" : ""}` });
   card2.setAttribute("aria-busy", String(state.status === "loading"));
   const heading = card2.createDiv({ cls: "ledger-advisor-heading" });
   const copy = heading.createDiv({ cls: "ledger-advisor-heading-copy" });
-  copy.createDiv({ cls: "ledger-advisor-badge", text: "DAILY FINANCE BRIEF \xB7 LOCAL LEDGER" });
+  copy.createDiv({ cls: "ledger-advisor-badge", text: "FINANCE INSIGHTS \xB7 LOCAL LEDGER" });
   copy.createEl("h3", { text: "\u6D1E\u5BDF" });
-  copy.createDiv({ cls: "ledger-advisor-period", text: snapshot.daily ? `\u622A\u81F3 ${snapshot.daily.date.replace(/-/g, ".")} \xB7 \u6628\u65E5\u8BB0\u5F55 \xB7 \u4E0D\u53D7\u4E0B\u65B9\u7B5B\u9009\u5F71\u54CD` : `${snapshot.currentRange.start.replace(/-/g, ".")} \u2014 ${snapshot.currentRange.end.replace(/-/g, ".")}` });
+  const analysisRange = (_b = state.analysisRange) != null ? _b : (_a = snapshot.weekly) == null ? void 0 : _a.range;
+  heading.createDiv({ cls: "ledger-advisor-period", text: analysisRange ? `\u8FD1 7 \u5929 \xB7 ${analysisRange.start.replace(/-/g, ".")} \u2014 ${analysisRange.end.replace(/-/g, ".")} \xB7 \u624B\u52A8\u5237\u65B0` : snapshot.daily ? `\u622A\u81F3 ${snapshot.daily.date.replace(/-/g, ".")} \xB7 \u6628\u65E5\u8BB0\u5F55 \xB7 \u4E0D\u53D7\u4E0B\u65B9\u7B5B\u9009\u5F71\u54CD` : `${snapshot.currentRange.start.replace(/-/g, ".")} \u2014 ${snapshot.currentRange.end.replace(/-/g, ".")}` });
   if (state.canRefresh) {
     const refresh = heading.createEl("button", { cls: "ledger-advisor-refresh", attr: { type: "button", "aria-label": "\u91CD\u65B0\u751F\u6210\u8D22\u52A1\u5224\u65AD" } });
     (0, import_obsidian5.setIcon)(refresh, state.status === "loading" ? "loader-circle" : "refresh-cw");
@@ -4713,24 +4691,24 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
     card2.createDiv({ cls: "ledger-advisor-source", text: "SALARY CYCLE \xB7 TWO-CYCLE BASELINE \xB7 LOCAL LEDGER" });
     return;
   }
-  const remainingCents = (_b = balance == null ? void 0 : balance.remainingCents) != null ? _b : snapshot.remainingSalaryCents;
+  const remainingCents = (_c = balance == null ? void 0 : balance.remainingCents) != null ? _c : snapshot.remainingSalaryCents;
   const remaining = heading.createDiv({ cls: `ledger-advisor-remaining${remainingCents < 0 ? " is-negative" : ""}` });
   remaining.createSpan({ text: snapshot.salaryCents <= 0 ? "\u5DE5\u8D44\u5C1A\u672A\u8BBE\u7F6E" : remainingCents < 0 ? "\u5F53\u524D\u4F59\u989D\u4E0D\u8DB3" : (balance == null ? void 0 : balance.calibrated) ? "\u76EE\u524D\u8FD8\u5269 \xB7 \u5DF2\u6821\u51C6" : "\u76EE\u524D\u8FD8\u5269" });
   remaining.createEl("strong", { text: snapshot.salaryCents > 0 ? formatCents(Math.abs(remainingCents)) : "\u6628\u65E5\u7B80\u62A5\u53EF\u7528" });
-  const event = (_c = snapshot.events.find((item) => {
+  const event = (_d = snapshot.events.find((item) => {
     var _a2;
     return item.id === ((_a2 = state.advice) == null ? void 0 : _a2.primaryEventId);
-  })) != null ? _c : snapshot.events[0];
-  const observation = card2.createDiv({ cls: `ledger-advisor-observation is-${event.type}${((_d = state.advice) == null ? void 0 : _d.tone) === "warning" ? " is-warning" : ""}` });
+  })) != null ? _d : snapshot.events[0];
+  const observation = card2.createDiv({ cls: `ledger-advisor-observation is-${event.type}${((_e = state.advice) == null ? void 0 : _e.tone) === "warning" ? " is-warning" : ""}` });
   const infoToggle = observation.createEl("button", {
     cls: "ledger-advisor-info-toggle",
     attr: { type: "button", "aria-label": "\u67E5\u770B\u6D1E\u5BDF\u8BF4\u660E", "aria-expanded": "false" }
   });
   (0, import_obsidian5.setIcon)(infoToggle, "circle-alert");
-  observation.createDiv({ cls: "ledger-advisor-observation-label", text: state.advice ? "AI \u6D1E\u5BDF" : "\u6628\u65E5\u6D88\u8D39\u7B80\u62A5" });
-  observation.createEl("h4", { text: (_f = (_e = state.advice) == null ? void 0 : _e.headline) != null ? _f : event.title });
-  observation.createEl("p", { cls: "ledger-advisor-judgment", text: (_j = (_g = state.advice) == null ? void 0 : _g.judgment) != null ? _j : `${event.detail}${(_i = (_h = snapshot.daily) == null ? void 0 : _h.action) != null ? _i : eventAdvice(event)}` });
-  if ((_k = state.advice) == null ? void 0 : _k.action) {
+  observation.createDiv({ cls: "ledger-advisor-observation-label", text: state.advice ? "AI \u6D1E\u5BDF" : snapshot.weekly ? "\u8FD1 7 \u5929\u6D1E\u5BDF" : "\u6628\u65E5\u6D88\u8D39\u7B80\u62A5" });
+  observation.createEl("h4", { text: (_g = (_f = state.advice) == null ? void 0 : _f.headline) != null ? _g : snapshot.weekly ? "\u6D1E\u5BDF\u5F85\u751F\u6210" : event.title });
+  observation.createEl("p", { cls: "ledger-advisor-judgment", text: (_k = (_h = state.advice) == null ? void 0 : _h.judgment) != null ? _k : snapshot.weekly ? "\u624B\u52A8\u5237\u65B0\u540E\u663E\u793A\u622A\u81F3\u6628\u5929\u7684\u8FD1 7 \u5929\u5206\u6790\u3002" : `${event.detail}${(_j = (_i = snapshot.daily) == null ? void 0 : _i.action) != null ? _j : eventAdvice(event)}` });
+  if ((_l = state.advice) == null ? void 0 : _l.action) {
     const action = observation.createDiv({ cls: "ledger-advisor-action" });
     action.createSpan({ text: "\u5EFA\u8BAE" });
     action.createEl("p", { text: state.advice.action });
@@ -4738,9 +4716,9 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
   if (state.message) observation.createDiv({ cls: `ledger-advisor-ai-status is-${state.status}`, text: state.message });
   if (snapshot.daily) {
     const daily = snapshot.daily;
-    observation.createDiv({ cls: "ledger-advisor-daily-facts", text: `\u6628\u65E5\u5DF2\u89E3\u6790 ${formatCents(daily.spentCents)} \xB7 ${daily.count} \u7B14${daily.status === "incomplete" ? " \xB7 \u5F85\u6838\u5BF9" : ""}` });
+    observation.createDiv({ cls: "ledger-advisor-daily-facts", text: `\u6628\u65E5 ${daily.date.replace(/-/g, ".")} \xB7 \u5DF2\u89E3\u6790 ${formatCents(daily.spentCents)} \xB7 ${daily.count} \u7B14${daily.status === "incomplete" ? " \xB7 \u5F85\u6838\u5BF9" : ""}` });
     if (daily.budgetCents > 0) observation.createDiv({ cls: "ledger-advisor-daily-facts", text: `\u65E5\u9884\u7B97 ${formatCents(daily.budgetCents)} \xB7 ${daily.overCents ? "\u8D85\u51FA " + formatCents(daily.overCents) : "\u8FD8\u5269 " + formatCents(daily.remainingCents)} \xB7 ${daily.budgetCategory || "\u5168\u90E8\u5206\u7C7B"}${daily.includeStarred ? "" : " \xB7 \u4E0D\u542B\u661F\u6807"}${daily.status === "incomplete" || daily.status === "unrecorded" ? " \xB7 \u4EC5\u6309\u5DF2\u89E3\u6790\u8BB0\u5F55" : ""}` });
-    const ongoing = snapshot.events.filter((item) => item.type !== "daily" && item.type !== "stable" && item.type !== "salary-pace");
+    const ongoing = snapshot.events.filter((item) => item.type !== "weekly" && item.type !== "daily" && item.type !== "stable" && item.type !== "salary-pace");
     if (ongoing.length) {
       const reminders = card2.createEl("details", { cls: "ledger-advisor-ongoing" });
       reminders.createEl("summary", { text: `\u4ECD\u9700\u5173\u6CE8 \xB7 ${ongoing.length} \u9879` });
@@ -4766,14 +4744,14 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
     }
   });
   const evidence = infoPanel.createDiv({ cls: "ledger-advisor-info-section" });
-  evidence.createEl("h5", { text: "\u5224\u65AD\u4F9D\u636E" });
+  evidence.createEl("h5", { text: analysisRange && snapshot.weekly && analysisRange.end !== snapshot.weekly.range.end ? "\u5F53\u524D\u8D26\u672C\u53C2\u8003 \xB7 \u4E0A\u6B21 AI \u5206\u6790\u671F\u95F4\u89C1\u5361\u7247\u65E5\u671F" : "\u5224\u65AD\u4F9D\u636E" });
   evidence.createEl("strong", { text: event.title });
   const evidenceList = evidence.createEl("ul");
-  for (const line of (_l = event.evidence) != null ? _l : [event.detail]) evidenceList.createEl("li", { text: line });
-  if ((_m = snapshot.repeatedEvents) == null ? void 0 : _m.length) {
+  for (const line of (_m = event.evidence) != null ? _m : [event.detail]) evidenceList.createEl("li", { text: line });
+  if ((_n = snapshot.repeatedEvents) == null ? void 0 : _n.length) {
     const repeated = infoPanel.createDiv({ cls: "ledger-advisor-info-section" });
     repeated.createEl("h5", { text: `\u5DF2\u5173\u6CE8\u4E14\u4ECD\u6709\u6548 \xB7 ${snapshot.repeatedEvents.length}` });
-    repeated.createEl("p", { text: "\u6D1E\u5BDF\u6BCF\u5929\u66F4\u65B0\uFF0C\u6570\u636E\u622A\u6B62\u5230\u6628\u5929\uFF1B\u5DF2\u7ECF\u770B\u8FC7\u4E0D\u4EE3\u8868\u5468\u671F\u5F02\u5E38\u5DF2\u89E3\u51B3\u3002\u4ECD\u6709\u6548\u7684\u5F02\u5E38\u5355\u72EC\u4FDD\u7559\u3002" });
+    repeated.createEl("p", { text: "AI \u5206\u6790\u4EC5\u624B\u52A8\u5237\u65B0\uFF0C\u6570\u636E\u622A\u6B62\u5230\u751F\u6210\u65F6\u7684\u6628\u5929\uFF1B\u5DF2\u7ECF\u770B\u8FC7\u4E0D\u4EE3\u8868\u5468\u671F\u5F02\u5E38\u5DF2\u89E3\u51B3\u3002\u4ECD\u6709\u6548\u7684\u5F02\u5E38\u5355\u72EC\u4FDD\u7559\u3002" });
     for (const item of snapshot.repeatedEvents) {
       repeated.createEl("strong", { text: item.title });
       repeated.createEl("p", { text: item.detail });
@@ -4781,10 +4759,10 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
   }
   if (onManageFixed) {
     const fixed = infoPanel.createDiv({ cls: "ledger-advisor-info-section" });
-    fixed.createEl("h5", { text: `\u56FA\u5B9A\u652F\u51FA \xB7 ${(_o = (_n = snapshot.fixedExpenses) == null ? void 0 : _n.items.length) != null ? _o : 0} \u9879${((_p = snapshot.fixedExpenses) == null ? void 0 : _p.available) === false ? "\u5F85\u6838\u5BF9" : ""}` });
+    fixed.createEl("h5", { text: `\u56FA\u5B9A\u652F\u51FA \xB7 ${(_p = (_o = snapshot.fixedExpenses) == null ? void 0 : _o.items.length) != null ? _p : 0} \u9879${((_q = snapshot.fixedExpenses) == null ? void 0 : _q.available) === false ? "\u5F85\u6838\u5BF9" : ""}` });
     fixed.createEl("p", { text: "\u5DE5\u8D44\u65E5\uFF1A\u6BCF\u6708 15 \u65E5\u3002\u624B\u52A8\u786E\u8BA4\u5B9E\u9645\u652F\u4ED8\u8BB0\u5F55\uFF0C\u4E0D\u4FEE\u6539\u8D26\u76EE\uFF1B\u672A\u914D\u7F6E\u65F6\u7EE7\u7EED\u6309\u5386\u53F2\u652F\u51FA\u53C2\u8003\u3002" });
     const statuses = { paid: "\u5DF2\u4ED8", unpaid: "\u672A\u4ED8", none: "\u65E0\u9700\u652F\u4ED8", unconfirmed: "\u5F85\u786E\u8BA4" };
-    for (const item of (_r = (_q = snapshot.fixedExpenses) == null ? void 0 : _q.items) != null ? _r : []) {
+    for (const item of (_s = (_r = snapshot.fixedExpenses) == null ? void 0 : _r.items) != null ? _s : []) {
       fixed.createEl("p", { text: `${item.name} \xB7 ${statuses[item.status]} \xB7 ${formatCents(item.status === "paid" ? item.paidCents : item.amountCents)}` });
       for (const issue of item.issues) fixed.createEl("small", { text: issue });
     }
@@ -4837,10 +4815,9 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
   average2.createEl("strong", { text: snapshot.historyCycleCount > 0 ? formatCents(snapshot.historicalAverageSpentCents) : "\u53C2\u8003\u6570\u636E\u4E0D\u8DB3" });
   const forecast = summary.createDiv({ cls: "ledger-advisor-summary-item ledger-advisor-forecast" });
   forecast.createSpan({ text: `\u5468\u671F\u672B\u652F\u51FA\u53C2\u8003${snapshot.forecastAvailable && snapshot.forecastConfidence === "low" ? " \xB7 \u4F4E\u7F6E\u4FE1\u5EA6" : ""}` });
-  forecast.createEl("strong", { text: snapshot.forecastAvailable ? formatCents(snapshot.forecastCents) : ((_s = snapshot.fixedExpenses) == null ? void 0 : _s.available) === false ? "\u56FA\u5B9A\u652F\u51FA\u5F85\u786E\u8BA4" : "\u6570\u636E\u4E0D\u8DB3\uFF0C\u6682\u4E0D\u9884\u6D4B" });
-  forecast.createEl("small", { text: ((_t = snapshot.fixedExpenses) == null ? void 0 : _t.items.length) ? "\u5DF2\u82B1\uFF0B\u5386\u53F2\u5269\u4F59\u652F\u51FA\uFF08\u5254\u9664\u5DF2\u786E\u8BA4\u56FA\u5B9A\u9879\uFF09\uFF0B\u672C\u671F\u672A\u4ED8\u56FA\u5B9A\u9879" : "\u5DF2\u82B1\u91D1\u989D\uFF0B\u5386\u53F2\u5269\u4F59\u9636\u6BB5\u5E73\u5747\u652F\u51FA" });
-  const adviceCategories = new Map((_v = (_u = state.advice) == null ? void 0 : _u.categoryLines.map((line) => [line.category, line.text])) != null ? _v : []);
-  const references = state.advice && adviceCategories.size > 0 ? snapshot.categories.filter((item) => adviceCategories.has(item.category)).slice(0, 3) : snapshot.categories.filter((item) => item.baselineCycleCents > 0 || item.currentCents > 0).sort((a, b) => b.remainingReferenceCents - a.remainingReferenceCents || b.baselineCycleCents - a.baselineCycleCents).slice(0, 3);
+  forecast.createEl("strong", { text: snapshot.forecastAvailable ? formatCents(snapshot.forecastCents) : ((_t = snapshot.fixedExpenses) == null ? void 0 : _t.available) === false ? "\u56FA\u5B9A\u652F\u51FA\u5F85\u786E\u8BA4" : "\u6570\u636E\u4E0D\u8DB3\uFF0C\u6682\u4E0D\u9884\u6D4B" });
+  forecast.createEl("small", { text: ((_u = snapshot.fixedExpenses) == null ? void 0 : _u.items.length) ? "\u5DF2\u82B1\uFF0B\u5386\u53F2\u5269\u4F59\u652F\u51FA\uFF08\u5254\u9664\u5DF2\u786E\u8BA4\u56FA\u5B9A\u9879\uFF09\uFF0B\u672C\u671F\u672A\u4ED8\u56FA\u5B9A\u9879" : "\u5DF2\u82B1\u91D1\u989D\uFF0B\u5386\u53F2\u5269\u4F59\u9636\u6BB5\u5E73\u5747\u652F\u51FA" });
+  const references = snapshot.categories.filter((item) => item.baselineCycleCents > 0 || item.currentCents > 0).sort((a, b) => b.remainingReferenceCents - a.remainingReferenceCents || b.baselineCycleCents - a.baselineCycleCents).slice(0, 3);
   if (references.length > 0 && snapshot.historyCycleCount > 0) {
     const section = extraBody.createDiv({ cls: "ledger-advisor-categories" });
     const sectionHeading = section.createDiv({ cls: "ledger-advisor-section-heading" });
@@ -4852,7 +4829,7 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
       row.createSpan({ text: item.category });
       const value = row.createDiv();
       value.createEl("strong", { text: formatCents(item.remainingReferenceCents) });
-      value.createEl("small", { text: (_w = adviceCategories.get(item.category)) != null ? _w : `\u8FC7\u5F80\u5468\u671F\u5747\u503C ${formatCents(item.baselineCycleCents)}` });
+      value.createEl("small", { text: `\u8FC7\u5F80\u5468\u671F\u5747\u503C ${formatCents(item.baselineCycleCents)}` });
     }
   }
   extraBody.createDiv({ cls: "ledger-advisor-source", text: "CURRENT SALARY CYCLE \xB7 PREVIOUS 2 FULL CYCLES \xB7 ALL CATEGORIES SCANNED \xB7 LOCAL LEDGER" });

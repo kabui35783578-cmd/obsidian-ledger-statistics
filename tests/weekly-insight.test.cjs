@@ -9,11 +9,17 @@ const { markInsightSeen, withInsightHistory } = require('../dist/insights.cjs');
 const now = new Date(2026, 9, 5, 8);
 
 class Element {
-  constructor(options = {}) { this.textContent = options.text ?? ''; this.classes = new Set((options.cls ?? '').split(' ')); this.children = []; this.listeners = {}; this.ownerDocument = { hidden: true, querySelector: () => null }; }
+  constructor(options = {}) { this.textContent = options.text ?? ''; this.classes = new Set((options.cls ?? '').split(' ')); this.children = []; this.listeners = {}; this.attributes = {}; this.ownerDocument = { hidden: true, querySelector: () => null }; }
   createEl(tag, options) { const child = new Element(options); this.children.push(child); return child; }
   createDiv(options) { return this.createEl('div', options); }
   createSpan(options) { return this.createEl('span', options); }
-  setAttribute() {}
+  setAttribute(name, value) { this.attributes[name] = value; }
+  addClass(name) { this.classes.add(name); }
+  removeClass(name) { this.classes.delete(name); }
+  hasClass(name) { return this.classes.has(name); }
+  toggleClass(name, enabled) { if (enabled) this.addClass(name); else this.removeClass(name); }
+  setText(value) { this.textContent = value; }
+  focus() {}
   addEventListener(name, fn) { this.listeners[name] = fn; }
   getBoundingClientRect() { return { top: 0, bottom: 100 }; }
   all() { return [this, ...this.children.flatMap(child => child.all())]; }
@@ -21,8 +27,9 @@ class Element {
 }
 
 test('reopening, rollover and backfills retain the saved text and original week without AI requests', async () => {
-  const data = files(), original = snapshot(data);
+  const data = [...files(), ...Array.from({ length: 16 }, (_, i) => file(core.addDays('2026-08-15', i), 5))], original = snapshot(data);
   const cache = JSON.parse(JSON.stringify(createFinanceAdviceCache(original, ai.parseFinanceAdvice('上次保存的分析。', original))));
+  cache.advice.action = '上次保存的建议。';
   let requests = 0;
   global.__ledgerTestRequest = async () => { requests++; throw new Error('offline'); };
   try {
@@ -40,6 +47,23 @@ test('reopening, rollover and backfills retain the saved text and original week 
       assert.match(root.querySelector('.ledger-advisor-judgment').textContent, /上次保存的分析/);
       assert.match(root.querySelector('.ledger-advisor-period').textContent, /2026\.09\.28 — 2026\.10\.04 · 手动刷新/);
       assert.deepEqual(v.plugin.settings.financeAdviceCache, cache);
+      const card = root.querySelector('.ledger-advisor-card');
+      assert.ok(card.querySelector('.ledger-advisor-remaining'), 'original balance is retained');
+      assert.match(card.querySelector('.ledger-advisor-action').children[1].textContent, /上次保存的建议/);
+      assert.equal(card.querySelector('.ledger-advisor-summary').children.length, 3, 'original salary-cycle summaries are retained');
+      assert.ok(card.querySelector('.ledger-advisor-daily-facts'), 'original yesterday spending and budget rows are retained');
+      assert.ok(card.querySelector('.ledger-advisor-categories'), 'original category references are retained');
+      assert.equal(card.hasClass('is-ai-only'), false);
+      assert.equal(card.all().some(el => el.textContent === '周预算 · 日预算 × 7' || el.textContent === '有效记账天数'), false);
+      const info = card.querySelector('.ledger-advisor-info-panel'), toggle = card.querySelector('.ledger-advisor-info-toggle');
+      assert.equal(info.hidden, true);
+      toggle.listeners.click(); assert.equal(info.hidden, false);
+      toggle.listeners.click(); assert.equal(info.hidden, true);
+      const extra = card.querySelector('.ledger-advisor-extra');
+      extra.querySelector('.ledger-advisor-extra-toggle').listeners.click();
+      assert.equal(extra.hasClass('is-open'), true);
+      extra.querySelector('.ledger-advisor-extra-toggle').listeners.click();
+      assert.equal(extra.hasClass('is-open'), false);
       // Exercise the actual card button, including a failed request and re-render.
       root.querySelector('.ledger-advisor-refresh').listeners.click();
       await new Promise(done => setImmediate(done));
