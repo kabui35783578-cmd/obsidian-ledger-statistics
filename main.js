@@ -3957,7 +3957,6 @@ var FAINT = "#C0BFB7";
 var GRID = "#DBDAD3";
 var HERO = "#F5572F";
 var LADDER = ["#22211F", "#4A4945", "#6E6D66", "#8F8E86", "#AAA9A2", "#C0BFB7", "#DBDAD3"];
-var MONTH_ESTIMATE_DAYS = 31;
 function svgEl(tag, attrs = {}) {
   const element = document.createElementNS(SVG_NS, tag);
   for (const [key, value] of Object.entries(attrs)) element.setAttribute(key, String(value));
@@ -4693,7 +4692,12 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
     return item.id === ((_a2 = state.advice) == null ? void 0 : _a2.primaryEventId);
   })) != null ? _d : snapshot.events[0];
   const observation = card2.createDiv({ cls: `ledger-advisor-observation is-${event.type}${((_e = state.advice) == null ? void 0 : _e.tone) === "warning" ? " is-warning" : ""}` });
-  const infoToggle = observation.createEl("button", {
+  const controls = observation.createDiv({ cls: "ledger-advisor-actions" });
+  const refresh = controls.createEl("button", { cls: "ledger-advisor-refresh ledger-advisor-icon-refresh", attr: { type: "button", "aria-label": state.status === "loading" ? "\u6B63\u5728\u751F\u6210\u8D22\u52A1\u5224\u65AD" : "\u5237\u65B0\u5224\u65AD", title: "\u5237\u65B0\u5224\u65AD" } });
+  (0, import_obsidian5.setIcon)(refresh, state.status === "loading" ? "loader-circle" : "refresh-cw");
+  refresh.disabled = state.status === "loading" || !state.canRefresh;
+  refresh.addEventListener("click", onRefresh);
+  const infoToggle = controls.createEl("button", {
     cls: "ledger-advisor-info-toggle",
     attr: { type: "button", "aria-label": "\u67E5\u770B\u6D1E\u5BDF\u8BF4\u660E", "aria-expanded": "false" }
   });
@@ -4786,26 +4790,6 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
     }
   }
   const summary = card2.createDiv({ cls: `ledger-advisor-summary${detailsExpanded ? " is-open" : ""}` });
-  const refresh = summary.createEl("button", { cls: "ledger-advisor-summary-item ledger-advisor-refresh", attr: { type: "button", "aria-label": "\u91CD\u65B0\u751F\u6210\u8D22\u52A1\u5224\u65AD" } });
-  (0, import_obsidian5.setIcon)(refresh, state.status === "loading" ? "loader-circle" : "refresh-cw");
-  refresh.createSpan({ text: state.status === "loading" ? "\u5206\u6790\u4E2D" : "\u5237\u65B0\u5224\u65AD" });
-  refresh.disabled = state.status === "loading" || !state.canRefresh;
-  refresh.addEventListener("click", onRefresh);
-  const extra = card2.createDiv({ cls: `ledger-advisor-extra${detailsExpanded ? " is-open" : ""}` });
-  const extraToggle = extra.createEl("button", { cls: "ledger-advisor-extra-toggle", attr: { type: "button", "aria-expanded": String(detailsExpanded) } });
-  extraToggle.createSpan({ cls: "ledger-advisor-extra-title", text: "\u5468\u671F\u6570\u636E\u4E0E\u5206\u7C7B\u53C2\u8003" });
-  const extraAction = extraToggle.createSpan({ cls: "ledger-advisor-extra-action", text: detailsExpanded ? "\u6536\u8D77" : "\u5C55\u5F00" });
-  const extraIcon = extraToggle.createSpan({ cls: "ledger-advisor-extra-icon" });
-  (0, import_obsidian5.setIcon)(extraIcon, "chevron-down");
-  extraToggle.addEventListener("click", () => {
-    const expanded = !extra.hasClass("is-open");
-    extra.toggleClass("is-open", expanded);
-    summary.toggleClass("is-open", expanded);
-    extraToggle.setAttribute("aria-expanded", String(expanded));
-    extraAction.setText(expanded ? "\u6536\u8D77" : "\u5C55\u5F00");
-    onDetailsExpandedChange == null ? void 0 : onDetailsExpandedChange(expanded);
-  });
-  const extraBody = extra.createDiv({ cls: "ledger-advisor-extra-body" });
   const spent = summary.createDiv({ cls: "ledger-advisor-summary-item" });
   spent.createSpan({ text: "\u672C\u6B21\u81EA\u5DE5\u8D44\u65E5\u652F\u51FA" });
   spent.createEl("strong", { text: formatCents(snapshot.currentSpentCents) });
@@ -4818,72 +4802,45 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
   forecast.createEl("small", { text: ((_u = snapshot.fixedExpenses) == null ? void 0 : _u.items.length) ? "\u5DF2\u82B1\uFF0B\u5386\u53F2\u5269\u4F59\u652F\u51FA\uFF08\u5254\u9664\u5DF2\u786E\u8BA4\u56FA\u5B9A\u9879\uFF09\uFF0B\u672C\u671F\u672A\u4ED8\u56FA\u5B9A\u9879" : "\u5DF2\u82B1\u91D1\u989D\uFF0B\u5386\u53F2\u5269\u4F59\u9636\u6BB5\u5E73\u5747\u652F\u51FA" });
   const references = snapshot.categories.filter((item) => item.baselineCycleCents > 0 || item.currentCents > 0).sort((a, b) => b.remainingReferenceCents - a.remainingReferenceCents || b.baselineCycleCents - a.baselineCycleCents).slice(0, 3);
   if (references.length > 0 && snapshot.historyCycleCount > 0) {
-    const section = extraBody.createDiv({ cls: "ledger-advisor-categories" });
+    const section = summary.createDiv({ cls: "ledger-advisor-categories" });
     const sectionHeading = section.createDiv({ cls: "ledger-advisor-section-heading" });
     sectionHeading.createSpan({ text: snapshot.historyCycleCount === 2 ? "\u5206\u7C7B\u53C2\u8003\u4F59\u91CF" : "\u5206\u7C7B\u53C2\u8003\u4F59\u91CF \xB7 \u4EC5\u4E00\u4E2A\u5386\u53F2\u5468\u671F" });
     sectionHeading.createEl("small", { text: `\u5DF2\u626B\u63CF ${snapshot.categories.length} \u4E2A\u5206\u7C7B` });
     const list = section.createDiv({ cls: "ledger-advisor-category-list" });
-    for (const item of references) {
-      const row = list.createDiv({ cls: "ledger-advisor-category" });
+    const renderReference = (parent2, item) => {
+      const row = parent2.createDiv({ cls: "ledger-advisor-category" });
       row.createSpan({ text: item.category });
       const value = row.createDiv();
       value.createEl("strong", { text: formatCents(item.remainingReferenceCents) });
       value.createEl("small", { text: `\u8FC7\u5F80\u5468\u671F\u5747\u503C ${formatCents(item.baselineCycleCents)}` });
+    };
+    renderReference(list, references[0]);
+    if (references.length > 1) {
+      const more = section.createEl("details", { cls: "ledger-advisor-category-more" });
+      more.open = detailsExpanded;
+      more.createEl("summary", { text: `\u5176\u4ED6 ${references.length - 1} \u4E2A\u5206\u7C7B` });
+      const hiddenList = more.createDiv({ cls: "ledger-advisor-category-list" });
+      references.slice(1).forEach((item) => renderReference(hiddenList, item));
+      more.addEventListener("toggle", () => onDetailsExpandedChange == null ? void 0 : onDetailsExpandedChange(more.open));
     }
   }
-  extraBody.createDiv({ cls: "ledger-advisor-source", text: "CURRENT SALARY CYCLE \xB7 PREVIOUS 2 FULL CYCLES \xB7 ALL CATEGORIES SCANNED \xB7 LOCAL LEDGER" });
+  if (state.todayBudget) renderInlineBudget(card2, state.todayBudget);
 }
-function renderLiquidBudget(parent, spentCents, budgetCents, dateLabel, currentCycleCents, budgetCategory, includeStarred) {
-  const card2 = parent.createDiv({ cls: "ledger-budget-card ledger-reveal" });
-  const heading = card2.createDiv({ cls: "ledger-budget-heading" });
-  const title = heading.createDiv();
-  const starredScope = includeStarred ? "\u542B\u661F\u6807" : "\u4E0D\u542B\u661F\u6807";
-  title.createDiv({ cls: "ledger-budget-badge", text: `TODAY \xB7 ${budgetCategory || "ALL SPENDING"} \xB7 ${starredScope}` });
-  title.createEl("h3", { text: "\u4ECA\u65E5\u9884\u7B97" });
-  title.createDiv({ cls: "ledger-budget-date", text: dateLabel });
-  const progress = budgetProgress(spentCents, budgetCents);
-  if (budgetCents > 0) {
-    const status = heading.createDiv({ cls: `ledger-budget-status${progress.overBudgetCents > 0 ? " is-over" : ""}` });
-    status.createEl("strong", { text: `${Math.round(progress.ratio * 100)}%` });
-    status.createSpan({ text: progress.overBudgetCents > 0 ? "\u5DF2\u8D85\u652F" : "\u5DF2\u4F7F\u7528" });
+function renderInlineBudget(card2, budget) {
+  const progress = budgetProgress(budget.spentCents, budget.budgetCents);
+  const strip = card2.createDiv({ cls: `ledger-advisor-budget${progress.overBudgetCents > 0 ? " is-over" : ""}` });
+  const labels = strip.createDiv({ cls: "ledger-advisor-budget-labels" });
+  const title = labels.createDiv();
+  title.createEl("strong", { text: "\u4ECA\u65E5\u9884\u7B97" });
+  title.createSpan({ cls: "ledger-advisor-budget-scope", text: `${budget.date.replace(/-/g, ".")} \xB7 ${budget.category || "\u5168\u90E8\u5206\u7C7B"} \xB7 ${budget.includeStarred ? "\u542B\u661F\u6807" : "\u4E0D\u542B\u661F\u6807"}` });
+  labels.createSpan({ cls: "ledger-advisor-budget-value", text: budget.budgetCents > 0 ? `\u5DF2\u82B1 ${formatCents(budget.spentCents)} / ${formatCents(budget.budgetCents)}` : `\u5DF2\u82B1 ${formatCents(budget.spentCents)} \xB7 \u8BF7\u5728\u8BBE\u7F6E\u4E2D\u586B\u5199\u6BCF\u65E5\u9884\u7B97` });
+  if (budget.budgetCents > 0) {
+    const status = labels.createDiv({ cls: "ledger-advisor-budget-status" });
+    status.createSpan({ text: progress.overBudgetCents ? "\u8D85\u51FA " + formatCents(progress.overBudgetCents) : "\u5269\u4F59 " + formatCents(progress.remainingCents) });
+    status.createSpan({ cls: "ledger-advisor-budget-percent", text: `${Math.round(progress.ratio * 100)}%`, attr: { "aria-label": `\u5DF2\u4F7F\u7528 ${Math.round(progress.ratio * 100)}%` } });
+    const track = strip.createDiv({ cls: "ledger-advisor-budget-track", attr: { role: "progressbar", "aria-label": "\u4ECA\u65E5\u9884\u7B97\u4F7F\u7528\u60C5\u51B5", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(progress.percent), "aria-valuetext": `\u5DF2\u4F7F\u7528 ${Math.round(progress.ratio * 100)}%${progress.overBudgetCents ? "\uFF0C\u8D85\u51FA " + formatCents(progress.overBudgetCents) : "\uFF0C\u5269\u4F59 " + formatCents(progress.remainingCents)}` } });
+    track.createDiv({ cls: `ledger-advisor-budget-fill${progress.percent === 0 ? " is-zero" : ""}`, attr: { style: `width: ${progress.percent}%` } });
   }
-  const values = card2.createDiv({ cls: "ledger-budget-values" });
-  const spent = values.createDiv({ cls: "ledger-budget-spent" });
-  spent.createSpan({ cls: "ledger-budget-label", text: "\u4ECA\u65E5\u5DF2\u82B1" });
-  spent.createEl("strong", { text: formatCents(spentCents) });
-  if (budgetCents > 0) {
-    values.createSpan({ cls: "ledger-budget-divider", attr: { "aria-hidden": "true" } });
-    const target2 = values.createDiv({ cls: "ledger-budget-target" });
-    target2.createSpan({ cls: "ledger-budget-label", text: "\u6BCF\u65E5\u9884\u7B97" });
-    target2.createEl("strong", { text: formatCents(budgetCents) });
-    target2.createDiv({ cls: "ledger-budget-monthly", text: `\u6309\u6BCF\u5929 ${formatCents(budgetCents)} \u4F30\u7B97\uFF0C\u6708\u652F\u51FA\u7EA6 ${formatCents(budgetCents * MONTH_ESTIMATE_DAYS)}` });
-    target2.createDiv({ cls: "ledger-budget-current", text: `\u5F53\u524D\u652F\u51FA ${formatCents(currentCycleCents)}` });
-  }
-  if (budgetCents <= 0) {
-    card2.createDiv({ cls: "ledger-budget-empty", text: "\u8BF7\u5728\u8BBE\u7F6E\u4E2D\u586B\u5199\u6BCF\u65E5\u9884\u7B97" });
-    return;
-  }
-  const track = card2.createDiv({
-    cls: "ledger-budget-track",
-    attr: {
-      role: "progressbar",
-      "aria-label": `${budgetCategory || "\u5168\u90E8\u5206\u7C7B"}\u4ECA\u65E5\u9884\u7B97\uFF08${starredScope}\uFF09\uFF0C\u5DF2\u82B1 ${formatCents(spentCents)}\uFF0C\u9884\u7B97 ${formatCents(budgetCents)}`,
-      "aria-valuemin": "0",
-      "aria-valuemax": "100",
-      "aria-valuenow": String(Math.round(progress.percent))
-    }
-  });
-  const fill = track.createDiv({ cls: `ledger-budget-fill${progress.overBudgetCents > 0 ? " is-over" : ""}` });
-  fill.style.setProperty("--budget-progress", `${progress.percent}%`);
-  const detail = card2.createDiv({ cls: `ledger-budget-detail${progress.overBudgetCents > 0 ? " is-over" : ""}` });
-  if (progress.overBudgetCents > 0) {
-    detail.createSpan({ text: `\u5DF2\u8D85\u652F ${formatCents(progress.overBudgetCents)}` });
-    detail.createSpan({ cls: "ledger-budget-ratio", text: `${Math.round(progress.ratio * 100)}%` });
-  } else {
-    detail.createSpan({ text: `\u5269\u4F59 ${formatCents(progress.remainingCents)}` });
-    detail.createSpan({ cls: "ledger-budget-ratio", text: `${Math.round(progress.ratio * 100)}%` });
-  }
-  card2.createDiv({ cls: "ledger-budget-source", text: `TODAY \xB7 ${budgetCategory || "ALL CATEGORIES"} \xB7 ${includeStarred ? "WITH STARRED" : "EXCLUDING STARRED"} \xB7 LOCAL LEDGER` });
 }
 function renderStarredExpenses(parent, records, onClick) {
   const card2 = parent.createDiv({ cls: "ledger-starred-card ledger-reveal" });
@@ -5870,7 +5827,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
     const files = [...this.plugin.repository.files.values()];
     if (this.activeView !== "report") (_a = this.reportPanel) == null ? void 0 : _a.cancel();
     this.renderHeader(root);
-    if (this.activeView === "overview" && files.length > 0 && !this.filter.categories.length) this.renderCoreCards(root, files);
+    if (this.activeView === "overview" && files.length > 0 && !this.filter.categories.length) this.renderCoreCards(root);
     if (this.activeView !== "report" && this.filter.categories.length) this.cancelFinanceRequest();
     if (this.activeView !== "report") this.renderToolbar(root);
     this.renderTabs(root);
@@ -6043,32 +6000,11 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
     (0, import_obsidian8.setIcon)(back.createSpan({ cls: "ledger-drill-back-icon" }), "arrow-left");
     back.addEventListener("click", () => this.restoreDrillContext());
   }
-  renderCoreCards(parent, files) {
+  renderCoreCards(parent) {
     const core = parent.createDiv({ cls: "ledger-core-cards" });
     core.createDiv({ cls: "ledger-core-caption", text: "\u5B9E\u65F6\u6982\u89C8 \xB7 \u6D1E\u5BDF\u4E0E\u4ECA\u65E5\u9884\u7B97\u4E0D\u53D7\u4E0B\u65B9\u7B5B\u9009\u5F71\u54CD" });
-    const today = todayIso();
-    const budgetCategory = this.plugin.settings.budgetCategory;
-    const includeStarred = this.plugin.settings.includeStarredInBudget;
-    const todayRecords = budgetScopedRecords(filteredRecords(files, {
-      range: { start: today, end: today },
-      scope: "all",
-      excludedCategories: [],
-      categories: budgetCategory ? [budgetCategory] : [],
-      keyword: ""
-    }), includeStarred, this.plugin.settings.starredRecordIds);
-    const todayCents = todayRecords.reduce((sum2, record) => sum2 + record.cents, 0);
-    const currentCycle = salaryDayRange(/* @__PURE__ */ new Date());
-    const currentCycleRecords = budgetScopedRecords(filteredRecords(files, {
-      range: currentCycle,
-      scope: "all",
-      excludedCategories: [],
-      categories: budgetCategory ? [budgetCategory] : [],
-      keyword: ""
-    }), includeStarred, this.plugin.settings.starredRecordIds);
-    const currentCycleCents = currentCycleRecords.reduce((sum2, record) => sum2 + record.cents, 0);
     const advisorHost = core.createDiv({ cls: "ledger-advisor-host" });
     this.renderFinanceSection(advisorHost);
-    renderLiquidBudget(core, todayCents, this.plugin.settings.dailyBudgetCents, today.replace(/-/g, "."), currentCycleCents, budgetCategory, includeStarred);
   }
   renderOverview(parent) {
     if (this.filter.categories.length === 1) {
@@ -6136,7 +6072,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
     ), files, now, this.plugin.settings), files, now, this.plugin.settings), (_b = this.plugin.settings.insightHistory) != null ? _b : []);
   }
   renderFinanceSection(parent, animate = true) {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e, _f, _g, _h;
     const files = [...this.plugin.repository.files.values()];
     const now = /* @__PURE__ */ new Date();
     const financeSnapshot = this.currentFinanceSnapshot(now);
@@ -6163,6 +6099,23 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
     if (retainedAdvice && cache && isValidIsoDate(cache.date)) {
       financeState.analysisRange = { start: addDays(cache.date, -6), end: cache.date };
     }
+    const today = isoFromDate(now);
+    const budgetCategory = (_b = this.plugin.settings.budgetCategory) != null ? _b : "";
+    const includeStarred = (_c = this.plugin.settings.includeStarredInBudget) != null ? _c : true;
+    const todayRecords = budgetScopedRecords(filteredRecords(files, {
+      range: { start: today, end: today },
+      scope: "all",
+      excludedCategories: [],
+      categories: budgetCategory ? [budgetCategory] : [],
+      keyword: ""
+    }), includeStarred, (_d = this.plugin.settings.starredRecordIds) != null ? _d : []);
+    financeState.todayBudget = {
+      date: today,
+      spentCents: todayRecords.reduce((sum2, record) => sum2 + record.cents, 0),
+      budgetCents: (_e = this.plugin.settings.dailyBudgetCents) != null ? _e : 0,
+      category: budgetCategory,
+      includeStarred
+    };
     renderFinanceAdvisor(
       parent,
       financeSnapshot,
@@ -6183,8 +6136,8 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
     const viewRect = this.contentEl.getBoundingClientRect();
     const visible = !ownerDocument.hidden && !ownerDocument.querySelector(".modal-container") && cardRect.bottom > viewRect.top && cardRect.top < viewRect.bottom;
     if (visible && !this.financeAdviceLoading && this.app.workspace.getActiveViewOfType(_LedgerStatisticsView) === this && financeSnapshot.salaryCents > 0) {
-      const history = (_b = this.plugin.settings.insightHistory) != null ? _b : [];
-      const next = markInsightSeen(history, financeSnapshot, (_d = (_c = financeState.advice) == null ? void 0 : _c.primaryEventId) != null ? _d : financeSnapshot.events[0].id);
+      const history = (_f = this.plugin.settings.insightHistory) != null ? _f : [];
+      const next = markInsightSeen(history, financeSnapshot, (_h = (_g = financeState.advice) == null ? void 0 : _g.primaryEventId) != null ? _h : financeSnapshot.events[0].id);
       if (next !== history) {
         this.plugin.settings.insightHistory = next;
         void this.plugin.saveSettings(false, false).catch(() => new import_obsidian8.Notice("\u63D0\u9192\u9605\u8BFB\u72B6\u6001\u4FDD\u5B58\u5931\u8D25"));

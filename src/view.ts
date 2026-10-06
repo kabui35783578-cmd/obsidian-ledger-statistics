@@ -18,7 +18,6 @@ import {
   DateRange,
   FilterState,
   LedgerRecord,
-  ParsedLedgerFile,
   addDays,
   buildFinanceAdvisorSnapshot,
   financeCompleteDates,
@@ -40,7 +39,7 @@ import {
 } from "./core";
 import { DefaultDatePreset, LedgerViewId } from "./settings";
 import { categoryBoxReference, salaryWaterfall } from "./chart-data";
-import { createButton, FinanceAdviceViewState, renderCategoryBox, renderDonut, renderDumbbell, renderEmpty, renderFinanceAdvisor, renderHorizontalBars, renderLiquidBudget, renderSalaryWaterfall, renderStarredExpenses, renderTrendChart } from "./ui";
+import { createButton, FinanceAdviceViewState, renderCategoryBox, renderDonut, renderDumbbell, renderEmpty, renderFinanceAdvisor, renderHorizontalBars, renderSalaryWaterfall, renderStarredExpenses, renderTrendChart } from "./ui";
 
 export const LEDGER_VIEW_TYPE = "ledger-statistics-view";
 
@@ -231,7 +230,7 @@ export class LedgerStatisticsView extends ItemView {
     const files = [...this.plugin.repository.files.values()];
     if (this.activeView !== "report") this.reportPanel?.cancel();
     this.renderHeader(root);
-    if (this.activeView === "overview" && files.length > 0 && !this.filter.categories.length) this.renderCoreCards(root, files);
+    if (this.activeView === "overview" && files.length > 0 && !this.filter.categories.length) this.renderCoreCards(root);
     if (this.activeView !== "report" && this.filter.categories.length) this.cancelFinanceRequest();
     if (this.activeView !== "report") this.renderToolbar(root);
     this.renderTabs(root);
@@ -408,32 +407,11 @@ export class LedgerStatisticsView extends ItemView {
     back.addEventListener("click", () => this.restoreDrillContext());
   }
 
-  private renderCoreCards(parent: HTMLElement, files: ParsedLedgerFile[]): void {
+  private renderCoreCards(parent: HTMLElement): void {
     const core = parent.createDiv({ cls: "ledger-core-cards" });
     core.createDiv({ cls: "ledger-core-caption", text: "实时概览 · 洞察与今日预算不受下方筛选影响" });
-    const today = todayIso();
-    const budgetCategory = this.plugin.settings.budgetCategory;
-    const includeStarred = this.plugin.settings.includeStarredInBudget;
-    const todayRecords = budgetScopedRecords(filteredRecords(files, {
-      range: { start: today, end: today },
-      scope: "all",
-      excludedCategories: [],
-      categories: budgetCategory ? [budgetCategory] : [],
-      keyword: ""
-    }), includeStarred, this.plugin.settings.starredRecordIds);
-    const todayCents = todayRecords.reduce((sum, record) => sum + record.cents, 0);
-    const currentCycle = salaryDayRange(new Date());
-    const currentCycleRecords = budgetScopedRecords(filteredRecords(files, {
-      range: currentCycle,
-      scope: "all",
-      excludedCategories: [],
-      categories: budgetCategory ? [budgetCategory] : [],
-      keyword: ""
-    }), includeStarred, this.plugin.settings.starredRecordIds);
-    const currentCycleCents = currentCycleRecords.reduce((sum, record) => sum + record.cents, 0);
     const advisorHost = core.createDiv({ cls: "ledger-advisor-host" });
     this.renderFinanceSection(advisorHost);
-    renderLiquidBudget(core, todayCents, this.plugin.settings.dailyBudgetCents, today.replace(/-/g, "."), currentCycleCents, budgetCategory, includeStarred);
   }
 
   private renderOverview(parent: HTMLElement): void {
@@ -520,6 +498,15 @@ export class LedgerStatisticsView extends ItemView {
     if (retainedAdvice && cache && isValidIsoDate(cache.date)) {
       financeState.analysisRange = { start: addDays(cache.date, -6), end: cache.date };
     }
+    const today = isoFromDate(now);
+    const budgetCategory = this.plugin.settings.budgetCategory ?? "";
+    const includeStarred = this.plugin.settings.includeStarredInBudget ?? true;
+    const todayRecords = budgetScopedRecords(filteredRecords(files, {
+      range: { start: today, end: today }, scope: "all", excludedCategories: [],
+      categories: budgetCategory ? [budgetCategory] : [], keyword: ""
+    }), includeStarred, this.plugin.settings.starredRecordIds ?? []);
+    financeState.todayBudget = { date: today, spentCents: todayRecords.reduce((sum, record) => sum + record.cents, 0),
+      budgetCents: this.plugin.settings.dailyBudgetCents ?? 0, category: budgetCategory, includeStarred };
     renderFinanceAdvisor(parent, financeSnapshot, financeState, () => void this.loadFinanceAdvice(this.currentFinanceSnapshot(), true), animate,
       financeCoverageReport(files.filter(file => !file.date || file.date <= financeSnapshot.currentRange.end), insightAsOf(now)), (path) => void this.app.workspace.openLinkText(path, "", false),
       () => new FixedExpenseModal(this.plugin).open(), this.advisorDetailsExpanded,

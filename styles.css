@@ -624,8 +624,7 @@ button.ledger-metric:active {
   grid-template-areas:
     "advisor-heading advisor-heading"
     "advisor-observation advisor-summary"
-    "advisor-categories ."
-    "advisor-source advisor-source";
+    "advisor-budget advisor-budget";
   gap: 10px 12px;
 }
 
@@ -1152,8 +1151,7 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
       "advisor-heading"
       "advisor-observation"
       "advisor-summary"
-      "advisor-categories"
-      "advisor-source";
+      "advisor-budget";
   }
 
   .ledger-advisor-summary,
@@ -2294,7 +2292,7 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
       "advisor-heading"
       "advisor-observation"
       "advisor-summary"
-      "advisor-extra";
+      "advisor-budget";
   }
 
   .ledger-advisor-extra {
@@ -3069,19 +3067,50 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
 
 .ledger-advisor-card .ledger-advisor-heading-copy h3 { white-space: nowrap; }
 .ledger-advisor-card .ledger-advisor-heading { grid-template-columns: minmax(0, 1fr) auto; }
-.ledger-advisor-summary > button.ledger-advisor-refresh { grid-column: auto; grid-row: auto; justify-self: stretch; width: 100%; height: auto; min-height: 80px; max-height: none; padding: 15px 16px; border-radius: 15px; background: var(--mono-paper); color: var(--mono-ink); font-size: 13px; white-space: nowrap; order: 0; }
-.ledger-advisor-summary > button.ledger-advisor-refresh span { color: inherit; font-size: inherit; }
-.ledger-advisor-summary > button.ledger-advisor-refresh:not(:disabled):hover { background: color-mix(in srgb, var(--mono-paper) 90%, var(--mono-grid)); color: var(--mono-ink); }
 .ledger-advisor-card .ledger-advisor-period { grid-column: 1 / -1; grid-row: 2; line-height: 1.65; overflow-wrap: anywhere; }
-
-@container (max-width: 900px) {
-  .ledger-advisor-summary > button.ledger-advisor-refresh { grid-column: 1 / -1; }
-}
 
 @container (max-width: 540px) {
   .ledger-advisor-summary { grid-template-columns: minmax(0, 1fr); }
-  .ledger-advisor-summary > button.ledger-advisor-refresh { min-height: 52px; }
-  .ledger-advisor-summary:not(.is-open) > .ledger-advisor-summary-item:not(.ledger-advisor-refresh) { display: none; }
+}
+
+.ledger-advisor-actions { position: absolute; top: 10px; right: 10px; display: flex; align-items: center; gap: 4px; }
+.ledger-advisor-card .ledger-advisor-actions button.ledger-advisor-refresh,
+.ledger-advisor-card .ledger-advisor-actions button.ledger-advisor-info-toggle { position: static; display: inline-flex; align-items: center; justify-content: center; grid-column: auto; grid-row: auto; width: 44px; height: 44px; min-width: 44px; min-height: 44px; max-height: none; padding: 0; margin: 0; border: 0; border-radius: 50%; background: transparent; color: var(--mono-faint); opacity: .8; order: 0; flex: 0 0 44px; }
+.ledger-advisor-actions button svg { width: 18px; height: 18px; }
+.ledger-advisor-actions button:not(:disabled):hover,
+.ledger-advisor-actions button:focus-visible { opacity: 1; background: color-mix(in srgb, var(--mono-paper) 10%, transparent); color: var(--mono-paper); }
+.ledger-advisor-actions button:focus-visible { outline: 2px solid var(--ledger-accent); outline-offset: 1px; }
+.ledger-advisor-observation-label { min-height: 44px; padding-right: 92px; }
+.ledger-advisor-card .ledger-advisor-observation { padding-right: 22px; }
+.ledger-advisor-summary > .ledger-advisor-categories { grid-area: auto; padding: 15px 16px; border-radius: 15px; background: var(--mono-paper); }
+.ledger-advisor-summary .ledger-advisor-category-list { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.ledger-advisor-summary .ledger-advisor-category { padding: 8px 0; border-radius: 0; }
+.ledger-advisor-summary .ledger-advisor-section-heading { margin-bottom: 4px; }
+.ledger-advisor-category-more { margin-top: 8px; border-top: 1px solid var(--mono-grid); padding-top: 8px; }
+.ledger-advisor-category-more > summary { cursor: pointer; color: var(--mono-3); font-size: 11px; }
+.ledger-advisor-category-more[open] > summary { margin-bottom: 6px; }
+.ledger-advisor-budget { grid-area: advisor-budget; min-width: 0; margin-top: 8px; padding-top: 14px; border-top: 1px solid var(--mono-grid); }
+.ledger-advisor-budget-labels { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px 20px; margin-bottom: 12px; color: var(--mono-ink); font-size: 12px; line-height: 1.6; }
+.ledger-advisor-budget-labels > div:first-child > strong { font-size: 13px; }
+.ledger-advisor-budget-scope { display: block; color: var(--mono-3); font-size: 10px; }
+.ledger-advisor-budget-value { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ledger-advisor-budget-status { display: flex; align-items: center; justify-content: flex-end; gap: 10px; font-variant-numeric: tabular-nums; }
+.ledger-advisor-budget-percent { padding: 2px 8px; border-radius: 999px; background: var(--mono-ink); color: var(--mono-paper); font-size: 11px; font-weight: 700; }
+.ledger-advisor-budget-track { height: 12px; width: 100%; overflow: hidden; border-radius: 999px; background: var(--mono-paper); box-shadow: inset 0 1px 3px color-mix(in srgb, var(--mono-ink) 12%, transparent); }
+.ledger-advisor-budget-fill { position: relative; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--mono-ink), var(--mono-2)); box-shadow: inset 0 1px 0 color-mix(in srgb, var(--mono-paper) 18%, transparent); }
+.ledger-advisor-budget-fill:not(.is-zero)::after { content: ""; position: absolute; right: 0; top: 0; width: 12px; height: 12px; box-sizing: border-box; border: 2px solid var(--mono-paper); border-radius: 50%; background: var(--ledger-accent); }
+.ledger-advisor-budget.is-over .ledger-advisor-budget-fill { background: var(--ledger-accent); }
+.ledger-advisor-budget.is-over .ledger-advisor-budget-status > span:first-child { color: var(--ledger-accent); }
+
+@container (max-width: 900px) {
+  .ledger-advisor-summary > .ledger-advisor-categories { grid-column: 1 / -1; }
+}
+@container (max-width: 540px) {
+  .ledger-advisor-card .ledger-advisor-observation { padding-right: 16px; }
+  .ledger-advisor-budget-labels { grid-template-columns: minmax(0, 1fr) auto; gap: 7px 10px; }
+  .ledger-advisor-budget-labels > div:first-child { grid-column: 1 / -1; }
+  .ledger-advisor-budget-value { font-size: 11px; }
+  .ledger-advisor-budget-status { gap: 6px; font-size: 11px; }
 }
 
 .ledger-advisor-ongoing { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--background-modifier-border); border-radius: 12px; font-size: 12px; }

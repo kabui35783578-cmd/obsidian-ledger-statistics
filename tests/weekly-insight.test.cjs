@@ -3,13 +3,14 @@ const assert = require('node:assert/strict');
 global.window = global;
 const core = require('../dist/core.cjs');
 const { LedgerStatisticsView } = require('../dist/view.cjs');
+const { renderFinanceAdvisor } = require('../dist/ui.cjs');
 const ai = require('../dist/ai.cjs');
 const { createFinanceAdviceCache, assessFinanceAdvice } = require('../dist/advice-lifecycle.cjs');
 const { markInsightSeen, withInsightHistory } = require('../dist/insights.cjs');
 const now = new Date(2026, 9, 5, 8);
 
 class Element {
-  constructor(options = {}) { this.textContent = options.text ?? ''; this.classes = new Set((options.cls ?? '').split(' ')); this.children = []; this.listeners = {}; this.attributes = {}; this.ownerDocument = { hidden: true, querySelector: () => null }; }
+  constructor(options = {}) { this.textContent = options.text ?? ''; this.classes = new Set((options.cls ?? '').split(' ')); this.children = []; this.listeners = {}; this.attributes = { ...options.attr }; this.ownerDocument = { hidden: true, querySelector: () => null }; }
   createEl(tag, options) { const child = new Element(options); this.children.push(child); return child; }
   createDiv(options) { return this.createEl('div', options); }
   createSpan(options) { return this.createEl('span', options); }
@@ -51,8 +52,10 @@ test('reopening, rollover and backfills retain the saved text and original week 
       assert.ok(card.querySelector('.ledger-advisor-remaining'), 'original balance is retained');
       assert.match(card.querySelector('.ledger-advisor-action').children[1].textContent, /上次保存的建议/);
       const sidebar = card.querySelector('.ledger-advisor-summary');
-      assert.equal(sidebar.children.length, 4, 'refresh plus original three cycle cards form the sidebar');
-      assert.equal(sidebar.children[0], card.querySelector('.ledger-advisor-refresh'));
+      assert.equal(sidebar.children.length, 4, 'three cycle cards plus category references form the sidebar');
+      assert.equal(card.querySelector('.ledger-advisor-actions').children[0], card.querySelector('.ledger-advisor-refresh'));
+      assert.equal(card.querySelector('.ledger-advisor-refresh').children.length, 0, 'refresh is an icon with no visible caption');
+      assert.equal(sidebar.children[3], card.querySelector('.ledger-advisor-categories'));
       assert.equal(card.querySelector('.ledger-advisor-heading').querySelector('.ledger-advisor-refresh'), undefined);
       assert.ok(card.querySelector('.ledger-advisor-daily-facts'), 'original yesterday spending and budget rows are retained');
       assert.ok(card.querySelector('.ledger-advisor-categories'), 'original category references are retained');
@@ -62,13 +65,8 @@ test('reopening, rollover and backfills retain the saved text and original week 
       assert.equal(info.hidden, true);
       toggle.listeners.click(); assert.equal(info.hidden, false);
       toggle.listeners.click(); assert.equal(info.hidden, true);
-      const extra = card.querySelector('.ledger-advisor-extra');
-      extra.querySelector('.ledger-advisor-extra-toggle').listeners.click();
-      assert.equal(extra.hasClass('is-open'), true);
-      assert.equal(sidebar.hasClass('is-open'), true);
-      extra.querySelector('.ledger-advisor-extra-toggle').listeners.click();
-      assert.equal(extra.hasClass('is-open'), false);
-      assert.equal(sidebar.hasClass('is-open'), false);
+      assert.equal(sidebar.querySelector('.ledger-advisor-category-list').children.length, 1, 'only the first reference is initially shown');
+      assert.ok(card.querySelector('.ledger-advisor-budget'), 'today budget lives inside the insight card');
       // Exercise the actual card button, including a failed request and re-render.
       root.querySelector('.ledger-advisor-refresh').listeners.click();
       await new Promise(done => setImmediate(done));
@@ -80,6 +78,50 @@ test('reopening, rollover and backfills retain the saved text and original week 
       requests = 0;
     }
   } finally { delete global.__ledgerTestRequest; }
+});
+
+test('category references keep one visible and preserve the original remaining entries behind native disclosure', () => {
+  const s = snapshot();
+  s.historyCycleCount = 2;
+  s.categories = ['购物', '零食', '娱乐'].map((category, i) => ({ category, baselineCycleCents: 10000 - i * 1000, currentCents: 2000, remainingReferenceCents: 8000 - i * 1000 }));
+  const root = new Element(); let expanded;
+  renderFinanceAdvisor(root, s, { status: 'local', advice: null, canRefresh: true, message: '' }, () => {}, false, undefined, undefined, undefined, false, value => { expanded = value; });
+  const section = root.querySelector('.ledger-advisor-categories'), more = section.querySelector('.ledger-advisor-category-more');
+  assert.equal(section.querySelector('.ledger-advisor-category-list').children.length, 1);
+  assert.equal(more.open, false);
+  assert.equal(more.querySelector('.ledger-advisor-category-list').children.length, 2);
+  more.open = true; more.listeners.toggle(); assert.equal(expanded, true);
+  more.open = false; more.listeners.toggle(); assert.equal(expanded, false);
+});
+
+test('inline budget distinguishes normal, overspent and unset budgets without exceeding the track', () => {
+  for (const [spent, limit, fill, phrase] of [[1500, 5000, '30', '剩余 ¥35.00'], [7500, 5000, '100', '超出 ¥25.00'], [2000, 0, null, '请在设置中填写每日预算']]) {
+    const root = new Element();
+    renderFinanceAdvisor(root, snapshot(), { status: 'local', advice: null, canRefresh: true, message: '', todayBudget: { date: '2026-10-06', spentCents: spent, budgetCents: limit, category: '', includeStarred: true } }, () => {}, false);
+    const strip = root.querySelector('.ledger-advisor-budget'), track = strip.querySelector('.ledger-advisor-budget-track');
+    assert.ok(strip.all().some(el => el.textContent.includes(phrase)), 'budget status remains readable beside the amount');
+    if (fill === null) assert.equal(track, undefined);
+    else { assert.equal(track.attributes['aria-valuenow'], fill); assert.equal(strip.querySelector('.ledger-advisor-budget-fill').attributes.style, `width: ${fill}%`); }
+    assert.equal(root.querySelector('.ledger-budget-card'), undefined);
+  }
+});
+
+test('today budget keeps category and star settings independent of cached yesterday insights and view filters', () => {
+  const today = core.isoFromDate(new Date());
+  const f = core.parseLedgerFile(`private/${today}.md`, `---\ndate: ${today}\ntotal: 55\n---\n# 今日消费记录\n- 12:00｜餐饮｜￥20.00（午饭）\n- 15:00｜购物｜￥35.00（采购）`);
+  const v = Object.create(LedgerStatisticsView.prototype), s = snapshot();
+  const cache = createFinanceAdviceCache(s, ai.parseFinanceAdvice('保留昨日洞察。', s));
+  Object.assign(v, { closed: false, financeAdviceLoading: false, financeAdviceError: '', currentFinanceSnapshot: () => s,
+    filter: { range: { start: '2020-01-01', end: '2020-01-02' }, categories: ['娱乐'], keyword: '无匹配' },
+    plugin: { repository: { files: new Map([[f.path, f]]) }, settings: { financeAiEnabled: true, financeAiEndpoint: 'https://example.invalid/v1', financeAiModel: 'test', financeAdviceCache: cache,
+      salaryCents: 600000, dailyBudgetCents: 5000, starredRecordIds: [f.records[0].id] } } });
+  for (const [category, include, expected] of [['餐饮', false, '¥0.00'], ['餐饮', true, '¥20.00'], ['', false, '¥35.00'], ['', true, '¥55.00']]) {
+    Object.assign(v.plugin.settings, { budgetCategory: category, includeStarredInBudget: include });
+    const root = new Element(); v.contentEl = root; v.renderFinanceSection(root, false);
+    assert.ok(root.querySelector('.ledger-advisor-budget-value').textContent.includes(`已花 ${expected} / ¥50.00`));
+    assert.equal(v.plugin.settings.financeAdviceCache, cache);
+    assert.match(root.querySelector('.ledger-advisor-judgment').textContent, /保留昨日洞察/);
+  }
 });
 function file(date, amount, category = '餐饮', note = '午饭') {
   return core.parseLedgerFile(`private/${category}/${date}.md`, `---\ndate: ${date}\ntotal: ${amount}\n---\n# 今日消费记录\n${amount ? `- 12:00｜${category}｜￥${amount.toFixed(2)}（${note}）` : ''}`);
