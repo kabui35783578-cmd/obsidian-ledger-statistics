@@ -8,10 +8,11 @@ import { createButton } from "./ui";
 import { formatReportFact, formatReportText, reportPlainLanguage, reportProgress, reportTextParts } from "./report-presentation";
 
 export class ReportEvidenceModal extends Modal {
-  constructor(plugin: LedgerStatisticsPlugin, private snapshot: ReportSnapshot, private evidenceIds: string[], private openRecord: (r: LedgerRecord) => Promise<void>) { super(plugin.app); }
+  constructor(plugin: LedgerStatisticsPlugin, private snapshot: ReportSnapshot, private evidenceIds: string[], private openRecord: (r: LedgerRecord) => Promise<void>, private generatedAt?: string) { super(plugin.app); }
   onOpen(): void {
     this.setTitle("报告证据");
     this.contentEl.empty(); this.contentEl.addClass("ledger-report-evidence");
+    if (this.generatedAt) this.contentEl.createEl("p", { cls: "ledger-report-muted", text: `以下为 ${new Date(this.generatedAt).toLocaleString("zh-CN")} 生成时的依据；打开来源文件会显示文件当前内容。` });
     const entries = this.snapshot.evidence.filter(e => this.evidenceIds.includes(e.id));
     for (const e of entries) {
       const section = this.contentEl.createDiv({ cls: "ledger-report-evidence-section" });
@@ -80,8 +81,6 @@ export class ReportPanel {
   private error = "";
   private requestFingerprint = "";
   private disposed = false;
-  private lastFingerprint = "";
-  private stale = false;
   private cachedSnapshot?: ReportSnapshot;
   private snapshotKey = "";
   constructor(private plugin: LedgerStatisticsPlugin, private redraw: () => void, private openRecord: (r: LedgerRecord) => Promise<void>) {}
@@ -121,9 +120,12 @@ export class ReportPanel {
     const snapshot = this.snapshot(), p = this.preferences;
     const configuration = reportConfiguration(this.config());
     if (this.loading && this.requestFingerprint !== `${snapshot.fingerprint}:${configuration}`) this.cancel();
-    const cache = findReportCache(this.plugin.settings.reportCaches ?? [], snapshot, this.config());
-    if (this.lastFingerprint && this.lastFingerprint !== snapshot.fingerprint) { this.stale = true; this.error = ""; }
-    this.lastFingerprint = snapshot.fingerprint;
+    // Always show the last successful manual generation, even after data/configuration changes.
+    const caches = this.plugin.settings.reportCaches ?? [];
+    const cache = caches[caches.length - 1];
+    const changed = !!cache && (cache.fingerprint !== snapshot.fingerprint || cache.configuration !== configuration);
+    // Legacy caches can use current evidence only when their exact fingerprint still matches.
+    const reportSnapshot = cache ? cache.snapshot ?? (findReportCache(caches, snapshot, this.config()) === cache ? snapshot : undefined) : snapshot;
     const shell = parent.createDiv({ cls: "ledger-report" });
     const toolbar = shell.createDiv({ cls: "ledger-report-toolbar" });
     const select = (label: string, value: string, options: Array<[string, string]>, changed: (value: string) => void) => {
@@ -160,12 +162,18 @@ export class ReportPanel {
     generate.disabled = this.loading || !configured;
     generate.addEventListener("click", () => void this.generate(snapshot));
     actions.createSpan({ cls: "ledger-report-muted", text: cache ? `AI 报告 · ${new Date(cache.generatedAt).toLocaleString("zh-CN")}` : configured ? "本地分析 · 点击生成 AI 报告" : "本地分析 · 配置并启用 AI 后可生成完整报告" });
-    if (!cache && (this.stale || (this.plugin.settings.reportCaches ?? []).length)) shell.createEl("p", { cls: "ledger-report-status", text: "当前依据没有有效 AI 报告，生成后将使用本次数据。" });
-    if (this.error) shell.createEl("p", { cls: "ledger-report-status", text: `${this.error}。当前仍可查看本地分析。` });
-    renderReportArticle(shell, cache?.report ?? localSpendingReport(snapshot), snapshot, ids => new ReportEvidenceModal(this.plugin, snapshot, ids, this.openRecord).open());
+    if (changed) shell.createEl("p", { cls: "ledger-report-status", text: "数据、筛选或 AI 配置已变化，仍显示上次手动生成的报告。点击重新生成报告后，才会使用当前数据替换。" });
+    if (cache && reportSnapshot) shell.createEl("p", { cls: "ledger-report-muted", text: `报告生成范围：${reportSnapshot.label} · ${reportSnapshot.range.start} 至 ${reportSnapshot.range.end} · ${reportSnapshot.preferences.scope === "all" ? "全部支出" : "消费支出"} · ${reportSnapshot.preferences.category || "全部分类"}${reportSnapshot.preferences.keyword ? ` · 关键词 ${reportSnapshot.preferences.keyword}` : ""}${!reportSnapshot.preferences.includeStarred ? " · 排除星标" : ""}` });
+    if (cache && !reportSnapshot) shell.createEl("p", { cls: "ledger-report-status", text: "这份旧报告未保存生成时的依据，保留报告文字。重新生成后会同时保存依据。" });
+    if (this.error) shell.createEl("p", { cls: "ledger-report-status", text: `${this.error}。${cache ? "上次生成的报告仍保留。" : "当前仍可查看本地分析。"}` });
+    renderReportArticle(shell, cache?.report ?? localSpendingReport(snapshot), reportSnapshot, ids => {
+      if (reportSnapshot) new ReportEvidenceModal(this.plugin, reportSnapshot, ids, this.openRecord, cache?.generatedAt).open();
+    });
+    const qualitySnapshot = reportSnapshot ?? snapshot;
     const details = shell.createEl("details", { cls: "ledger-report-quality" }); details.createEl("summary", { text: "数据范围与分析口径" });
+    details.createEl("p", { cls: "ledger-report-muted", text: cache && reportSnapshot ? "以下为报告生成时的数据范围与分析口径。" : "以下为当前筛选的数据范围与分析口径。" });
     details.createEl("p", { text: "缺失日期视为未知；明确零消费账本视为零。笔数是记账记录，不代表杯数、人数或商品单价。按日期分析，不推断小时级购买顺序。" });
-    for (const [i, c] of snapshot.coverage.entries()) {
+    for (const [i, c] of qualitySnapshot.coverage.entries()) {
       if (i >= 2 && c.complete) continue;
       details.createEl("p", { text: `${i === 0 ? "本期" : i === 1 ? "上期" : `历史第${i - 1}期`} ${c.range.start} 至 ${c.range.end}：${c.complete ? "账本核验通过" : `缺少 ${c.missingDates.length} 天账本，${c.problems.length} 个异常账本`}` });
       if (c.missingDates.length) details.createEl("p", { cls: "ledger-report-muted", text: c.missingDates.join("、") });
@@ -174,19 +182,26 @@ export class ReportPanel {
         b.addEventListener("click", () => void this.plugin.app.workspace.openLinkText(problem.path, "", true));
       }
     }
-    for (const path of snapshot.undatedPaths) {
+    for (const path of qualitySnapshot.undatedPaths) {
       const b = createButton(details, `日期无法识别：${path}`); b.addEventListener("click", () => void this.plugin.app.workspace.openLinkText(path, "", true));
     }
   }
   private async generate(snapshot: ReportSnapshot): Promise<void> {
     if (this.loading || this.disposed) return;
+    snapshot = JSON.parse(JSON.stringify(snapshot)) as ReportSnapshot;
     const config = this.config(), configuration = reportConfiguration(config), controller = new AbortController();
     this.controller = controller; this.loading = true; this.error = ""; this.requestFingerprint = `${snapshot.fingerprint}:${configuration}`; this.redraw();
     try {
       const report = await requestSpendingReport(config, snapshot, controller.signal, sharedRequestGate(`ai:${this.plugin.app.vault.getName()}`));
       if (this.disposed || controller.signal.aborted || this.snapshot().fingerprint !== snapshot.fingerprint || reportConfiguration(this.config()) !== configuration || !this.plugin.settings.financeAiEnabled) return;
-      this.plugin.settings.reportCaches = appendReportCache(this.plugin.settings.reportCaches ?? [], { fingerprint: snapshot.fingerprint, configuration, generatedAt: new Date().toISOString(), report });
-      await this.plugin.saveSettings(false, false); this.stale = false;
+      const previousCaches = this.plugin.settings.reportCaches ?? [];
+      const nextCaches = appendReportCache(previousCaches, { fingerprint: snapshot.fingerprint, configuration, generatedAt: new Date().toISOString(), report, snapshot });
+      this.plugin.settings.reportCaches = nextCaches;
+      try { await this.plugin.saveSettings(false, false); }
+      catch (error) {
+        if (this.plugin.settings.reportCaches === nextCaches) this.plugin.settings.reportCaches = previousCaches;
+        throw error;
+      }
     } catch (error) {
       if (!controller.signal.aborted && !this.disposed) this.error = error instanceof Error ? error.message : "报告生成失败";
     } finally {
@@ -196,10 +211,10 @@ export class ReportPanel {
   }
 }
 
-export function renderReportArticle(parent: HTMLElement, report: SpendingReport, snapshot: ReportSnapshot, evidence: (ids: string[]) => void): void {
+export function renderReportArticle(parent: HTMLElement, report: SpendingReport, snapshot: ReportSnapshot | undefined, evidence: (ids: string[]) => void): void {
   const article = parent.createEl("article", { cls: "ledger-report-article" });
   article.createEl("h2", { text: formatReportText(report.title).replace(/\*\*/g, "") });
-  article.createEl("p", { cls: "ledger-report-progress", text: reportProgress(snapshot) });
+  if (snapshot) article.createEl("p", { cls: "ledger-report-progress", text: reportProgress(snapshot) });
   const prose = (parent: HTMLElement, text: string, cls = "") => {
     const emphasis = { remaining: 2 };
     for (const paragraph of text.split(/\n\s*\n/).filter(t => t.trim())) {
@@ -213,15 +228,16 @@ export function renderReportArticle(parent: HTMLElement, report: SpendingReport,
     }
   };
   if (report.summary) prose(article, report.summary, "ledger-report-summary");
-  if (snapshot.overview) {
+  if (snapshot?.overview) {
     const b = createButton(article, "查看本期概况"); b.addClass("ledger-report-overview-citation");
     b.addEventListener("click", () => evidence([snapshot.overview!.id]));
   }
-  if(report.paragraphs.length)article.createEl('p',{cls:'ledger-report-reference-note',text:'引用按钮指向本地事实；报告的解释需结合观察与相反线索判断。'});
+  if(snapshot && report.paragraphs.length)article.createEl('p',{cls:'ledger-report-reference-note',text:'引用按钮指向本地事实；报告的解释需结合观察与相反线索判断。'});
   report.paragraphs.forEach((p, i) => {
     const section = article.createEl("section");
     if (p.heading) section.createEl("h3", { text: formatReportText(p.heading).replace(/\*\*/g, "") });
     prose(section, p.text);
+    if (!snapshot) return;
     const ids = p.evidenceIds.filter(id => snapshot.evidence.some(e => e.id === id));
     if (!ids.length) {
       section.createEl('p',{cls:'ledger-report-reference-note',text:'本段未指定有效证据引用，可展开本地分析自行核对。'});
@@ -232,7 +248,7 @@ export function renderReportArticle(parent: HTMLElement, report: SpendingReport,
     const b = createButton(section, `查看依据 ${["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧"][i] ?? i + 1}`); b.addClass("ledger-report-citation");
     b.addEventListener("click", () => evidence(ids));
   });
-  if ((!report.paragraphs.length || report.paragraphs.some(p => !p.evidenceIds.some(id => snapshot.evidence.some(e => e.id === id)))) && snapshot.findings.length) {
+  if (snapshot && (!report.paragraphs.length || report.paragraphs.some(p => !p.evidenceIds.some(id => snapshot.evidence.some(e => e.id === id)))) && snapshot.findings.length) {
     const local = article.createEl("details", { cls: "ledger-report-quality" });
     local.createEl("summary", { text: "查看本地分析与证据" });
     local.createEl('p',{text:'以下是独立计算的本地发现，供自行核对，不自动作为未指定引用段落的证明。'});

@@ -3891,9 +3891,18 @@ function parseSpendingReport(text2, snapshot) {
   if (!paragraphs.length && !summary) return plain(text2);
   return { title, summary, paragraphs };
 }
+function validCachedSnapshot(value, fingerprint) {
+  if (!value || typeof value !== "object") return false;
+  const s = value;
+  const strings = (v) => Array.isArray(v) && v.every((x) => typeof x === "string");
+  const range = (v) => !!v && typeof v === "object" && typeof v.start === "string" && typeof v.end === "string";
+  const evidence = (e) => !!e && typeof e.id === "string" && typeof e.label === "string" && strings(e.recordIds) && strings(e.limits) && Array.isArray(e.ranges) && e.ranges.every((r) => r && typeof r.label === "string" && range(r.range)) && e.facts && typeof e.facts === "object" && Object.values(e.facts).every((f) => f && typeof f.label === "string" && Number.isFinite(f.value) && typeof f.unit === "string") && (!e.scope || typeof e.scope.label === "string") && (!e.readings || [e.readings.supporting, e.readings.counter].every((items) => Array.isArray(items) && items.every((r) => r && typeof r.text === "string" && strings(r.factKeys)))) && (!e.sections || Array.isArray(e.sections) && e.sections.every((g) => g && typeof g.label === "string" && strings(g.keys))) && (!e.categories || Array.isArray(e.categories) && e.categories.every((c) => c && typeof c.label === "string" && [c.current, c.previous, c.previousScaled].every(Number.isFinite) && (c.difference === void 0 || Number.isFinite(c.difference))));
+  return s.fingerprint === fingerprint && typeof s.label === "string" && typeof s.ruleVersion === "string" && [s.range, s.fullRange, s.effectiveRange, s.previousRange].every(range) && typeof s.comparable === "boolean" && s.preferences && typeof s.preferences.category === "string" && typeof s.preferences.keyword === "string" && typeof s.preferences.includeStarred === "boolean" && ["salary", "month", "custom"].includes(s.preferences.mode) && Array.isArray(s.observedDays) && s.observedDays.length === 2 && s.observedDays.every(Number.isFinite) && strings(s.undatedPaths) && Array.isArray(s.coverage) && s.coverage.every((c) => c && range(c.range) && strings(c.missingDates) && Array.isArray(c.problems) && c.problems.every((p) => p && typeof p.path === "string" && typeof p.date === "string" && typeof p.reason === "string")) && Array.isArray(s.findings) && s.findings.every((f) => f && typeof f.title === "string" && strings(f.evidenceIds)) && Array.isArray(s.evidence) && s.evidence.every(evidence) && (!s.overview || evidence(s.overview)) && Array.isArray(s.records) && s.records.every((r) => r && [r.id, r.path, r.date, r.category, r.note].every((x) => typeof x === "string") && Number.isFinite(r.cents) && Number.isFinite(r.line));
+}
 function normalizeReportCaches(value) {
   if (!Array.isArray(value)) return [];
   return value.filter((c) => !!c && typeof c.fingerprint === "string" && typeof c.configuration === "string" && typeof c.generatedAt === "string" && c.report && typeof c.report.title === "string" && typeof c.report.summary === "string" && Array.isArray(c.report.paragraphs) && c.report.paragraphs.every((p) => p && typeof p.heading === "string" && typeof p.text === "string" && Array.isArray(p.findingIds) && p.findingIds.every((id) => typeof id === "string") && Array.isArray(p.evidenceIds) && p.evidenceIds.every((id) => typeof id === "string"))).slice(-6).map((cache) => {
+    cache = { ...cache, snapshot: validCachedSnapshot(cache.snapshot, cache.fingerprint) ? cache.snapshot : void 0 };
     const report = cache.report, p = report.paragraphs[0];
     if (report.paragraphs.length === 1 && !report.summary && !p.heading && looksStructured(p.text)) {
       return { ...cache, report: parseSpendingReport(p.text, { label: report.title, findings: [] }) };
@@ -4883,17 +4892,19 @@ function createButton(parent, text2, active = false) {
 
 // src/report-ui.ts
 var ReportEvidenceModal = class extends import_obsidian6.Modal {
-  constructor(plugin, snapshot, evidenceIds, openRecord) {
+  constructor(plugin, snapshot, evidenceIds, openRecord, generatedAt) {
     super(plugin.app);
     this.snapshot = snapshot;
     this.evidenceIds = evidenceIds;
     this.openRecord = openRecord;
+    this.generatedAt = generatedAt;
   }
   onOpen() {
     var _a, _b, _c, _d, _e, _f, _g, _h, _i;
     this.setTitle("\u62A5\u544A\u8BC1\u636E");
     this.contentEl.empty();
     this.contentEl.addClass("ledger-report-evidence");
+    if (this.generatedAt) this.contentEl.createEl("p", { cls: "ledger-report-muted", text: `\u4EE5\u4E0B\u4E3A ${new Date(this.generatedAt).toLocaleString("zh-CN")} \u751F\u6210\u65F6\u7684\u4F9D\u636E\uFF1B\u6253\u5F00\u6765\u6E90\u6587\u4EF6\u4F1A\u663E\u793A\u6587\u4EF6\u5F53\u524D\u5185\u5BB9\u3002` });
     const entries = this.snapshot.evidence.filter((e) => this.evidenceIds.includes(e.id));
     for (const e of entries) {
       const section = this.contentEl.createDiv({ cls: "ledger-report-evidence-section" });
@@ -4997,8 +5008,6 @@ var ReportPanel = class {
     this.error = "";
     this.requestFingerprint = "";
     this.disposed = false;
-    this.lastFingerprint = "";
-    this.stale = false;
     this.snapshotKey = "";
   }
   get preferences() {
@@ -5052,21 +5061,19 @@ var ReportPanel = class {
     const snapshot = this.snapshot(), p = this.preferences;
     const configuration = reportConfiguration(this.config());
     if (this.loading && this.requestFingerprint !== `${snapshot.fingerprint}:${configuration}`) this.cancel();
-    const cache = findReportCache((_a = this.plugin.settings.reportCaches) != null ? _a : [], snapshot, this.config());
-    if (this.lastFingerprint && this.lastFingerprint !== snapshot.fingerprint) {
-      this.stale = true;
-      this.error = "";
-    }
-    this.lastFingerprint = snapshot.fingerprint;
+    const caches = (_a = this.plugin.settings.reportCaches) != null ? _a : [];
+    const cache = caches[caches.length - 1];
+    const changed = !!cache && (cache.fingerprint !== snapshot.fingerprint || cache.configuration !== configuration);
+    const reportSnapshot = cache ? (_b = cache.snapshot) != null ? _b : findReportCache(caches, snapshot, this.config()) === cache ? snapshot : void 0 : snapshot;
     const shell = parent.createDiv({ cls: "ledger-report" });
     const toolbar = shell.createDiv({ cls: "ledger-report-toolbar" });
-    const select = (label, value, options, changed) => {
+    const select = (label, value, options, changed2) => {
       const field = toolbar.createEl("label", { cls: "ledger-field" });
       field.createSpan({ text: label });
       const el2 = field.createEl("select");
       options.forEach(([v, text2]) => el2.createEl("option", { value: v, text: text2 }));
       el2.value = value;
-      el2.addEventListener("change", () => changed(el2.value));
+      el2.addEventListener("change", () => changed2(el2.value));
       return el2;
     };
     select("\u62A5\u544A\u671F\u95F4", p.mode, [["salary", "\u5DE5\u8D44\u5468\u671F"], ["month", "\u81EA\u7136\u6708"], ["custom", "\u81EA\u5B9A\u4E49"]], (mode) => this.change({ mode, offset: 0, anchorDate: void 0, ...mode === "custom" ? { customRange: { ...snapshot.range } } : {} }));
@@ -5105,13 +5112,19 @@ var ReportPanel = class {
     generate.disabled = this.loading || !configured;
     generate.addEventListener("click", () => void this.generate(snapshot));
     actions.createSpan({ cls: "ledger-report-muted", text: cache ? `AI \u62A5\u544A \xB7 ${new Date(cache.generatedAt).toLocaleString("zh-CN")}` : configured ? "\u672C\u5730\u5206\u6790 \xB7 \u70B9\u51FB\u751F\u6210 AI \u62A5\u544A" : "\u672C\u5730\u5206\u6790 \xB7 \u914D\u7F6E\u5E76\u542F\u7528 AI \u540E\u53EF\u751F\u6210\u5B8C\u6574\u62A5\u544A" });
-    if (!cache && (this.stale || ((_b = this.plugin.settings.reportCaches) != null ? _b : []).length)) shell.createEl("p", { cls: "ledger-report-status", text: "\u5F53\u524D\u4F9D\u636E\u6CA1\u6709\u6709\u6548 AI \u62A5\u544A\uFF0C\u751F\u6210\u540E\u5C06\u4F7F\u7528\u672C\u6B21\u6570\u636E\u3002" });
-    if (this.error) shell.createEl("p", { cls: "ledger-report-status", text: `${this.error}\u3002\u5F53\u524D\u4ECD\u53EF\u67E5\u770B\u672C\u5730\u5206\u6790\u3002` });
-    renderReportArticle(shell, (_c = cache == null ? void 0 : cache.report) != null ? _c : localSpendingReport(snapshot), snapshot, (ids) => new ReportEvidenceModal(this.plugin, snapshot, ids, this.openRecord).open());
+    if (changed) shell.createEl("p", { cls: "ledger-report-status", text: "\u6570\u636E\u3001\u7B5B\u9009\u6216 AI \u914D\u7F6E\u5DF2\u53D8\u5316\uFF0C\u4ECD\u663E\u793A\u4E0A\u6B21\u624B\u52A8\u751F\u6210\u7684\u62A5\u544A\u3002\u70B9\u51FB\u91CD\u65B0\u751F\u6210\u62A5\u544A\u540E\uFF0C\u624D\u4F1A\u4F7F\u7528\u5F53\u524D\u6570\u636E\u66FF\u6362\u3002" });
+    if (cache && reportSnapshot) shell.createEl("p", { cls: "ledger-report-muted", text: `\u62A5\u544A\u751F\u6210\u8303\u56F4\uFF1A${reportSnapshot.label} \xB7 ${reportSnapshot.range.start} \u81F3 ${reportSnapshot.range.end} \xB7 ${reportSnapshot.preferences.scope === "all" ? "\u5168\u90E8\u652F\u51FA" : "\u6D88\u8D39\u652F\u51FA"} \xB7 ${reportSnapshot.preferences.category || "\u5168\u90E8\u5206\u7C7B"}${reportSnapshot.preferences.keyword ? ` \xB7 \u5173\u952E\u8BCD ${reportSnapshot.preferences.keyword}` : ""}${!reportSnapshot.preferences.includeStarred ? " \xB7 \u6392\u9664\u661F\u6807" : ""}` });
+    if (cache && !reportSnapshot) shell.createEl("p", { cls: "ledger-report-status", text: "\u8FD9\u4EFD\u65E7\u62A5\u544A\u672A\u4FDD\u5B58\u751F\u6210\u65F6\u7684\u4F9D\u636E\uFF0C\u4FDD\u7559\u62A5\u544A\u6587\u5B57\u3002\u91CD\u65B0\u751F\u6210\u540E\u4F1A\u540C\u65F6\u4FDD\u5B58\u4F9D\u636E\u3002" });
+    if (this.error) shell.createEl("p", { cls: "ledger-report-status", text: `${this.error}\u3002${cache ? "\u4E0A\u6B21\u751F\u6210\u7684\u62A5\u544A\u4ECD\u4FDD\u7559\u3002" : "\u5F53\u524D\u4ECD\u53EF\u67E5\u770B\u672C\u5730\u5206\u6790\u3002"}` });
+    renderReportArticle(shell, (_c = cache == null ? void 0 : cache.report) != null ? _c : localSpendingReport(snapshot), reportSnapshot, (ids) => {
+      if (reportSnapshot) new ReportEvidenceModal(this.plugin, reportSnapshot, ids, this.openRecord, cache == null ? void 0 : cache.generatedAt).open();
+    });
+    const qualitySnapshot = reportSnapshot != null ? reportSnapshot : snapshot;
     const details = shell.createEl("details", { cls: "ledger-report-quality" });
     details.createEl("summary", { text: "\u6570\u636E\u8303\u56F4\u4E0E\u5206\u6790\u53E3\u5F84" });
+    details.createEl("p", { cls: "ledger-report-muted", text: cache && reportSnapshot ? "\u4EE5\u4E0B\u4E3A\u62A5\u544A\u751F\u6210\u65F6\u7684\u6570\u636E\u8303\u56F4\u4E0E\u5206\u6790\u53E3\u5F84\u3002" : "\u4EE5\u4E0B\u4E3A\u5F53\u524D\u7B5B\u9009\u7684\u6570\u636E\u8303\u56F4\u4E0E\u5206\u6790\u53E3\u5F84\u3002" });
     details.createEl("p", { text: "\u7F3A\u5931\u65E5\u671F\u89C6\u4E3A\u672A\u77E5\uFF1B\u660E\u786E\u96F6\u6D88\u8D39\u8D26\u672C\u89C6\u4E3A\u96F6\u3002\u7B14\u6570\u662F\u8BB0\u8D26\u8BB0\u5F55\uFF0C\u4E0D\u4EE3\u8868\u676F\u6570\u3001\u4EBA\u6570\u6216\u5546\u54C1\u5355\u4EF7\u3002\u6309\u65E5\u671F\u5206\u6790\uFF0C\u4E0D\u63A8\u65AD\u5C0F\u65F6\u7EA7\u8D2D\u4E70\u987A\u5E8F\u3002" });
-    for (const [i, c] of snapshot.coverage.entries()) {
+    for (const [i, c] of qualitySnapshot.coverage.entries()) {
       if (i >= 2 && c.complete) continue;
       details.createEl("p", { text: `${i === 0 ? "\u672C\u671F" : i === 1 ? "\u4E0A\u671F" : `\u5386\u53F2\u7B2C${i - 1}\u671F`} ${c.range.start} \u81F3 ${c.range.end}\uFF1A${c.complete ? "\u8D26\u672C\u6838\u9A8C\u901A\u8FC7" : `\u7F3A\u5C11 ${c.missingDates.length} \u5929\u8D26\u672C\uFF0C${c.problems.length} \u4E2A\u5F02\u5E38\u8D26\u672C`}` });
       if (c.missingDates.length) details.createEl("p", { cls: "ledger-report-muted", text: c.missingDates.join("\u3001") });
@@ -5120,7 +5133,7 @@ var ReportPanel = class {
         b.addEventListener("click", () => void this.plugin.app.workspace.openLinkText(problem.path, "", true));
       }
     }
-    for (const path of snapshot.undatedPaths) {
+    for (const path of qualitySnapshot.undatedPaths) {
       const b = createButton(details, `\u65E5\u671F\u65E0\u6CD5\u8BC6\u522B\uFF1A${path}`);
       b.addEventListener("click", () => void this.plugin.app.workspace.openLinkText(path, "", true));
     }
@@ -5128,6 +5141,7 @@ var ReportPanel = class {
   async generate(snapshot) {
     var _a;
     if (this.loading || this.disposed) return;
+    snapshot = JSON.parse(JSON.stringify(snapshot));
     const config = this.config(), configuration = reportConfiguration(config), controller = new AbortController();
     this.controller = controller;
     this.loading = true;
@@ -5137,9 +5151,15 @@ var ReportPanel = class {
     try {
       const report = await requestSpendingReport(config, snapshot, controller.signal, sharedRequestGate(`ai:${this.plugin.app.vault.getName()}`));
       if (this.disposed || controller.signal.aborted || this.snapshot().fingerprint !== snapshot.fingerprint || reportConfiguration(this.config()) !== configuration || !this.plugin.settings.financeAiEnabled) return;
-      this.plugin.settings.reportCaches = appendReportCache((_a = this.plugin.settings.reportCaches) != null ? _a : [], { fingerprint: snapshot.fingerprint, configuration, generatedAt: (/* @__PURE__ */ new Date()).toISOString(), report });
-      await this.plugin.saveSettings(false, false);
-      this.stale = false;
+      const previousCaches = (_a = this.plugin.settings.reportCaches) != null ? _a : [];
+      const nextCaches = appendReportCache(previousCaches, { fingerprint: snapshot.fingerprint, configuration, generatedAt: (/* @__PURE__ */ new Date()).toISOString(), report, snapshot });
+      this.plugin.settings.reportCaches = nextCaches;
+      try {
+        await this.plugin.saveSettings(false, false);
+      } catch (error) {
+        if (this.plugin.settings.reportCaches === nextCaches) this.plugin.settings.reportCaches = previousCaches;
+        throw error;
+      }
     } catch (error) {
       if (!controller.signal.aborted && !this.disposed) this.error = error instanceof Error ? error.message : "\u62A5\u544A\u751F\u6210\u5931\u8D25";
     } finally {
@@ -5154,7 +5174,7 @@ var ReportPanel = class {
 function renderReportArticle(parent, report, snapshot, evidence) {
   const article = parent.createEl("article", { cls: "ledger-report-article" });
   article.createEl("h2", { text: formatReportText(report.title).replace(/\*\*/g, "") });
-  article.createEl("p", { cls: "ledger-report-progress", text: reportProgress(snapshot) });
+  if (snapshot) article.createEl("p", { cls: "ledger-report-progress", text: reportProgress(snapshot) });
   const prose = (parent2, text2, cls = "") => {
     const emphasis = { remaining: 2 };
     for (const paragraph of text2.split(/\n\s*\n/).filter((t) => t.trim())) {
@@ -5168,17 +5188,18 @@ function renderReportArticle(parent, report, snapshot, evidence) {
     }
   };
   if (report.summary) prose(article, report.summary, "ledger-report-summary");
-  if (snapshot.overview) {
+  if (snapshot == null ? void 0 : snapshot.overview) {
     const b = createButton(article, "\u67E5\u770B\u672C\u671F\u6982\u51B5");
     b.addClass("ledger-report-overview-citation");
     b.addEventListener("click", () => evidence([snapshot.overview.id]));
   }
-  if (report.paragraphs.length) article.createEl("p", { cls: "ledger-report-reference-note", text: "\u5F15\u7528\u6309\u94AE\u6307\u5411\u672C\u5730\u4E8B\u5B9E\uFF1B\u62A5\u544A\u7684\u89E3\u91CA\u9700\u7ED3\u5408\u89C2\u5BDF\u4E0E\u76F8\u53CD\u7EBF\u7D22\u5224\u65AD\u3002" });
+  if (snapshot && report.paragraphs.length) article.createEl("p", { cls: "ledger-report-reference-note", text: "\u5F15\u7528\u6309\u94AE\u6307\u5411\u672C\u5730\u4E8B\u5B9E\uFF1B\u62A5\u544A\u7684\u89E3\u91CA\u9700\u7ED3\u5408\u89C2\u5BDF\u4E0E\u76F8\u53CD\u7EBF\u7D22\u5224\u65AD\u3002" });
   report.paragraphs.forEach((p, i) => {
     var _a;
     const section = article.createEl("section");
     if (p.heading) section.createEl("h3", { text: formatReportText(p.heading).replace(/\*\*/g, "") });
     prose(section, p.text);
+    if (!snapshot) return;
     const ids = p.evidenceIds.filter((id) => snapshot.evidence.some((e) => e.id === id));
     if (!ids.length) {
       section.createEl("p", { cls: "ledger-report-reference-note", text: "\u672C\u6BB5\u672A\u6307\u5B9A\u6709\u6548\u8BC1\u636E\u5F15\u7528\uFF0C\u53EF\u5C55\u5F00\u672C\u5730\u5206\u6790\u81EA\u884C\u6838\u5BF9\u3002" });
@@ -5194,7 +5215,7 @@ function renderReportArticle(parent, report, snapshot, evidence) {
     b.addClass("ledger-report-citation");
     b.addEventListener("click", () => evidence(ids));
   });
-  if ((!report.paragraphs.length || report.paragraphs.some((p) => !p.evidenceIds.some((id) => snapshot.evidence.some((e) => e.id === id)))) && snapshot.findings.length) {
+  if (snapshot && (!report.paragraphs.length || report.paragraphs.some((p) => !p.evidenceIds.some((id) => snapshot.evidence.some((e) => e.id === id)))) && snapshot.findings.length) {
     const local = article.createEl("details", { cls: "ledger-report-quality" });
     local.createEl("summary", { text: "\u67E5\u770B\u672C\u5730\u5206\u6790\u4E0E\u8BC1\u636E" });
     local.createEl("p", { text: "\u4EE5\u4E0B\u662F\u72EC\u7ACB\u8BA1\u7B97\u7684\u672C\u5730\u53D1\u73B0\uFF0C\u4F9B\u81EA\u884C\u6838\u5BF9\uFF0C\u4E0D\u81EA\u52A8\u4F5C\u4E3A\u672A\u6307\u5B9A\u5F15\u7528\u6BB5\u843D\u7684\u8BC1\u660E\u3002" });

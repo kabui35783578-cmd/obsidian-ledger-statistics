@@ -45,7 +45,11 @@ export interface ReportSnapshot {
 export interface ReportAnalysisOptions { thresholds?: Partial<ReportThresholds>; objectRules?: string }
 export interface ReportParagraph { heading: string; text: string; findingIds: string[]; evidenceIds: string[] }
 export interface SpendingReport { title: string; summary: string; paragraphs: ReportParagraph[] }
-export interface ReportCache { fingerprint: string; configuration: string; generatedAt: string; report: SpendingReport }
+export interface ReportCache {
+  fingerprint: string; configuration: string; generatedAt: string; report: SpendingReport;
+  /** Evidence and records as they were at manual generation time. Older caches lack this. */
+  snapshot?: ReportSnapshot;
+}
 
 export function defaultReportPreferences(now = new Date()): ReportPreferences {
   return { mode: "salary", offset: 0, customRange: { start: isoFromDate(now), end: isoFromDate(now) }, scope: "consumption", category: "", keyword: "", includeStarred: true };

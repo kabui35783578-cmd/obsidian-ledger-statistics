@@ -383,6 +383,85 @@ test('panel opens with local report and no request; cancelled or changed data ca
   await task2; assert.equal(plugin.settings.reportCaches.length, 0);
   panel.dispose(); delete global.__ledgerTestRequest;
 });
+
+test('manual report persists with frozen evidence across edits, filters, rollover, configuration and reopen', async () => {
+  const files = coffeeData(); let current = snapshot(files), calls = 0, saved;
+  const plugin = { settings: { financeAiEndpoint: 'https://example.test/v1', financeAiModel: 'mock', financeAiApiKey: '', financeAiEnabled: true, reportCaches: [] },
+    repository: { files: new Map(files.map(f => [f.path, f])) }, app: { vault: { getName: () => 'cached-report-test' } }, saveSettings: async () => { saved = JSON.stringify(plugin.settings.reportCaches); } };
+  global.__ledgerTestRequest = async () => { calls++; return { status: 200, json: { choices: [{ message: { content: JSON.stringify({ ...goodResponse(current), title: `手动报告${calls}` }) } }] } }; };
+  const panel = new ReportPanel(plugin, () => {}, async () => {}); panel.snapshot = () => current;
+  try {
+    panel.render(new Element()); assert.equal(calls, 0);
+    await panel.generate(current); assert.equal(calls, 1);
+    const frozen = JSON.parse(saved)[0].snapshot;
+    assert.equal(frozen.fingerprint, current.fingerprint);
+    assert.deepEqual(frozen.evidence, current.evidence);
+    // In-place mutations must not affect the persisted generation snapshot.
+    current.records[0].cents += 500;
+    assert.deepEqual(plugin.settings.reportCaches[0].snapshot, frozen);
+    const edited = structuredClone(files); edited[edited.length - 1].records.push({ ...frozen.records[0], id: 'new-record', cents: 100000 });
+    const variants = [snapshot(edited), snapshot(files, { ...prefs, category: '餐饮' }),
+      snapshot(files, R.defaultReportPreferences(new Date(2026, 9, 15)), new Date(2026, 9, 15)),
+      snapshot(files, { ...prefs, keyword: '咖啡', includeStarred: false })];
+    plugin.settings.financeAiModel = 'changed-model';
+    for (current of variants) {
+      const root = new Element(); panel.render(root);
+      assert.ok(root.all().some(e => e.textContent === '手动报告1'));
+      assert.ok(root.all().some(e => e.textContent.includes('仍显示上次手动生成')));
+      assert.ok(root.all().some(e => e.textContent === '重新生成报告'));
+      assert.equal(calls, 1);
+    }
+    plugin.settings.reportCaches = AI.normalizeReportCaches(JSON.parse(saved));
+    const reopened = new ReportPanel(plugin, () => {}, async () => {}); reopened.snapshot = () => current;
+    const root = new Element(); reopened.render(root); assert.equal(calls, 1);
+    assert.ok(root.all().some(e => e.textContent === '手动报告1'));
+    let opened;
+    const previousOpen = ReportEvidenceModal.prototype.open;
+    ReportEvidenceModal.prototype.open = function () { opened = this.snapshot; };
+    try { root.all().find(e => e.classes.has('ledger-report-citation')).listeners.click(); }
+    finally { if (previousOpen) ReportEvidenceModal.prototype.open = previousOpen; else delete ReportEvidenceModal.prototype.open; }
+    assert.deepEqual(opened, frozen);
+    await reopened.generate(current); assert.equal(calls, 2);
+    const refreshed = new Element(); reopened.render(refreshed);
+    assert.ok(refreshed.all().some(e => e.textContent === '手动报告2'));
+    assert.ok(!refreshed.all().some(e => e.textContent.includes('仍显示上次手动生成')));
+    assert.deepEqual(JSON.parse(saved).at(-1).snapshot, current);
+    reopened.dispose();
+  } finally { panel.dispose(); delete global.__ledgerTestRequest; }
+});
+
+test('failed AI request or disk save preserves last report and its persisted evidence', async () => {
+  const current = snapshot(coffeeData()), config = { endpoint: 'https://example.test/v1', model: 'mock', apiKey: '' };
+  const cache = { fingerprint: current.fingerprint, configuration: AI.reportConfiguration(config), generatedAt: new Date().toISOString(), report: { ...R.localSpendingReport(current), title: '保留的报告' }, snapshot: structuredClone(current) };
+  const original = JSON.stringify([cache]);
+  const plugin = { settings: { financeAiEndpoint: config.endpoint, financeAiModel: config.model, financeAiApiKey: '', financeAiEnabled: true, reportCaches: [cache] }, repository: { files: new Map() }, app: { vault: { getName: () => 'report-failure-test' } }, saveSettings: async () => { throw new Error('保存失败'); } };
+  const panel = new ReportPanel(plugin, () => {}, async () => {}); panel.snapshot = () => current;
+  try {
+    global.__ledgerTestRequest = async () => { throw new Error('请求失败'); };
+    await panel.generate(current); assert.equal(JSON.stringify(plugin.settings.reportCaches), original);
+    global.__ledgerTestRequest = async () => ({ status: 200, json: { choices: [{ message: { content: JSON.stringify(goodResponse(current)) } }] } });
+    await panel.generate(current); assert.equal(JSON.stringify(plugin.settings.reportCaches), original);
+    const root = new Element(); panel.render(root);
+    assert.ok(root.all().some(e => e.textContent === '保留的报告'));
+    assert.ok(root.all().some(e => e.textContent.includes('上次生成的报告仍保留')));
+  } finally { panel.dispose(); delete global.__ledgerTestRequest; }
+});
+
+test('latest legacy cache remains visible without binding stale prose to current evidence', () => {
+  const current = snapshot(coffeeData()), config = { endpoint: 'https://example.test/v1', model: 'mock', apiKey: '' };
+  const older = { fingerprint: current.fingerprint, configuration: AI.reportConfiguration(config), generatedAt: '2026-10-01T00:00:00Z', report: { ...R.localSpendingReport(current), title: '较早但匹配的报告' } };
+  const latest = { ...older, fingerprint: 'old-data', generatedAt: '2026-10-02T00:00:00Z', report: { ...older.report, title: '最近手动报告' }, snapshot: { fingerprint: 'old-data' } };
+  const caches = AI.normalizeReportCaches(JSON.parse(JSON.stringify([older, latest])));
+  assert.equal(caches[1].snapshot, undefined);
+  const plugin = { settings: { financeAiEndpoint: config.endpoint, financeAiModel: config.model, financeAiApiKey: '', financeAiEnabled: false, reportCaches: caches }, repository: { files: new Map() } };
+  const panel = new ReportPanel(plugin, () => {}, async () => {}); panel.snapshot = () => current;
+  const root = new Element(); panel.render(root);
+  assert.ok(root.all().some(e => e.textContent === '最近手动报告'));
+  assert.ok(!root.all().some(e => e.textContent === '较早但匹配的报告'));
+  assert.ok(root.all().some(e => e.textContent.includes('未保存生成时的依据')));
+  assert.ok(!root.all().some(e => e.classes.has('ledger-report-citation') || e.classes.has('ledger-report-overview-citation') || e.classes.has('ledger-report-progress')));
+  panel.dispose();
+});
 test('evidence modal exposes facts, deduplicates records and opens source through callback', () => {
   const s = snapshot(coffeeData()); const modal = Object.create(ReportEvidenceModal.prototype);
   modal.snapshot = s; modal.evidenceIds = s.findings[0].evidenceIds; modal.contentEl = new Element(); modal.setTitle = t => { modal.title = t; };

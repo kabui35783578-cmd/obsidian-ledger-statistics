@@ -106,12 +106,36 @@ export function parseSpendingReport(text: string, snapshot: Pick<ReportSnapshot,
   if (!paragraphs.length && !summary) return plain(text);
   return { title, summary, paragraphs };
 }
+function validCachedSnapshot(value: unknown, fingerprint: string): value is ReportSnapshot {
+  if (!value || typeof value !== "object") return false;
+  const s = value as ReportSnapshot;
+  const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every(x => typeof x === "string");
+  const range = (v: unknown) => !!v && typeof v === "object" && typeof (v as { start: unknown }).start === "string" && typeof (v as { end: unknown }).end === "string";
+  const evidence = (e: ReportSnapshot["evidence"][number]) => !!e && typeof e.id === "string" && typeof e.label === "string"
+    && strings(e.recordIds) && strings(e.limits) && Array.isArray(e.ranges) && e.ranges.every(r => r && typeof r.label === "string" && range(r.range))
+    && e.facts && typeof e.facts === "object" && Object.values(e.facts).every(f => f && typeof f.label === "string" && Number.isFinite(f.value) && typeof f.unit === "string")
+    && (!e.scope || typeof e.scope.label === "string")
+    && (!e.readings || [e.readings.supporting, e.readings.counter].every(items => Array.isArray(items) && items.every(r => r && typeof r.text === "string" && strings(r.factKeys))))
+    && (!e.sections || Array.isArray(e.sections) && e.sections.every(g => g && typeof g.label === "string" && strings(g.keys)))
+    && (!e.categories || Array.isArray(e.categories) && e.categories.every(c => c && typeof c.label === "string" && [c.current, c.previous, c.previousScaled].every(Number.isFinite) && (c.difference === undefined || Number.isFinite(c.difference))));
+  return s.fingerprint === fingerprint && typeof s.label === "string" && typeof s.ruleVersion === "string"
+    && [s.range, s.fullRange, s.effectiveRange, s.previousRange].every(range)
+    && typeof s.comparable === "boolean" && s.preferences && typeof s.preferences.category === "string" && typeof s.preferences.keyword === "string"
+    && typeof s.preferences.includeStarred === "boolean" && ["salary", "month", "custom"].includes(s.preferences.mode)
+    && Array.isArray(s.observedDays) && s.observedDays.length === 2 && s.observedDays.every(Number.isFinite)
+    && strings(s.undatedPaths) && Array.isArray(s.coverage) && s.coverage.every(c => c && range(c.range) && strings(c.missingDates) && Array.isArray(c.problems) && c.problems.every(p => p && typeof p.path === "string" && typeof p.date === "string" && typeof p.reason === "string"))
+    && Array.isArray(s.findings) && s.findings.every(f => f && typeof f.title === "string" && strings(f.evidenceIds))
+    && Array.isArray(s.evidence) && s.evidence.every(evidence) && (!s.overview || evidence(s.overview))
+    && Array.isArray(s.records) && s.records.every(r => r && [r.id, r.path, r.date, r.category, r.note].every(x => typeof x === "string") && Number.isFinite(r.cents) && Number.isFinite(r.line));
+}
 export function normalizeReportCaches(value: unknown): ReportCache[] {
   if (!Array.isArray(value)) return [];
   return value.filter((c): c is ReportCache => !!c && typeof c.fingerprint === "string" && typeof c.configuration === "string" && typeof c.generatedAt === "string"
     && c.report && typeof c.report.title === "string" && typeof c.report.summary === "string" && Array.isArray(c.report.paragraphs)
     && c.report.paragraphs.every((p: Record<string, unknown>) => p && typeof p.heading === "string" && typeof p.text === "string" && Array.isArray(p.findingIds) && p.findingIds.every(id => typeof id === "string") && Array.isArray(p.evidenceIds) && p.evidenceIds.every(id => typeof id === "string")))
     .slice(-6).map(cache => {
+      // Preserve legacy prose, but never bind it to malformed or unrelated evidence.
+      cache = { ...cache, snapshot: validCachedSnapshot(cache.snapshot, cache.fingerprint) ? cache.snapshot : undefined };
       const report = cache.report, p = report.paragraphs[0];
       // Versions through 2.8.2 cached malformed JSON as one raw-text paragraph.
       // Repair that presentation locally without losing cache identity or calling AI.
