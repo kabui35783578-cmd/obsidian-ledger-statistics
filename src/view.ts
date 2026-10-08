@@ -12,6 +12,7 @@ import { ReportPanel } from "./report-ui";
 import { buildCategoryAnalysis, categoryPreviousRange } from "./category-analysis";
 import { renderCategoryAnalysis, showCategoryRecords } from "./category-ui";
 import { disposeCategoryCharts } from "./category-charts";
+import { AssetPanel } from "./asset-ui";
 import {
   AccountingScope,
   CategorySummary,
@@ -45,7 +46,7 @@ export const LEDGER_VIEW_TYPE = "ledger-statistics-view";
 
 const VIEW_NAMES: Array<[LedgerViewId, string]> = [
   ["overview", "总览"], ["category", "分类"], ["trend", "趋势"],
-  ["calendar", "日历"], ["details", "明细"], ["compare", "对比"], ["report", "支出报告"]
+  ["calendar", "日历"], ["details", "明细"], ["compare", "对比"], ["report", "支出报告"], ["assets", "资产"]
 ];
 
 const AUTO_ADVANCE_SWIPE_DISTANCE = 100;
@@ -144,6 +145,7 @@ export class LedgerStatisticsView extends ItemView {
   private settleTimer: number | null = null;
   private filterResizeObserver: ResizeObserver | null = null;
   private reportPanel: ReportPanel | null = null;
+  private assetPanel: AssetPanel | null = null;
 
   constructor(leaf: WorkspaceLeaf, private plugin: LedgerStatisticsPlugin) {
     super(leaf);
@@ -166,6 +168,13 @@ export class LedgerStatisticsView extends ItemView {
   getDisplayText(): string { return "记账统计"; }
   getIcon(): string { return "chart-pie"; }
 
+  showAssets(): void {
+    this.activeView = "assets";
+    this.cancelFinanceRequest();
+    this.render();
+    void this.plugin.refreshAssetQuotes().catch(() => {});
+  }
+
   async onOpen(): Promise<void> {
     this.closed = false;
     this.containerEl.addClass("ledger-statistics-view");
@@ -186,6 +195,7 @@ export class LedgerStatisticsView extends ItemView {
     disposeCategoryCharts(this.contentEl);
     this.reportPanel?.dispose();
     this.reportPanel = null;
+    this.assetPanel = null;
     this.cancelFinanceRequest();
     this.filterResizeObserver?.disconnect();
     this.filterResizeObserver = null;
@@ -232,17 +242,20 @@ export class LedgerStatisticsView extends ItemView {
     this.renderHeader(root);
     if (this.activeView === "overview" && files.length > 0 && !this.filter.categories.length) this.renderCoreCards(root);
     if (this.activeView !== "report" && this.filter.categories.length) this.cancelFinanceRequest();
-    if (this.activeView !== "report") this.renderToolbar(root);
+    if (this.activeView !== "report" && this.activeView !== "assets") this.renderToolbar(root);
     this.renderTabs(root);
-    if (this.activeView !== "report") this.renderDrillBack(root);
+    if (this.activeView !== "report" && this.activeView !== "assets") this.renderDrillBack(root);
     const content = root.createDiv({ cls: "ledger-content" });
     const orphanCount = unmatchedStarIds(this.plugin.settings.starredRecordIds, flattenRecords(files)).length;
-    if (orphanCount) {
+    if (orphanCount && this.activeView !== "assets") {
       const warning = content.createDiv({ cls: "ledger-star-warning" });
       warning.createSpan({ text: `${orphanCount} 个星标无法匹配，可能影响星标筛选与预算口径。` });
       createButton(warning, "核对星标").addEventListener("click", () => new StarRepairModal(this.plugin).open());
     }
-    if (files.length === 0) {
+    if (this.activeView === "assets") {
+      this.assetPanel ??= new AssetPanel(this.plugin);
+      this.assetPanel.render(content);
+    } else if (files.length === 0) {
       renderEmpty(content, `“${this.plugin.settings.ledgerFolder}”中没有找到 Markdown 记账文件`);
     } else {
       if (this.activeView === "overview") this.renderOverview(content);
@@ -256,7 +269,7 @@ export class LedgerStatisticsView extends ItemView {
         this.reportPanel.render(content);
       }
     }
-    this.renderDiagnostics(root);
+    if (this.activeView !== "assets") this.renderDiagnostics(root);
     const next = VIEW_NAMES[VIEW_NAMES.findIndex(([id]) => id === this.activeView) + 1];
     if (Platform.isMobile && next) {
       this.pullHint = root.createDiv({ cls: "ledger-pull-hint" });
@@ -268,7 +281,8 @@ export class LedgerStatisticsView extends ItemView {
     const header = root.createDiv({ cls: "ledger-header" });
     const title = header.createDiv();
     title.createEl("h2", { text: "记账统计" });
-    title.createDiv({ cls: "ledger-subtitle", text: "本地只读 · 正文逐笔记录为统计来源" });
+    title.createDiv({ cls: "ledger-subtitle", text: this.activeView === "assets" ? "资产总览 · 持仓行情自动更新" : "本地只读 · 正文逐笔记录为统计来源" });
+    if (this.activeView === "assets") return;
     const selectedScope = this.activeView === "report" ? this.plugin.settings.reportPreferences?.scope ?? "consumption" : this.filter.scope;
     const scope = header.createDiv({ cls: `ledger-scope-badge is-${selectedScope}` });
     scope.setText(selectedScope === "consumption" ? "筛选口径：消费支出" : "筛选口径：全部支出");
@@ -383,11 +397,20 @@ export class LedgerStatisticsView extends ItemView {
     const nav = root.createDiv({ cls: "ledger-tabs", attr: { role: "tablist", "aria-label": "统计视图" } });
     for (const [id, name] of VIEW_NAMES) {
       const button = createButton(nav, name, id === this.activeView);
+      if (id === "report") {
+        button.empty();
+        const label = button.createSpan({ cls: "ledger-report-tab-label" });
+        label.createSpan({ text: "支出" }); label.createSpan({ text: "报告" });
+      }
       button.setAttribute("role", "tab");
       button.setAttribute("aria-selected", String(id === this.activeView));
       button.addEventListener("click", () => {
         if (this.activeView === id) return;
         this.activeView = id;
+        if (id === "assets") {
+          this.cancelFinanceRequest();
+          void this.plugin.refreshAssetQuotes().catch(() => {});
+        }
         this.resetAutoAdvanceArm();
         this.render();
         this.contentEl.scrollTop = 0;

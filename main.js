@@ -14,7 +14,7 @@ var __copyProps = (to, from, except, desc) => {
   }
   return to;
 };
-var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+var __toCommonJS = (mod2) => __copyProps(__defProp({}, "__esModule", { value: true }), mod2);
 
 // src/main.ts
 var main_exports = {};
@@ -22,7 +22,7 @@ __export(main_exports, {
   default: () => LedgerStatisticsPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian9 = require("obsidian");
+var import_obsidian10 = require("obsidian");
 
 // src/fixed-expenses.ts
 function assessFixedExpenses(expenses, records, current, previousRemaining) {
@@ -39,14 +39,14 @@ function assessFixedExpenses(expenses, records, current, previousRemaining) {
   const items = active.map((item) => {
     var _a2, _b;
     const issues = [];
-    const resolve = (range, label, historical) => {
+    const resolve = (range, label2, historical) => {
       var _a3;
       const id = item.payments[range.start];
       if (id === "none") return { status: "none" };
       if (id === "unpaid" && !historical) return { status: "unpaid" };
       const record = id ? byId.get(id) : void 0;
       if (!record || record.date < range.start || record.date > range.end || ((_a3 = claimed.get(id)) != null ? _a3 : 0) > 1) {
-        issues.push(`${label}\uFF1A${id && id !== "unpaid" ? "\u5173\u8054\u8BB0\u5F55\u5DF2\u5931\u6548\u3001\u8D85\u51FA\u5468\u671F\u6216\u88AB\u91CD\u590D\u4F7F\u7528" : "\u652F\u4ED8\u72B6\u6001\u5F85\u786E\u8BA4"}`);
+        issues.push(`${label2}\uFF1A${id && id !== "unpaid" ? "\u5173\u8054\u8BB0\u5F55\u5DF2\u5931\u6548\u3001\u8D85\u51FA\u5468\u671F\u6216\u88AB\u91CD\u590D\u4F7F\u7528" : "\u652F\u4ED8\u72B6\u6001\u5F85\u786E\u8BA4"}`);
         return { status: "unconfirmed" };
       }
       return { status: "paid", record };
@@ -63,7 +63,7 @@ function assessFixedExpenses(expenses, records, current, previousRemaining) {
     items,
     available: items.every((item) => item.issues.length === 0),
     unpaidCents,
-    historicalDeductionCents: deductions.length ? Math.round(deductions.reduce((sum2, n) => sum2 + n, 0) / deductions.length) : 0
+    historicalDeductionCents: deductions.length ? Math.round(deductions.reduce((sum3, n) => sum3 + n, 0) / deductions.length) : 0
   };
 }
 
@@ -102,9 +102,9 @@ function parseMoneyToCents(value) {
   return Number.isSafeInteger(cents) ? cents : null;
 }
 function formatCents(cents) {
-  const sign = cents < 0 ? "-" : "";
+  const sign2 = cents < 0 ? "-" : "";
   const absolute = Math.abs(cents);
-  return `${sign}\xA5${Math.floor(absolute / 100).toLocaleString("zh-CN")}.${String(absolute % 100).padStart(2, "0")}`;
+  return `${sign2}\xA5${Math.floor(absolute / 100).toLocaleString("zh-CN")}.${String(absolute % 100).padStart(2, "0")}`;
 }
 function barkPushUrl(baseUrl, title, body) {
   try {
@@ -232,7 +232,7 @@ function parseLedgerFile(path, raw) {
   }
   if (!inRecords) diagnostics.push({ kind: "parse", path, reason: "\u672A\u627E\u5230\u201C\u4ECA\u65E5\u6D88\u8D39\u8BB0\u5F55\u201D\u6807\u9898" });
   if (frontmatterTotalCents !== null) {
-    const parsedTotal = records.reduce((sum2, record) => sum2 + record.cents, 0);
+    const parsedTotal = records.reduce((sum3, record) => sum3 + record.cents, 0);
     if (parsedTotal !== frontmatterTotalCents) {
       diagnostics.push({
         kind: "total",
@@ -305,7 +305,7 @@ function summarize(files, records, range) {
   for (const file of files) {
     if (file.date && file.date >= range.start && file.date <= range.end) recordedDates.add(file.date);
   }
-  const cents = records.reduce((sum2, record) => sum2 + record.cents, 0);
+  const cents = records.reduce((sum3, record) => sum3 + record.cents, 0);
   const recordedDays = recordedDates.size;
   let maxRecord = null;
   for (const record of records) if (!maxRecord || record.cents > maxRecord.cents) maxRecord = record;
@@ -332,7 +332,7 @@ function budgetProgress(spentCents, budgetCents) {
 function categorySummaries(records, sortBy = "amount") {
   var _a;
   const map = /* @__PURE__ */ new Map();
-  const total3 = records.reduce((sum2, record) => sum2 + record.cents, 0);
+  const total3 = records.reduce((sum3, record) => sum3 + record.cents, 0);
   for (const record of records) {
     const current = (_a = map.get(record.category)) != null ? _a : { cents: 0, count: 0 };
     current.cents += record.cents;
@@ -402,7 +402,7 @@ function recordsInRange(records, range) {
   return records.filter((record) => record.date >= range.start && record.date <= range.end);
 }
 function average(values) {
-  return values.length === 0 ? 0 : Math.round(values.reduce((sum2, value) => sum2 + value, 0) / values.length);
+  return values.length === 0 ? 0 : Math.round(values.reduce((sum3, value) => sum3 + value, 0) / values.length);
 }
 function median(values) {
   if (values.length === 0) return 0;
@@ -482,7 +482,7 @@ function buildFinanceAdvisorSnapshot(records, date, salaryCents, excludedCategor
   const elapsedDays = daysInclusive(currentRange);
   const totalDays = daysInclusive(fullCurrentRange);
   const currentAll = recordsInRange(records, currentRange);
-  const currentSpentCents = currentAll.reduce((sum2, record) => sum2 + record.cents, 0);
+  const currentSpentCents = currentAll.reduce((sum3, record) => sum3 + record.cents, 0);
   const remainingSalaryCents = salaryCents - currentSpentCents;
   const recordedDates = new Set(completeDates);
   const usableRanges = previousRanges.filter((range) => {
@@ -493,11 +493,11 @@ function buildFinanceAdvisorSnapshot(records, date, salaryCents, excludedCategor
   });
   const historyCycleCount = usableRanges.length;
   const previousFull = usableRanges.map((range) => recordsInRange(records, range));
-  const historicalAverageSpentCents = average(previousFull.map((items) => items.reduce((sum2, record) => sum2 + record.cents, 0)));
+  const historicalAverageSpentCents = average(previousFull.map((items) => items.reduce((sum3, record) => sum3 + record.cents, 0)));
   const currentCoverage = Array.from({ length: elapsedDays }, (_, index) => addDays(currentRange.start, index)).every((day) => recordedDates.has(day));
   const fixed = assessFixedExpenses(fixedExpenses, records, currentRange, usableRanges.map((full) => ({ full, remainingStart: addDays(full.start, elapsedDays) })));
   const forecastAvailable = historyCycleCount > 0 && currentCoverage && fixed.available;
-  const forecastCents = currentSpentCents + (elapsedDays >= totalDays ? 0 : average(usableRanges.map((range) => recordsInRange(records, { start: addDays(range.start, elapsedDays), end: range.end }).reduce((sum2, record) => sum2 + record.cents, 0))) - fixed.historicalDeductionCents) + fixed.unpaidCents;
+  const forecastCents = currentSpentCents + (elapsedDays >= totalDays ? 0 : average(usableRanges.map((range) => recordsInRange(records, { start: addDays(range.start, elapsedDays), end: range.end }).reduce((sum3, record) => sum3 + record.cents, 0))) - fixed.historicalDeductionCents) + fixed.unpaidCents;
   const forecastConfidence = historyCycleCount < 2 || elapsedDays < 7 ? "low" : "normal";
   const forecastMethod = fixed.items.length ? "\u6309\u5DF2\u82B1\u91D1\u989D\u52A0\u5386\u53F2\u5269\u4F59\u9636\u6BB5\u652F\u51FA\uFF0C\u5E76\u6309\u5DF2\u786E\u8BA4\u56FA\u5B9A\u652F\u51FA\u8C03\u6574" : "\u6309\u5DF2\u82B1\u91D1\u989D\u52A0\u5386\u53F2\u5269\u4F59\u9636\u6BB5\u652F\u51FA";
   const excluded = new Set(excludedCategories);
@@ -516,8 +516,8 @@ function buildFinanceAdvisorSnapshot(records, date, salaryCents, excludedCategor
     ...historicalProgressTotals.keys(),
     ...previousFullTotals.flatMap((totals) => [...totals.keys()])
   ]);
-  const currentConsumptionTotal = currentConsumption.reduce((sum2, record) => sum2 + record.cents, 0);
-  const baselineProgressTotal = average(previousProgress.map((items) => items.reduce((sum2, record) => sum2 + record.cents, 0)));
+  const currentConsumptionTotal = currentConsumption.reduce((sum3, record) => sum3 + record.cents, 0);
+  const baselineProgressTotal = average(previousProgress.map((items) => items.reduce((sum3, record) => sum3 + record.cents, 0)));
   const snapshots = [...categories].map((category) => {
     var _a2, _b2;
     const current = (_a2 = currentTotals.get(category)) != null ? _a2 : { cents: 0, count: 0 };
@@ -766,7 +766,7 @@ var BudgetMonitor = class {
       categories: settings.budgetCategory ? [settings.budgetCategory] : [],
       keyword: ""
     }), settings.includeStarredInBudget, settings.starredRecordIds);
-    const spent = records.reduce((sum2, record) => sum2 + record.cents, 0);
+    const spent = records.reduce((sum3, record) => sum3 + record.cents, 0);
     if (spent < settings.dailyBudgetCents) return;
     const over = spent - settings.dailyBudgetCents;
     const title = over > 0 ? "\u4ECA\u65E5\u9884\u7B97\u5DF2\u8D85\u652F" : "\u4ECA\u65E5\u9884\u7B97\u5DF2\u7528\u5C3D";
@@ -972,7 +972,7 @@ function afterCalibration(record, calibratedAt) {
   return hour * 60 + minute >= date.getHours() * 60 + date.getMinutes();
 }
 function postAnchorSpent(records, cycleStart, calibratedAt, today) {
-  return records.reduce((sum2, record) => sum2 + (record.date >= cycleStart && record.date <= today && afterCalibration(record, calibratedAt) ? record.cents : 0), 0);
+  return records.reduce((sum3, record) => sum3 + (record.date >= cycleStart && record.date <= today && afterCalibration(record, calibratedAt) ? record.cents : 0), 0);
 }
 function createBalanceCalibration(records, now, balanceCents) {
   const cycle = salaryDayRange(now);
@@ -986,7 +986,7 @@ function createBalanceCalibration(records, now, balanceCents) {
 }
 function balanceStatus(records, now, salaryCents, calibration) {
   const cycle = salaryDayRange(now);
-  const recordedSpentCents = records.reduce((sum2, record) => sum2 + (record.date >= cycle.start && record.date <= cycle.end ? record.cents : 0), 0);
+  const recordedSpentCents = records.reduce((sum3, record) => sum3 + (record.date >= cycle.start && record.date <= cycle.end ? record.cents : 0), 0);
   const active = isBalanceCalibration(calibration) && calibration.cycleStart === cycle.start && Date.parse(calibration.calibratedAt) <= now.getTime();
   const remainingCents = active ? calibration.balanceCents - (postAnchorSpent(records, cycle.start, calibration.calibratedAt, cycle.end) - calibration.postAnchorSpentCents) : salaryCents - recordedSpentCents;
   return {
@@ -1909,7 +1909,7 @@ function parseFinanceAdvice(raw, snapshot) {
 function financeAiEvidence(snapshot) {
   const facts = [];
   const byText = /* @__PURE__ */ new Map();
-  const add = (text2, eventId, category) => {
+  const add2 = (text2, eventId, category) => {
     var _a;
     let evidence = byText.get(text2);
     if (!evidence) {
@@ -1922,23 +1922,23 @@ function financeAiEvidence(snapshot) {
   };
   if (snapshot.weekly) {
     const w = snapshot.weekly, eventId = `weekly:${w.range.start}:${w.range.end}`;
-    add(`\u8FD1 7 \u5929 ${w.range.start} \u2014 ${w.range.end}\uFF1A\u5DF2\u8BB0\u5F55 ${formatCents(w.spentCents)}\uFF0C${w.count} \u7B14\uFF1B\u6709\u6548\u8BB0\u8D26 ${w.coverage.recordedDays}/7 \u5929\u3002`, eventId);
-    add(`\u524D 7 \u5929 ${w.previousRange.start} \u2014 ${w.previousRange.end}\uFF1A\u5DF2\u8BB0\u5F55 ${formatCents(w.previousSpentCents)}\uFF0C\u6709\u6548\u8BB0\u8D26 ${w.previousCoverage.recordedDays}/7 \u5929\u3002${w.changeCents === null ? "\u8BB0\u5F55\u4E0D\u5B8C\u6574\uFF0C\u4E0D\u63D0\u4F9B\u589E\u957F\u6216\u4E0B\u964D\u7ED3\u8BBA\u3002" : `\u53D8\u5316 ${formatCents(w.changeCents)}${w.changeRatio !== null ? `\uFF08${(w.changeRatio * 100).toFixed(1)}%\uFF09` : "\uFF0C\u524D\u671F\u4E3A\u96F6\uFF0C\u4E0D\u8BA1\u7B97\u767E\u5206\u6BD4"}\u3002`}`, eventId);
-    add(`\u5386\u53F2\u53C2\u8003\u53D6\u6B64\u524D 4 \u4E2A\u8FDE\u7EED\u4E03\u5929\u7A97\u53E3\u4E2D\u7684 ${w.historicalWeeks} \u4E2A\u5B8C\u6574\u7A97\u53E3\uFF0C\u5E73\u5747 ${w.historicalAverageCents === null ? "\u6570\u636E\u4E0D\u8DB3" : formatCents(w.historicalAverageCents)}\u3002`, eventId);
-    if (w.budgetCents > 0) add(`\u5468\u9884\u7B97\uFF08\u65E5\u9884\u7B97 \xD7 7\uFF09${formatCents(w.budgetCents)}\uFF0C\u53E3\u5F84\uFF1A${w.budgetCategory || "\u5168\u90E8\u5206\u7C7B"}${w.includeStarred ? "\uFF0C\u542B\u661F\u6807" : "\uFF0C\u4E0D\u542B\u661F\u6807"}\uFF1B\u5DF2\u8BB0\u5F55\u9884\u7B97\u5185\u652F\u51FA ${formatCents(w.budgetSpentCents)}\uFF0C\u4F7F\u7528 ${(w.budgetRatio * 100).toFixed(1)}%\u3002${w.coverage.complete ? "" : "\u4EC5\u4E3A\u5DF2\u8BB0\u5F55\u91D1\u989D\uFF0C\u4E0D\u80FD\u8BA4\u5B9A\u6574\u4F53\u9884\u7B97\u6B63\u5E38\u3002"}`, eventId);
+    add2(`\u8FD1 7 \u5929 ${w.range.start} \u2014 ${w.range.end}\uFF1A\u5DF2\u8BB0\u5F55 ${formatCents(w.spentCents)}\uFF0C${w.count} \u7B14\uFF1B\u6709\u6548\u8BB0\u8D26 ${w.coverage.recordedDays}/7 \u5929\u3002`, eventId);
+    add2(`\u524D 7 \u5929 ${w.previousRange.start} \u2014 ${w.previousRange.end}\uFF1A\u5DF2\u8BB0\u5F55 ${formatCents(w.previousSpentCents)}\uFF0C\u6709\u6548\u8BB0\u8D26 ${w.previousCoverage.recordedDays}/7 \u5929\u3002${w.changeCents === null ? "\u8BB0\u5F55\u4E0D\u5B8C\u6574\uFF0C\u4E0D\u63D0\u4F9B\u589E\u957F\u6216\u4E0B\u964D\u7ED3\u8BBA\u3002" : `\u53D8\u5316 ${formatCents(w.changeCents)}${w.changeRatio !== null ? `\uFF08${(w.changeRatio * 100).toFixed(1)}%\uFF09` : "\uFF0C\u524D\u671F\u4E3A\u96F6\uFF0C\u4E0D\u8BA1\u7B97\u767E\u5206\u6BD4"}\u3002`}`, eventId);
+    add2(`\u5386\u53F2\u53C2\u8003\u53D6\u6B64\u524D 4 \u4E2A\u8FDE\u7EED\u4E03\u5929\u7A97\u53E3\u4E2D\u7684 ${w.historicalWeeks} \u4E2A\u5B8C\u6574\u7A97\u53E3\uFF0C\u5E73\u5747 ${w.historicalAverageCents === null ? "\u6570\u636E\u4E0D\u8DB3" : formatCents(w.historicalAverageCents)}\u3002`, eventId);
+    if (w.budgetCents > 0) add2(`\u5468\u9884\u7B97\uFF08\u65E5\u9884\u7B97 \xD7 7\uFF09${formatCents(w.budgetCents)}\uFF0C\u53E3\u5F84\uFF1A${w.budgetCategory || "\u5168\u90E8\u5206\u7C7B"}${w.includeStarred ? "\uFF0C\u542B\u661F\u6807" : "\uFF0C\u4E0D\u542B\u661F\u6807"}\uFF1B\u5DF2\u8BB0\u5F55\u9884\u7B97\u5185\u652F\u51FA ${formatCents(w.budgetSpentCents)}\uFF0C\u4F7F\u7528 ${(w.budgetRatio * 100).toFixed(1)}%\u3002${w.coverage.complete ? "" : "\u4EC5\u4E3A\u5DF2\u8BB0\u5F55\u91D1\u989D\uFF0C\u4E0D\u80FD\u8BA4\u5B9A\u6574\u4F53\u9884\u7B97\u6B63\u5E38\u3002"}`, eventId);
   }
-  add(`\u672C\u5468\u671F\u5DF2\u652F\u51FA ${formatCents(snapshot.currentSpentCents)}`);
-  if (snapshot.salaryCents > 0) add(`\u5DE5\u8D44\u6263\u9664\u672C\u5468\u671F\u652F\u51FA\u540E\u5269\u4F59 ${formatCents(snapshot.remainingSalaryCents)}`);
-  add(snapshot.historyCycleCount >= 2 ? "\u5DF2\u6709\u4E24\u4E2A\u53EF\u7528\u5B8C\u6574\u5386\u53F2\u5468\u671F" : `\u4EC5\u6709 ${snapshot.historyCycleCount} \u4E2A\u53EF\u7528\u5B8C\u6574\u5386\u53F2\u5468\u671F`);
-  if (snapshot.historyCycleCount > 0) add(`\u53EF\u7528\u5B8C\u6574\u5386\u53F2\u5468\u671F\u5E73\u5747\u652F\u51FA ${formatCents(snapshot.historicalAverageSpentCents)}`);
-  if (snapshot.forecastAvailable) add(`\u7A0B\u5E8F\u8BA1\u7B97\u7684\u5468\u671F\u672B\u652F\u51FA\u53C2\u8003\u4E3A ${formatCents(snapshot.forecastCents)}\uFF0C\u7F6E\u4FE1\u5EA6\u4E3A ${snapshot.forecastConfidence}`);
+  add2(`\u672C\u5468\u671F\u5DF2\u652F\u51FA ${formatCents(snapshot.currentSpentCents)}`);
+  if (snapshot.salaryCents > 0) add2(`\u5DE5\u8D44\u6263\u9664\u672C\u5468\u671F\u652F\u51FA\u540E\u5269\u4F59 ${formatCents(snapshot.remainingSalaryCents)}`);
+  add2(snapshot.historyCycleCount >= 2 ? "\u5DF2\u6709\u4E24\u4E2A\u53EF\u7528\u5B8C\u6574\u5386\u53F2\u5468\u671F" : `\u4EC5\u6709 ${snapshot.historyCycleCount} \u4E2A\u53EF\u7528\u5B8C\u6574\u5386\u53F2\u5468\u671F`);
+  if (snapshot.historyCycleCount > 0) add2(`\u53EF\u7528\u5B8C\u6574\u5386\u53F2\u5468\u671F\u5E73\u5747\u652F\u51FA ${formatCents(snapshot.historicalAverageSpentCents)}`);
+  if (snapshot.forecastAvailable) add2(`\u7A0B\u5E8F\u8BA1\u7B97\u7684\u5468\u671F\u672B\u652F\u51FA\u53C2\u8003\u4E3A ${formatCents(snapshot.forecastCents)}\uFF0C\u7F6E\u4FE1\u5EA6\u4E3A ${snapshot.forecastConfidence}`);
   snapshot.events.forEach((event) => {
     var _a;
-    add(event.detail, event.id);
-    ((_a = event.evidence) != null ? _a : []).forEach((text2) => add(text2, event.id));
+    add2(event.detail, event.id);
+    ((_a = event.evidence) != null ? _a : []).forEach((text2) => add2(text2, event.id));
   });
   snapshot.categories.forEach((item) => {
-    add(`${item.category}\uFF1A\u672C\u5468\u671F\u5DF2\u652F\u51FA ${formatCents(item.currentCents)}\uFF0C\u5386\u53F2\u5468\u671F\u5E73\u5747 ${formatCents(item.baselineCycleCents)}\uFF0C\u53C2\u8003\u4F59\u91CF ${formatCents(item.remainingReferenceCents)}`, void 0, item.category);
+    add2(`${item.category}\uFF1A\u672C\u5468\u671F\u5DF2\u652F\u51FA ${formatCents(item.currentCents)}\uFF0C\u5386\u53F2\u5468\u671F\u5E73\u5747 ${formatCents(item.baselineCycleCents)}\uFF0C\u53C2\u8003\u4F59\u91CF ${formatCents(item.remainingReferenceCents)}`, void 0, item.category);
   });
   return facts;
 }
@@ -2059,17 +2059,17 @@ function validateEndpoint(value) {
   if (trimmedPath === "/v1") url.pathname = `${trimmedPath}/chat/completions`;
   return url.toString();
 }
-async function chatContent(config, messages, maxTokens, signal2, gate) {
+async function chatContent(config2, messages, maxTokens, signal2, gate) {
   var _a, _b, _c;
-  const endpoint = validateEndpoint(config.endpoint);
-  const model = config.model.trim();
+  const endpoint = validateEndpoint(config2.endpoint);
+  const model = config2.model.trim();
   if (!model) throw new Error("\u8BF7\u5148\u586B\u5199 AI \u6A21\u578B\u540D\u79F0");
   const endpointHost = new URL(endpoint).hostname;
   if (/^mimo-/i.test(model) && endpointHost === "api.openai.com") {
     throw new Error("MiMo \u6A21\u578B\u4E0D\u80FD\u4F7F\u7528 OpenAI \u5B98\u65B9\u63A5\u53E3\uFF0C\u8BF7\u6539\u4E3A MiMo \u670D\u52A1\u5730\u5740");
   }
   const headers = { "Content-Type": "application/json" };
-  if (config.apiKey.trim()) headers.Authorization = `Bearer ${config.apiKey.trim()}`;
+  if (config2.apiKey.trim()) headers.Authorization = `Bearer ${config2.apiKey.trim()}`;
   const requestBody = {
     model,
     messages,
@@ -2106,14 +2106,14 @@ async function chatContent(config, messages, maxTokens, signal2, gate) {
   if (!content) throw new Error("AI \u63A5\u53E3\u6CA1\u6709\u8FD4\u56DE\u53EF\u7528\u5185\u5BB9");
   return content;
 }
-async function requestFinanceAdvice(config, snapshot, signal2, gate = sharedRequestGate("ai")) {
-  return parseFinanceAdvice(await chatContent(config, [
+async function requestFinanceAdvice(config2, snapshot, signal2, gate = sharedRequestGate("ai")) {
+  return parseFinanceAdvice(await chatContent(config2, [
     { role: "system", content: FINANCE_AI_PROFILE },
     { role: "user", content: financeAiInput(snapshot) }
   ], 1200, signal2, gate), snapshot);
 }
-async function testFinanceConnection(config, signal2, gate = sharedRequestGate("ai")) {
-  await chatContent(config, [{ role: "user", content: "Connection test. Reply with OK only." }], 128, signal2, gate);
+async function testFinanceConnection(config2, signal2, gate = sharedRequestGate("ai")) {
+  await chatContent(config2, [{ role: "user", content: "Connection test. Reply with OK only." }], 128, signal2, gate);
 }
 
 // src/management.ts
@@ -2294,20 +2294,20 @@ var FixedExpenseModal = class extends import_obsidian3.Modal {
             }
           });
         });
-        if (linked || id.startsWith("ledger-v2:")) setting.addButton((button) => button.setButtonText("\u91CD\u65B0\u5173\u8054").onClick(() => {
+        if (linked || id.startsWith("ledger-v2:")) setting.addButton((button2) => button2.setButtonText("\u91CD\u65B0\u5173\u8054").onClick(() => {
           new RecordPicker(this.plugin, (record) => {
             item.payments[range.start] = record.id;
             void this.save().then(() => this.render());
           }, range).open();
         }));
       });
-      new import_obsidian3.Setting(box).setName("\u79FB\u9664\u6B64\u89C4\u5219").setDesc("\u4E0D\u5220\u9664\u539F\u59CB\u8D26\u76EE\u3002").addButton((button) => button.setButtonText("\u79FB\u9664").onClick(async () => {
+      new import_obsidian3.Setting(box).setName("\u79FB\u9664\u6B64\u89C4\u5219").setDesc("\u4E0D\u5220\u9664\u539F\u59CB\u8D26\u76EE\u3002").addButton((button2) => button2.setButtonText("\u79FB\u9664").onClick(async () => {
         this.plugin.settings.fixedExpenses = this.plugin.settings.fixedExpenses.filter((other) => other.id !== item.id);
         await this.save();
         this.render();
       }));
     }
-    new import_obsidian3.Setting(root).addButton((button) => button.setButtonText("\u6DFB\u52A0\u56FA\u5B9A\u652F\u51FA").setCta().onClick(async () => {
+    new import_obsidian3.Setting(root).addButton((button2) => button2.setButtonText("\u6DFB\u52A0\u56FA\u5B9A\u652F\u51FA").setCta().onClick(async () => {
       this.plugin.settings.fixedExpenses = [...this.plugin.settings.fixedExpenses, { id: crypto.randomUUID(), name: "", amountCents: 0, payments: {} }];
       await this.save();
       this.render();
@@ -2331,13 +2331,13 @@ var StarRepairModal = class extends import_obsidian3.Modal {
     const missing = unmatchedStarIds(this.plugin.settings.starredRecordIds, records);
     if (!missing.length) this.contentEl.createEl("p", { text: "\u6240\u6709\u661F\u6807\u5747\u53EF\u5339\u914D\u3002" });
     for (const id of missing) {
-      let label = id;
+      let label2 = id;
       try {
         const values = JSON.parse(id.slice(10));
-        label = `${values[1]} \xB7 ${values[3]} \xB7 ${formatCents(values[4])} \xB7 ${values[0]}`;
+        label2 = `${values[1]} \xB7 ${values[3]} \xB7 ${formatCents(values[4])} \xB7 ${values[0]}`;
       } catch (e) {
       }
-      new import_obsidian3.Setting(this.contentEl).setName(label).addButton((button) => button.setButtonText("\u91CD\u65B0\u5173\u8054").onClick(() => {
+      new import_obsidian3.Setting(this.contentEl).setName(label2).addButton((button2) => button2.setButtonText("\u91CD\u65B0\u5173\u8054").onClick(() => {
         new RecordPicker(this.plugin, (record) => {
           try {
             this.plugin.settings.starredRecordIds = relinkStar(this.plugin.settings.starredRecordIds, id, record.id, flattenRecords(this.plugin.repository.files.values()));
@@ -2347,7 +2347,7 @@ var StarRepairModal = class extends import_obsidian3.Modal {
           }
           void this.plugin.saveSettings(false).then(() => this.render());
         }).open();
-      })).addButton((button) => button.setButtonText("\u79FB\u9664\u661F\u6807").onClick(async () => {
+      })).addButton((button2) => button2.setButtonText("\u79FB\u9664\u661F\u6807").onClick(async () => {
         this.plugin.settings.starredRecordIds = this.plugin.settings.starredRecordIds.filter((value) => value !== id);
         await this.plugin.saveSettings(false);
         this.render();
@@ -2431,15 +2431,15 @@ function parseObjectRules(text2 = DEFAULT_REPORT_OBJECT_RULES) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) return;
     const equal = trimmed.indexOf("="), raw = trimmed.slice(0, equal).trim(), pattern = trimmed.slice(equal + 1).trim();
-    const label = raw.startsWith("@") ? raw.slice(1).trim() : raw;
-    if (equal < 1 || !label || !pattern || labels.has(raw)) {
+    const label2 = raw.startsWith("@") ? raw.slice(1).trim() : raw;
+    if (equal < 1 || !label2 || !pattern || labels.has(raw)) {
       out.errors.push(`\u7B2C${i + 1}\u884C\uFF1A\u9700\u8981\u4E0D\u91CD\u590D\u7684\u201C\u6807\u7B7E=\u6B63\u5219\u201D`);
       return;
     }
     try {
       const re = new RegExp(pattern, "i");
       if (re.test("")) throw new Error("\u4E0D\u80FD\u5339\u914D\u7A7A\u5907\u6CE8");
-      (raw.startsWith("@") ? out.brands : out.objects).push([label, re]);
+      (raw.startsWith("@") ? out.brands : out.objects).push([label2, re]);
       labels.add(raw);
     } catch (e) {
       out.errors.push(`\u7B2C${i + 1}\u884C\uFF1A\u6B63\u5219\u65E0\u6548\u6216\u5339\u914D\u7A7A\u5907\u6CE8`);
@@ -2472,7 +2472,7 @@ function stratifiedAssociationTail(strata, observed) {
 }
 
 // src/report-evidence.ts
-var fact = (label, value, unit) => ({ label, value, unit });
+var fact = (label2, value, unit) => ({ label: label2, value, unit });
 var sum = (values) => values.reduce((s, n) => s + n, 0);
 function quantile(sorted, p) {
   if (!sorted.length) return 0;
@@ -2505,62 +2505,62 @@ function distributionEvidence(current, previous, scale, comparable, topCount, bi
   const pooled = [...a, ...b].sort((x, y) => x - y);
   const edges = [0, ...[0.25, 0.5, 0.75].map((p) => Math.round(quantile(pooled, p) / binRoundCents) * binRoundCents), Infinity].filter((n, i, all) => !i || n > all[i - 1]);
   for (let i = 0; i < edges.length - 1; i++) {
-    const low = edges[i], high = edges[i + 1], label = high === Infinity ? `${low / 100}\u5143\u53CA\u4EE5\u4E0A` : `${low / 100}\uFF5E${high / 100}\u5143\uFF08\u4E0D\u542B\u4E0A\u754C\uFF09`;
-    facts[`current_bin_${i}`] = fact(`\u672C\u671F${label}\u7B14\u6570`, a.filter((n) => n >= low && n < high).length, "\u7B14");
-    facts[`previous_bin_${i}`] = fact(`\u4E0A\u671F${label}\u7B14\u6570`, b.filter((n) => n >= low && n < high).length, "\u7B14");
-    if (scale !== 1 && comparable) facts[`previous_bin_${i}_scaled`] = fact(`\u4E0A\u671F${label}\u7B14\u6570\u6309\u89C2\u5BDF\u65E5\u6298\u7B97`, facts[`previous_bin_${i}`].value * scale, "\u7B14");
+    const low = edges[i], high = edges[i + 1], label2 = high === Infinity ? `${low / 100}\u5143\u53CA\u4EE5\u4E0A` : `${low / 100}\uFF5E${high / 100}\u5143\uFF08\u4E0D\u542B\u4E0A\u754C\uFF09`;
+    facts[`current_bin_${i}`] = fact(`\u672C\u671F${label2}\u7B14\u6570`, a.filter((n) => n >= low && n < high).length, "\u7B14");
+    facts[`previous_bin_${i}`] = fact(`\u4E0A\u671F${label2}\u7B14\u6570`, b.filter((n) => n >= low && n < high).length, "\u7B14");
+    if (scale !== 1 && comparable) facts[`previous_bin_${i}_scaled`] = fact(`\u4E0A\u671F${label2}\u7B14\u6570\u6309\u89C2\u5BDF\u65E5\u6298\u7B97`, facts[`previous_bin_${i}`].value * scale, "\u7B14");
   }
   return facts;
 }
 function evidenceReadings(e, comparable) {
   var _a;
   const supporting = [], counter = [], f = e.facts;
-  const add = (list, text2, ...keys) => list.push({ text: text2, factKeys: keys.filter((k) => k in f) });
+  const add2 = (list, text2, ...keys) => list.push({ text: text2, factKeys: keys.filter((k) => k in f) });
   if (comparable && f.current_mean && f.previous_mean) {
     const mean = f.current_mean.value - f.previous_mean.value, median3 = f.current_median.value - f.previous_median.value;
     const count = f.current_count.value - ((_a = f.previous_count_scaled) != null ? _a : f.previous_count).value;
-    if (Math.abs(count) < 1e-9) add(supporting, "\u4E24\u671F\u6309\u89C2\u5BDF\u65E5\u5BF9\u9F50\u540E\u7B14\u6570\u76F8\u540C\uFF0C\u603B\u989D\u5DEE\u5BF9\u5E94\u5E73\u5747\u6BCF\u7B14\u91D1\u989D\u53D8\u5316\uFF1B\u8FD9\u662F\u8BA1\u7B97\u5173\u7CFB\u3002", "current_count", "previous_count", "previous_count_scaled", "ticket_contribution");
-    if (median3 !== 0) add(supporting, `\u5355\u7B14\u4E2D\u4F4D\u6570${median3 > 0 ? "\u4E0A\u6DA8" : "\u4E0B\u964D"}\uFF0C\u53CD\u6620\u5206\u5E03\u4E2D\u95F4\u4F4D\u7F6E\u53D8\u5316\uFF0C\u4E0D\u4EE3\u8868\u6BCF\u4E00\u7B14\u90FD\u53D8\u5316\u3002`, "current_median", "previous_median");
-    if (mean !== 0 && mean * median3 <= 0) add(counter, "\u5E73\u5747\u6570\u4E0E\u4E2D\u4F4D\u6570\u6CA1\u6709\u540C\u5411\u53D8\u5316\uFF0C\u4E0D\u80FD\u7528\u5E73\u5747\u6570\u4EE3\u8868\u5178\u578B\u4ED8\u6B3E\u3002", "current_mean", "previous_mean", "current_median", "previous_median");
-    if (f.top3_difference && Math.abs(f.top3_difference.value) > 1e-9) add(supporting, "\u4E24\u671F\u5404\u81EA\u6700\u8D35\u8BB0\u5F55\u7684\u5408\u8BA1\u5728\u6BD4\u8F83\u53E3\u5F84\u4E0B\u6709\u5DEE\u989D\uFF0C\u9700\u8981\u4E0E\u6263\u9664\u540E\u7684\u5176\u4F59\u8BB0\u5F55\u4E00\u8D77\u5224\u65AD\u3002", "top3_current_amount", "top3_previous_amount", "top3_previous_scaled", "top3_difference", "top3_contribution", "remaining_difference");
-    if (f.top3_contribution && f.top3_contribution.value >= 50) add(counter, "\u6700\u8D35\u8BB0\u5F55\u7684\u5DEE\u989D\u5360\u603B\u5DEE\u989D\u81F3\u5C11\u4E00\u534A\uFF1B\u5373\u4F7F\u4E2D\u4F4D\u6570\u540C\u5411\u53D8\u5316\uFF0C\u4E5F\u4E0D\u80FD\u6392\u9664\u5C11\u6570\u5927\u989D\u8BB0\u5F55\u7684\u5F71\u54CD\u3002", "top3_contribution", "top3_difference", "remaining_difference", "current_median", "previous_median");
-    if (f.top3_difference && f.remaining_difference && f.top3_difference.value * f.remaining_difference.value < 0) add(counter, "\u6700\u8D35\u8BB0\u5F55\u4E0E\u5176\u4F59\u8BB0\u5F55\u7684\u91D1\u989D\u53D8\u5316\u65B9\u5411\u76F8\u53CD\uFF0C\u5B58\u5728\u62B5\u6D88\uFF0C\u4E0D\u80FD\u63A8\u5E7F\u4E3A\u666E\u904D\u4E0A\u6DA8\u6216\u4E0B\u964D\u3002", "top3_difference", "remaining_difference");
-    if (f.current_p25 && f.previous_p25 && mean * (f.current_p25.value - f.previous_p25.value) < 0) add(counter, "\u8F83\u4F4E\u91D1\u989D\u4F4D\u7F6E\u4E0E\u5E73\u5747\u6570\u53D8\u5316\u65B9\u5411\u76F8\u53CD\uFF0C\u91D1\u989D\u5206\u5E03\u5E76\u975E\u4E00\u81F4\u79FB\u52A8\u3002", "current_p25", "previous_p25", "current_mean", "previous_mean");
-    add(counter, "\u5E73\u5747\u6570\u3001\u4E2D\u4F4D\u6570\u6216\u91D1\u989D\u5206\u89E3\u90FD\u4E0D\u80FD\u5355\u72EC\u8BC1\u660E\u5546\u54C1\u6DA8\u4EF7\u3001\u6BCF\u7B14\u4ED8\u6B3E\u90FD\u53D8\u8D35\u6216\u751F\u6D3B\u539F\u56E0\u3002", "current_mean", "previous_mean", "current_median", "previous_median");
+    if (Math.abs(count) < 1e-9) add2(supporting, "\u4E24\u671F\u6309\u89C2\u5BDF\u65E5\u5BF9\u9F50\u540E\u7B14\u6570\u76F8\u540C\uFF0C\u603B\u989D\u5DEE\u5BF9\u5E94\u5E73\u5747\u6BCF\u7B14\u91D1\u989D\u53D8\u5316\uFF1B\u8FD9\u662F\u8BA1\u7B97\u5173\u7CFB\u3002", "current_count", "previous_count", "previous_count_scaled", "ticket_contribution");
+    if (median3 !== 0) add2(supporting, `\u5355\u7B14\u4E2D\u4F4D\u6570${median3 > 0 ? "\u4E0A\u6DA8" : "\u4E0B\u964D"}\uFF0C\u53CD\u6620\u5206\u5E03\u4E2D\u95F4\u4F4D\u7F6E\u53D8\u5316\uFF0C\u4E0D\u4EE3\u8868\u6BCF\u4E00\u7B14\u90FD\u53D8\u5316\u3002`, "current_median", "previous_median");
+    if (mean !== 0 && mean * median3 <= 0) add2(counter, "\u5E73\u5747\u6570\u4E0E\u4E2D\u4F4D\u6570\u6CA1\u6709\u540C\u5411\u53D8\u5316\uFF0C\u4E0D\u80FD\u7528\u5E73\u5747\u6570\u4EE3\u8868\u5178\u578B\u4ED8\u6B3E\u3002", "current_mean", "previous_mean", "current_median", "previous_median");
+    if (f.top3_difference && Math.abs(f.top3_difference.value) > 1e-9) add2(supporting, "\u4E24\u671F\u5404\u81EA\u6700\u8D35\u8BB0\u5F55\u7684\u5408\u8BA1\u5728\u6BD4\u8F83\u53E3\u5F84\u4E0B\u6709\u5DEE\u989D\uFF0C\u9700\u8981\u4E0E\u6263\u9664\u540E\u7684\u5176\u4F59\u8BB0\u5F55\u4E00\u8D77\u5224\u65AD\u3002", "top3_current_amount", "top3_previous_amount", "top3_previous_scaled", "top3_difference", "top3_contribution", "remaining_difference");
+    if (f.top3_contribution && f.top3_contribution.value >= 50) add2(counter, "\u6700\u8D35\u8BB0\u5F55\u7684\u5DEE\u989D\u5360\u603B\u5DEE\u989D\u81F3\u5C11\u4E00\u534A\uFF1B\u5373\u4F7F\u4E2D\u4F4D\u6570\u540C\u5411\u53D8\u5316\uFF0C\u4E5F\u4E0D\u80FD\u6392\u9664\u5C11\u6570\u5927\u989D\u8BB0\u5F55\u7684\u5F71\u54CD\u3002", "top3_contribution", "top3_difference", "remaining_difference", "current_median", "previous_median");
+    if (f.top3_difference && f.remaining_difference && f.top3_difference.value * f.remaining_difference.value < 0) add2(counter, "\u6700\u8D35\u8BB0\u5F55\u4E0E\u5176\u4F59\u8BB0\u5F55\u7684\u91D1\u989D\u53D8\u5316\u65B9\u5411\u76F8\u53CD\uFF0C\u5B58\u5728\u62B5\u6D88\uFF0C\u4E0D\u80FD\u63A8\u5E7F\u4E3A\u666E\u904D\u4E0A\u6DA8\u6216\u4E0B\u964D\u3002", "top3_difference", "remaining_difference");
+    if (f.current_p25 && f.previous_p25 && mean * (f.current_p25.value - f.previous_p25.value) < 0) add2(counter, "\u8F83\u4F4E\u91D1\u989D\u4F4D\u7F6E\u4E0E\u5E73\u5747\u6570\u53D8\u5316\u65B9\u5411\u76F8\u53CD\uFF0C\u91D1\u989D\u5206\u5E03\u5E76\u975E\u4E00\u81F4\u79FB\u52A8\u3002", "current_p25", "previous_p25", "current_mean", "previous_mean");
+    add2(counter, "\u5E73\u5747\u6570\u3001\u4E2D\u4F4D\u6570\u6216\u91D1\u989D\u5206\u89E3\u90FD\u4E0D\u80FD\u5355\u72EC\u8BC1\u660E\u5546\u54C1\u6DA8\u4EF7\u3001\u6BCF\u7B14\u4ED8\u6B3E\u90FD\u53D8\u8D35\u6216\u751F\u6D3B\u539F\u56E0\u3002", "current_mean", "previous_mean", "current_median", "previous_median");
   }
   if (e.categories && comparable) {
     const changes = e.categories.filter((c) => c.difference !== void 0 && Math.abs(c.difference) > 1e-9);
-    if (changes.some((c) => c.difference > 0) && changes.some((c) => c.difference < 0)) add(counter, "\u5206\u7C7B\u91D1\u989D\u6709\u589E\u6709\u51CF\uFF1B\u603B\u989D\u65B9\u5411\u4E0D\u4EE3\u8868\u6240\u6709\u7C7B\u522B\u90FD\u540C\u5411\u53D8\u5316\u3002");
-    if (changes.some((c) => c.status === "new")) add(counter, "\u5B58\u5728\u4E0A\u671F\u672A\u8BB0\u5F55\u91D1\u989D\u3001\u672C\u671F\u6709\u8BB0\u5F55\u7684\u5206\u7C7B\uFF1B\u9700\u533A\u5206\u65B0\u589E\u652F\u51FA\u4E0E\u539F\u6709\u4ED8\u6B3E\u91D1\u989D\u53D8\u5316\u3002");
+    if (changes.some((c) => c.difference > 0) && changes.some((c) => c.difference < 0)) add2(counter, "\u5206\u7C7B\u91D1\u989D\u6709\u589E\u6709\u51CF\uFF1B\u603B\u989D\u65B9\u5411\u4E0D\u4EE3\u8868\u6240\u6709\u7C7B\u522B\u90FD\u540C\u5411\u53D8\u5316\u3002");
+    if (changes.some((c) => c.status === "new")) add2(counter, "\u5B58\u5728\u4E0A\u671F\u672A\u8BB0\u5F55\u91D1\u989D\u3001\u672C\u671F\u6709\u8BB0\u5F55\u7684\u5206\u7C7B\uFF1B\u9700\u533A\u5206\u65B0\u589E\u652F\u51FA\u4E0E\u539F\u6709\u4ED8\u6B3E\u91D1\u989D\u53D8\u5316\u3002");
   }
-  if (f.early && f.late) add(supporting, "\u524D\u540E\u5B8C\u6574\u5468\u7684\u8BB0\u5F55\u9891\u6B21\u4E0D\u540C\uFF0C\u53EF\u6838\u5BF9\u5468\u4E2D\u4F4D\u6570\u4E0E\u8D8B\u52BF\u65B9\u5411\u3002", "early", "late", "slope");
-  if (f.before && f.after) add(supporting, "\u5019\u9009\u5206\u754C\u524D\u540E\u5468\u7B14\u6570\u4E2D\u4F4D\u6570\u4E0D\u540C\uFF0C\u5206\u754C\u4ECD\u662F\u63A2\u7D22\u6027\u7ED3\u679C\u3002", "before", "after");
-  if (f.together) add(supporting, "\u4E0D\u540C\u8D26\u76EE\u5728\u540C\u65E5\u5171\u540C\u51FA\u73B0\uFF0C\u5E76\u6709\u661F\u671F\u5339\u914D\u5BF9\u7167\u6570\u636E\u3002", "together", "lift", "adjusted_p");
-  if (f.count && f.days) add(supporting, "\u8FD9\u7EC4\u8BB0\u5F55\u7684\u7B14\u6570\u4E0E\u51FA\u73B0\u5929\u6570\u53EF\u6838\u5BF9\uFF1B\u8BB0\u5F55\u7B14\u6570\u4E0D\u4EE3\u8868\u8D2D\u4E70\u6570\u91CF\u3002", "count", "days", "concentration");
-  if (f.together) add(counter, "\u661F\u671F\u5339\u914D\u4ECD\u4E0D\u80FD\u63A7\u5236\u6240\u6709\u751F\u6D3B\u60C5\u5883\u548C\u8FDE\u7EED\u65E5\u671F\u4F9D\u8D56\uFF1B\u540C\u65E5\u5173\u8054\u4E0D\u4EE3\u8868\u5148\u540E\u3001\u89E6\u53D1\u6216\u56E0\u679C\u3002", "together", "adjusted_p");
-  if (f.count && f.days) add(counter, "\u51E0\u4E2A\u5B8C\u6574\u5468\u91CD\u590D\u51FA\u73B0\u4E0D\u4EE3\u8868\u5DF2\u5F62\u6210\u957F\u671F\u4E60\u60EF\u6216\u56FA\u5B9A\u652F\u51FA\uFF0C\u4ECD\u9700\u540E\u7EED\u5468\u671F\u6838\u5BF9\u3002", "count", "days");
-  if (f.early || f.before) add(counter, "\u8BB0\u5F55\u9891\u6B21\u4E0E\u5019\u9009\u5468\u5206\u754C\u53EA\u80FD\u63CF\u8FF0\u53D8\u5316\uFF0C\u4E0D\u80FD\u636E\u6B64\u786E\u5B9A\u67D0\u4E00\u5929\u6216\u751F\u6D3B\u539F\u56E0\u3002", "early", "late", "before", "after", "slope");
+  if (f.early && f.late) add2(supporting, "\u524D\u540E\u5B8C\u6574\u5468\u7684\u8BB0\u5F55\u9891\u6B21\u4E0D\u540C\uFF0C\u53EF\u6838\u5BF9\u5468\u4E2D\u4F4D\u6570\u4E0E\u8D8B\u52BF\u65B9\u5411\u3002", "early", "late", "slope");
+  if (f.before && f.after) add2(supporting, "\u5019\u9009\u5206\u754C\u524D\u540E\u5468\u7B14\u6570\u4E2D\u4F4D\u6570\u4E0D\u540C\uFF0C\u5206\u754C\u4ECD\u662F\u63A2\u7D22\u6027\u7ED3\u679C\u3002", "before", "after");
+  if (f.together) add2(supporting, "\u4E0D\u540C\u8D26\u76EE\u5728\u540C\u65E5\u5171\u540C\u51FA\u73B0\uFF0C\u5E76\u6709\u661F\u671F\u5339\u914D\u5BF9\u7167\u6570\u636E\u3002", "together", "lift", "adjusted_p");
+  if (f.count && f.days) add2(supporting, "\u8FD9\u7EC4\u8BB0\u5F55\u7684\u7B14\u6570\u4E0E\u51FA\u73B0\u5929\u6570\u53EF\u6838\u5BF9\uFF1B\u8BB0\u5F55\u7B14\u6570\u4E0D\u4EE3\u8868\u8D2D\u4E70\u6570\u91CF\u3002", "count", "days", "concentration");
+  if (f.together) add2(counter, "\u661F\u671F\u5339\u914D\u4ECD\u4E0D\u80FD\u63A7\u5236\u6240\u6709\u751F\u6D3B\u60C5\u5883\u548C\u8FDE\u7EED\u65E5\u671F\u4F9D\u8D56\uFF1B\u540C\u65E5\u5173\u8054\u4E0D\u4EE3\u8868\u5148\u540E\u3001\u89E6\u53D1\u6216\u56E0\u679C\u3002", "together", "adjusted_p");
+  if (f.count && f.days) add2(counter, "\u51E0\u4E2A\u5B8C\u6574\u5468\u91CD\u590D\u51FA\u73B0\u4E0D\u4EE3\u8868\u5DF2\u5F62\u6210\u957F\u671F\u4E60\u60EF\u6216\u56FA\u5B9A\u652F\u51FA\uFF0C\u4ECD\u9700\u540E\u7EED\u5468\u671F\u6838\u5BF9\u3002", "count", "days");
+  if (f.early || f.before) add2(counter, "\u8BB0\u5F55\u9891\u6B21\u4E0E\u5019\u9009\u5468\u5206\u754C\u53EA\u80FD\u63CF\u8FF0\u53D8\u5316\uFF0C\u4E0D\u80FD\u636E\u6B64\u786E\u5B9A\u67D0\u4E00\u5929\u6216\u751F\u6D3B\u539F\u56E0\u3002", "early", "late", "before", "after", "slope");
   if (f.peak_daily) {
-    add(supporting, "\u9AD8\u5CF0\u548C\u5BF9\u7167\u7684\u65E5\u5747\u91D1\u989D\u3001\u91CD\u590D\u5468\u5360\u6BD4\u53EF\u4E00\u8D77\u6838\u5BF9\uFF0C\u4E0D\u53EA\u4F9D\u8D56\u67D0\u4E00\u6B21\u4ED8\u6B3E\u3002", "peak_daily", "reference_daily", "repeat_share");
-    add(counter, "\u661F\u671F\u9AD8\u5CF0\u4E0D\u4EE3\u8868\u6D88\u8D39\u5931\u63A7\uFF0C\u4E5F\u4E0D\u80FD\u76F4\u63A5\u65AD\u8A00\u5DE5\u4F5C\u3001\u901A\u52E4\u6216\u4F11\u95F2\u539F\u56E0\u3002", "peak_daily", "reference_daily");
+    add2(supporting, "\u9AD8\u5CF0\u548C\u5BF9\u7167\u7684\u65E5\u5747\u91D1\u989D\u3001\u91CD\u590D\u5468\u5360\u6BD4\u53EF\u4E00\u8D77\u6838\u5BF9\uFF0C\u4E0D\u53EA\u4F9D\u8D56\u67D0\u4E00\u6B21\u4ED8\u6B3E\u3002", "peak_daily", "reference_daily", "repeat_share");
+    add2(counter, "\u661F\u671F\u9AD8\u5CF0\u4E0D\u4EE3\u8868\u6D88\u8D39\u5931\u63A7\uFF0C\u4E5F\u4E0D\u80FD\u76F4\u63A5\u65AD\u8A00\u5DE5\u4F5C\u3001\u901A\u52E4\u6216\u4F11\u95F2\u539F\u56E0\u3002", "peak_daily", "reference_daily");
   }
   if (f.history_median) {
-    add(supporting, "\u672C\u671F\u65E5\u5747\u91D1\u989D\u53EF\u4E0E\u591A\u4E2A\u5B8C\u6574\u5386\u53F2\u5468\u671F\u7684\u65E5\u5747\u4E2D\u4F4D\u6570\u6BD4\u8F83\u3002", "current_daily", "history_median", "periods_used");
-    add(counter, "\u5B8C\u6574\u5386\u53F2\u5468\u671F\u4E0E\u672C\u671F\u5DF2\u8FC7\u9636\u6BB5\u53EF\u80FD\u5305\u542B\u4E0D\u540C\u56FA\u5B9A\u4ED8\u6B3E\u65E5\u671F\uFF1B\u504F\u79BB\u5386\u53F2\u65E5\u5747\u4E0D\u7B49\u4E8E\u6D88\u8D39\u9700\u6C42\u6539\u53D8\u3002", "current_daily", "history_median");
+    add2(supporting, "\u672C\u671F\u65E5\u5747\u91D1\u989D\u53EF\u4E0E\u591A\u4E2A\u5B8C\u6574\u5386\u53F2\u5468\u671F\u7684\u65E5\u5747\u4E2D\u4F4D\u6570\u6BD4\u8F83\u3002", "current_daily", "history_median", "periods_used");
+    add2(counter, "\u5B8C\u6574\u5386\u53F2\u5468\u671F\u4E0E\u672C\u671F\u5DF2\u8FC7\u9636\u6BB5\u53EF\u80FD\u5305\u542B\u4E0D\u540C\u56FA\u5B9A\u4ED8\u6B3E\u65E5\u671F\uFF1B\u504F\u79BB\u5386\u53F2\u65E5\u5747\u4E0D\u7B49\u4E8E\u6D88\u8D39\u9700\u6C42\u6539\u53D8\u3002", "current_daily", "history_median");
   }
   if (f.outlier_amount) {
-    add(supporting, "\u672C\u671F\u8FD9\u7B14\u4ED8\u6B3E\u9AD8\u4E8E\u8BE5\u5206\u7C7B\u5B8C\u6574\u5386\u53F2\u671F\u7684\u91D1\u989D\u53C2\u8003\uFF0C\u5C5E\u4E8E\u53EF\u6838\u5BF9\u7684\u5927\u989D\u7EBF\u7D22\u3002", "outlier_amount", "history_p90", "outlier_share");
-    add(counter, "\u540C\u5206\u7C7B\u53EF\u80FD\u5305\u542B\u4E0D\u540C\u7528\u9014\uFF1B\u5355\u7B14\u91D1\u989D\u8F83\u9AD8\u4E0D\u80FD\u76F4\u63A5\u5224\u65AD\u6D6A\u8D39\u3001\u4EA4\u6613\u5F02\u5E38\u6216\u5546\u54C1\u6DA8\u4EF7\u3002", "outlier_amount", "history_p90");
+    add2(supporting, "\u672C\u671F\u8FD9\u7B14\u4ED8\u6B3E\u9AD8\u4E8E\u8BE5\u5206\u7C7B\u5B8C\u6574\u5386\u53F2\u671F\u7684\u91D1\u989D\u53C2\u8003\uFF0C\u5C5E\u4E8E\u53EF\u6838\u5BF9\u7684\u5927\u989D\u7EBF\u7D22\u3002", "outlier_amount", "history_p90", "outlier_share");
+    add2(counter, "\u540C\u5206\u7C7B\u53EF\u80FD\u5305\u542B\u4E0D\u540C\u7528\u9014\uFF1B\u5355\u7B14\u91D1\u989D\u8F83\u9AD8\u4E0D\u80FD\u76F4\u63A5\u5224\u65AD\u6D6A\u8D39\u3001\u4EA4\u6613\u5F02\u5E38\u6216\u5546\u54C1\u6DA8\u4EF7\u3002", "outlier_amount", "history_p90");
   }
-  if (f.classification_variation) add(counter, "\u5206\u7C7B\u5F52\u5C5E\u53D8\u5316\u53EF\u80FD\u6765\u81EA\u8BB0\u8D26\u65B9\u5F0F\uFF0C\u4E0D\u80FD\u5C06\u5176\u76F4\u63A5\u5F53\u6210\u6D88\u8D39\u9700\u6C42\u53D8\u5316\u3002", "classification_variation");
-  if (f.current_amount_share) add(counter, "\u5360\u6BD4\u53D8\u5316\u4E5F\u53EF\u80FD\u6765\u81EA\u5176\u4ED6\u5206\u7C7B\u51CF\u5C11\uFF1B\u9700\u8981\u540C\u65F6\u6838\u5BF9\u7EDD\u5BF9\u91D1\u989D\u548C\u7B14\u6570\u3002", "current_amount_share", "previous_amount_share", "current_amount", "previous_amount");
+  if (f.classification_variation) add2(counter, "\u5206\u7C7B\u5F52\u5C5E\u53D8\u5316\u53EF\u80FD\u6765\u81EA\u8BB0\u8D26\u65B9\u5F0F\uFF0C\u4E0D\u80FD\u5C06\u5176\u76F4\u63A5\u5F53\u6210\u6D88\u8D39\u9700\u6C42\u53D8\u5316\u3002", "classification_variation");
+  if (f.current_amount_share) add2(counter, "\u5360\u6BD4\u53D8\u5316\u4E5F\u53EF\u80FD\u6765\u81EA\u5176\u4ED6\u5206\u7C7B\u51CF\u5C11\uFF1B\u9700\u8981\u540C\u65F6\u6838\u5BF9\u7EDD\u5BF9\u91D1\u989D\u548C\u7B14\u6570\u3002", "current_amount_share", "previous_amount_share", "current_amount", "previous_amount");
   return { supporting, counter };
 }
 function overviewSections(facts) {
-  const used = /* @__PURE__ */ new Set(), section = (label, keys, expanded = false) => {
+  const used = /* @__PURE__ */ new Set(), section = (label2, keys, expanded = false) => {
     keys = keys.filter((k) => k in facts);
     keys.forEach((k) => used.add(k));
-    return { label, keys, expanded };
+    return { label: label2, keys, expanded };
   };
   const result = [
     section("\u603B\u91CF\u4E0E\u5178\u578B\u5355\u7B14", ["current_amount", "previous_amount", "previous_amount_scaled", "amount_difference", "current_count", "previous_count", "previous_count_scaled", "current_mean", "previous_mean", "current_median", "previous_median"], true),
@@ -2590,15 +2590,15 @@ function group(items, key) {
 function stats(r) {
   return { n: r.length, cents: total(r), mean: r.length ? total(r) / r.length : 0, median: reportMedian(r.map((t) => t.cents)), days: new Set(r.map((t) => t.date)).size };
 }
-var fact2 = (label, value, unit) => ({ label, value, unit });
+var fact2 = (label2, value, unit) => ({ label: label2, value, unit });
 var quantile2 = (values, p) => {
   const a = [...values].sort((x, y) => x - y);
   if (!a.length) return 0;
   const pos = (a.length - 1) * p, lo = Math.floor(pos);
   return a[lo] + (a[Math.ceil(pos)] - a[lo]) * (pos - lo);
 };
-function trimTrailingGap(c, today, max) {
-  if (c.range.end !== today || c.problems.length || !c.missingDates.length || c.missingDates.length > max || c.missingDates.length >= reportDays(c.range)) return null;
+function trimTrailingGap(c, today, max2) {
+  if (c.range.end !== today || c.problems.length || !c.missingDates.length || c.missingDates.length > max2 || c.missingDates.length >= reportDays(c.range)) return null;
   const missing = new Set(c.missingDates);
   if (!dates({ start: c.missingDates[0], end: c.range.end }).every((d) => missing.has(d))) return null;
   return { ...c.range, end: addDays(c.missingDates[0], -1) };
@@ -2678,7 +2678,7 @@ function analyzeReport(files, preferences, now, excludedCategories, starredIds, 
     const kind = subject.includes("+") ? "multiple" : subject.split(":")[0];
     return { kind: ["category", "object", "brand", "mixed", "note", "multiple"].includes(kind) ? kind : "all", label: subject.includes(":") ? subject.replace(/(?:category|object|brand|mixed|note):/g, "") : "\u5168\u90E8\u7B5B\u9009\u540E\u652F\u51FA", accounting: preferences.scope };
   };
-  const add = (subject, type, title, observation, strength, rs, facts, extraLimits = limits, rsRanges = ranges, signals, evidenceScope) => {
+  const add2 = (subject, type, title, observation, strength, rs, facts, extraLimits = limits, rsRanges = ranges, signals, evidenceScope) => {
     var _a2;
     const id = `${type}:${reportHash(subject + title + JSON.stringify(rsRanges))}`;
     const score = ((_a2 = WEIGHT[type]) != null ? _a2 : 55) * (0.6 + 0.4 * Math.max(0, Math.min(1, strength))) * (degraded && FAMILY[type] === "change" ? 0.85 : 1);
@@ -2756,9 +2756,9 @@ function analyzeReport(files, preferences, now, excludedCategories, starredIds, 
     if (signal2.length) {
       signal2.sort((x, y) => y.weight - x.weight);
       const main = signal2[0];
-      add(subject, "comparison", main.title, main.observation, (main.weight + Math.min(20, (signal2.length - 1) * 8)) / 65, [...s.a, ...s.b], facts, [...limits, ...categoryLimit], ranges, signal2.slice(1).map((s2) => ({ type: s2.kind, title: s2.title })), { kind: s.kind, label: s.label, accounting: preferences.scope });
+      add2(subject, "comparison", main.title, main.observation, (main.weight + Math.min(20, (signal2.length - 1) * 8)) / 65, [...s.a, ...s.b], facts, [...limits, ...categoryLimit], ranges, signal2.slice(1).map((s2) => ({ type: s2.kind, title: s2.title })), { kind: s.kind, label: s.label, accounting: preferences.scope });
     }
-    if (s.kind !== "category" && a.n && b.n && variation >= T.classificationShare && variation * Math.min(a.n, b.n) >= T.classificationMinMoved) add(subject, "classification", `${s.label}\u7684\u5206\u7C7B\u5F52\u5C5E\u53D1\u751F\u53D8\u5316`, `\u672C\u671F\u8BB0\u5F55\u5728${[...ca.keys()].join("\u3001")}\uFF0C\u4E0A\u671F\u5728${[...cb.keys()].join("\u3001")}\uFF1B\u4E24\u671F\u5206\u7C7B\u5206\u5E03\u6709\u660E\u663E\u53D8\u5316\uFF0C\u9700\u8DE8\u5206\u7C7B\u5408\u5E76\u540E\u7406\u89E3\u5B9E\u9645\u6D88\u8D39\u53D8\u5316\u3002`, variation, [...s.a, ...s.b], { ...comparisonFacts(s.a, s.b), classification_variation: fact2("\u5206\u7C7B\u5206\u5E03\u53D8\u52A8\u5E45\u5EA6", variation * 100, "%") }, limits);
+    if (s.kind !== "category" && a.n && b.n && variation >= T.classificationShare && variation * Math.min(a.n, b.n) >= T.classificationMinMoved) add2(subject, "classification", `${s.label}\u7684\u5206\u7C7B\u5F52\u5C5E\u53D1\u751F\u53D8\u5316`, `\u672C\u671F\u8BB0\u5F55\u5728${[...ca.keys()].join("\u3001")}\uFF0C\u4E0A\u671F\u5728${[...cb.keys()].join("\u3001")}\uFF1B\u4E24\u671F\u5206\u7C7B\u5206\u5E03\u6709\u660E\u663E\u53D8\u5316\uFF0C\u9700\u8DE8\u5206\u7C7B\u5408\u5E76\u540E\u7406\u89E3\u5B9E\u9645\u6D88\u8D39\u53D8\u5316\u3002`, variation, [...s.a, ...s.b], { ...comparisonFacts(s.a, s.b), classification_variation: fact2("\u5206\u7C7B\u5206\u5E03\u53D8\u52A8\u5E45\u5EA6", variation * 100, "%") }, limits);
   }
   if (comparable) {
     const changes = cats.map((c) => {
@@ -2766,7 +2766,7 @@ function analyzeReport(files, preferences, now, excludedCategories, starredIds, 
       return { c, a: total((_a2 = aCats.get(c)) != null ? _a2 : []), b: total((_b2 = bCats.get(c)) != null ? _b2 : []) * k };
     }).sort((x, y) => Math.abs(y.a - y.b) - Math.abs(x.a - x.b));
     const rising = changes.find((c) => c.a - c.b >= T.amountDeltaCents), falling = changes.find((c) => c.b - c.a >= T.amountDeltaCents);
-    if (rising && falling && Math.abs(total(current) - total(previous) * k) <= Math.max(total(previous) * k * T.shareDelta, T.amountDeltaCents)) add("structure", "structure", "\u603B\u989D\u76F8\u8FD1\uFF0C\u5185\u90E8\u652F\u51FA\u91CD\u5FC3\u5374\u5728\u53D8\u5316", `${rising.c}\u589E\u52A0\u4E0E${falling.c}\u51CF\u5C11\u5728\u91D1\u989D\u4E0A\u76F8\u4E92\u62B5\u6D88\u3002\u603B\u989D\u7A33\u5B9A\u63A9\u76D6\u4E86\u5206\u7C7B\u6784\u6210\u53D8\u5316\uFF0C\u4E0D\u80FD\u636E\u6B64\u8BC1\u660E\u4E24\u79CD\u6D88\u8D39\u5B58\u5728\u8D44\u91D1\u8F6C\u79FB\u5173\u7CFB\u3002`, 0.9, [...current, ...previous], { increase: fact2(`${rising.c}\u589E\u52A0\u91D1\u989D`, (rising.a - rising.b) / 100, "\u5143"), decrease: fact2(`${falling.c}\u51CF\u5C11\u91D1\u989D`, (falling.b - falling.a) / 100, "\u5143"), ...comparisonFacts(current, previous) }, [...limits, "\u91D1\u989D\u62B5\u6D88\u4E0D\u7B49\u4E8E\u6D88\u8D39\u66FF\u4EE3\u6216\u56E0\u679C\u5173\u7CFB\u3002"]);
+    if (rising && falling && Math.abs(total(current) - total(previous) * k) <= Math.max(total(previous) * k * T.shareDelta, T.amountDeltaCents)) add2("structure", "structure", "\u603B\u989D\u76F8\u8FD1\uFF0C\u5185\u90E8\u652F\u51FA\u91CD\u5FC3\u5374\u5728\u53D8\u5316", `${rising.c}\u589E\u52A0\u4E0E${falling.c}\u51CF\u5C11\u5728\u91D1\u989D\u4E0A\u76F8\u4E92\u62B5\u6D88\u3002\u603B\u989D\u7A33\u5B9A\u63A9\u76D6\u4E86\u5206\u7C7B\u6784\u6210\u53D8\u5316\uFF0C\u4E0D\u80FD\u636E\u6B64\u8BC1\u660E\u4E24\u79CD\u6D88\u8D39\u5B58\u5728\u8D44\u91D1\u8F6C\u79FB\u5173\u7CFB\u3002`, 0.9, [...current, ...previous], { increase: fact2(`${rising.c}\u589E\u52A0\u91D1\u989D`, (rising.a - rising.b) / 100, "\u5143"), decrease: fact2(`${falling.c}\u51CF\u5C11\u91D1\u989D`, (falling.b - falling.a) / 100, "\u5143"), ...comparisonFacts(current, previous) }, [...limits, "\u91D1\u989D\u62B5\u6D88\u4E0D\u7B49\u4E8E\u6D88\u8D39\u66FF\u4EE3\u6216\u56E0\u679C\u5173\u7CFB\u3002"]);
     const entropy = (g, n) => cats.length <= 1 || !n ? 0 : -[...g.values()].reduce((s, r) => {
       const p = r.length / n;
       return s + p * Math.log(p);
@@ -2777,7 +2777,7 @@ function analyzeReport(files, preferences, now, excludedCategories, starredIds, 
     }).sort((x, y) => Math.max(Math.abs(y.a - y.b), Math.abs(y.am - y.bm)) - Math.max(Math.abs(x.a - x.b), Math.abs(x.am - x.bm)));
     if (current.length >= T.distributionMin && previous.length >= T.distributionMin && shares[0]) {
       const lead = shares[0], diff = Math.max(Math.abs(lead.a - lead.b), Math.abs(lead.am - lead.bm));
-      if (diff >= T.shareDelta || Math.abs(hA - hB) >= T.shareDelta) add("mix", "mix", "\u6D88\u8D39\u6784\u6210\u6539\u53D8\uFF0C\u7B14\u6570\u4E0E\u91D1\u989D\u5360\u6BD4\u503C\u5F97\u4E00\u8D77\u770B", `${lead.c}\u7684\u7B14\u6570\u6216\u91D1\u989D\u5360\u6BD4\u6539\u53D8\u3002\u5360\u6BD4\u53D8\u5316\u53EF\u80FD\u6765\u81EA\u8BE5\u7C7B\u589E\u52A0\uFF0C\u4E5F\u53EF\u80FD\u6765\u81EA\u5176\u4ED6\u7C7B\u51CF\u5C11\uFF0C\u4E0D\u80FD\u53EA\u770B\u4E00\u4E2A\u6BD4\u4F8B\u5224\u65AD\u82B1\u5F97\u66F4\u591A\u3002`, Math.min(1, diff * 3), [...current, ...previous], { ...comparisonFacts(current, previous), current_share: fact2(`${lead.c}\u672C\u671F\u7B14\u6570\u5360\u6BD4`, lead.a * 100, "%"), previous_share: fact2(`${lead.c}\u4E0A\u671F\u7B14\u6570\u5360\u6BD4`, lead.b * 100, "%"), current_amount_share: fact2(`${lead.c}\u672C\u671F\u91D1\u989D\u5360\u6BD4`, lead.am * 100, "%"), previous_amount_share: fact2(`${lead.c}\u4E0A\u671F\u91D1\u989D\u5360\u6BD4`, lead.bm * 100, "%"), category_overlap: fact2("\u7C7B\u522B\u96C6\u5408\u91CD\u5408\u5EA6", cats.length ? [...aCats.keys()].filter((c) => bCats.has(c)).length / cats.length * 100 : 0, "%"), current_diversity: fact2("\u672C\u671F\u7C7B\u522B\u5206\u6563\u7A0B\u5EA6", hA * 100, "%"), previous_diversity: fact2("\u4E0A\u671F\u7C7B\u522B\u5206\u6563\u7A0B\u5EA6", hB * 100, "%") }, [...limits, "\u5206\u7C7B\u8C03\u6574\u4F1A\u5F71\u54CD\u6D88\u8D39\u6784\u6210\uFF0C\u7C7B\u522B\u71B5\u4F7F\u7528\u4E24\u671F\u76F8\u540C\u7C7B\u522B\u96C6\u5408\u3002"]);
+      if (diff >= T.shareDelta || Math.abs(hA - hB) >= T.shareDelta) add2("mix", "mix", "\u6D88\u8D39\u6784\u6210\u6539\u53D8\uFF0C\u7B14\u6570\u4E0E\u91D1\u989D\u5360\u6BD4\u503C\u5F97\u4E00\u8D77\u770B", `${lead.c}\u7684\u7B14\u6570\u6216\u91D1\u989D\u5360\u6BD4\u6539\u53D8\u3002\u5360\u6BD4\u53D8\u5316\u53EF\u80FD\u6765\u81EA\u8BE5\u7C7B\u589E\u52A0\uFF0C\u4E5F\u53EF\u80FD\u6765\u81EA\u5176\u4ED6\u7C7B\u51CF\u5C11\uFF0C\u4E0D\u80FD\u53EA\u770B\u4E00\u4E2A\u6BD4\u4F8B\u5224\u65AD\u82B1\u5F97\u66F4\u591A\u3002`, Math.min(1, diff * 3), [...current, ...previous], { ...comparisonFacts(current, previous), current_share: fact2(`${lead.c}\u672C\u671F\u7B14\u6570\u5360\u6BD4`, lead.a * 100, "%"), previous_share: fact2(`${lead.c}\u4E0A\u671F\u7B14\u6570\u5360\u6BD4`, lead.b * 100, "%"), current_amount_share: fact2(`${lead.c}\u672C\u671F\u91D1\u989D\u5360\u6BD4`, lead.am * 100, "%"), previous_amount_share: fact2(`${lead.c}\u4E0A\u671F\u91D1\u989D\u5360\u6BD4`, lead.bm * 100, "%"), category_overlap: fact2("\u7C7B\u522B\u96C6\u5408\u91CD\u5408\u5EA6", cats.length ? [...aCats.keys()].filter((c) => bCats.has(c)).length / cats.length * 100 : 0, "%"), current_diversity: fact2("\u672C\u671F\u7C7B\u522B\u5206\u6563\u7A0B\u5EA6", hA * 100, "%"), previous_diversity: fact2("\u4E0A\u671F\u7C7B\u522B\u5206\u6563\u7A0B\u5EA6", hB * 100, "%") }, [...limits, "\u5206\u7C7B\u8C03\u6574\u4F1A\u5F71\u54CD\u6D88\u8D39\u6784\u6210\uFF0C\u7C7B\u522B\u71B5\u4F7F\u7528\u4E24\u671F\u76F8\u540C\u7C7B\u522B\u96C6\u5408\u3002"]);
     }
   }
   const weekRanges = [];
@@ -2805,17 +2805,17 @@ function analyzeReport(files, preferences, now, excludedCategories, starredIds, 
     const ordinary = ["object:\u65E9\u9910", "object:\u5348\u9910", "object:\u665A\u9910"].includes(key), changed = snapshot.findings.some((f) => f.subject === key);
     if (last.length === T.repeatWeeks && counts.slice(-T.repeatWeeks).filter((n) => n > 0).length >= T.repeatActiveWeeks && lastRecords.length >= T.repeatCount && objectsNow.has(key) && (!ordinary || changed)) {
       const dd = [...new Set(lastRecords.map((r) => r.date))].sort(), intervals = dd.slice(1).map((d, i) => reportDays({ start: dd[i], end: d }) - 1), lastCounts = counts.slice(-T.repeatWeeks);
-      add(key, "repeat", `${g.label}\u5DF2\u7ECF\u8FDE\u7EED\u591A\u5468\u51FA\u73B0`, "\u8FD9\u7EC4\u8BB0\u5F55\u5206\u6563\u5728\u591A\u4E2A\u5B8C\u6574\u5468\uFF0C\u66F4\u63A5\u8FD1\u65E5\u5E38\u91CD\u590D\u51FA\u73B0\uFF0C\u800C\u975E\u4E00\u6B21\u96C6\u4E2D\u8D2D\u4E70\uFF1B\u662F\u5426\u957F\u671F\u4FDD\u6301\u4ECD\u9700\u7EE7\u7EED\u89C2\u5BDF\u3002", Math.min(1, lastRecords.length / (T.repeatCount * 2)), lastRecords, { count: fact2("\u6700\u8FD1\u56DB\u5468\u7B14\u6570", lastRecords.length, "\u7B14"), days: fact2("\u51FA\u73B0\u5929\u6570", dd.length, "\u5929"), interval: fact2("\u76F8\u90BB\u6D88\u8D39\u65E5\u95F4\u9694\u4E2D\u4F4D\u6570", reportMedian(intervals), "\u5929"), concentration: fact2("\u6700\u591A\u4E00\u5468\u7B14\u6570\u5360\u6BD4", Math.max(...lastCounts) / lastRecords.length * 100, "%") }, timeLimits, [{ label: "\u6700\u8FD1\u56DB\u4E2A\u5B8C\u6574\u5468", range: { start: last[0].start, end: last[last.length - 1].end } }]);
+      add2(key, "repeat", `${g.label}\u5DF2\u7ECF\u8FDE\u7EED\u591A\u5468\u51FA\u73B0`, "\u8FD9\u7EC4\u8BB0\u5F55\u5206\u6563\u5728\u591A\u4E2A\u5B8C\u6574\u5468\uFF0C\u66F4\u63A5\u8FD1\u65E5\u5E38\u91CD\u590D\u51FA\u73B0\uFF0C\u800C\u975E\u4E00\u6B21\u96C6\u4E2D\u8D2D\u4E70\uFF1B\u662F\u5426\u957F\u671F\u4FDD\u6301\u4ECD\u9700\u7EE7\u7EED\u89C2\u5BDF\u3002", Math.min(1, lastRecords.length / (T.repeatCount * 2)), lastRecords, { count: fact2("\u6700\u8FD1\u56DB\u5468\u7B14\u6570", lastRecords.length, "\u7B14"), days: fact2("\u51FA\u73B0\u5929\u6570", dd.length, "\u5929"), interval: fact2("\u76F8\u90BB\u6D88\u8D39\u65E5\u95F4\u9694\u4E2D\u4F4D\u6570", reportMedian(intervals), "\u5929"), concentration: fact2("\u6700\u591A\u4E00\u5468\u7B14\u6570\u5360\u6BD4", Math.max(...lastCounts) / lastRecords.length * 100, "%") }, timeLimits, [{ label: "\u6700\u8FD1\u56DB\u4E2A\u5B8C\u6574\u5468", range: { start: last[0].start, end: last[last.length - 1].end } }]);
     }
     if (weeks.length < T.trendMinWeeks || records.length < T.temporalMinCount) continue;
     const slope = theilSen(counts), early = reportMedian(counts.slice(0, T.trendSegmentWeeks)), late = reportMedian(counts.slice(-T.trendSegmentWeeks)), difference = late - early;
-    if (Math.abs(difference) >= minDiff(early, late) && Math.abs(slope) * (weeks.length - 1) >= minDiff(early, late) && slope * difference > 0) add(key, "trend", `${g.label}\u7684\u5468\u9891\u6B21\u5448\u6301\u7EED${slope > 0 ? "\u4E0A\u5347" : "\u4E0B\u964D"}`, "\u524D\u540E\u56DB\u5468\u4E2D\u4F4D\u6570\u548C\u7A33\u5065\u8D8B\u52BF\u65B9\u5411\u4E00\u81F4\uFF0C\u63D0\u793A\u8BB0\u5F55\u9891\u7387\u6301\u7EED\u53D8\u5316\u3002\u53EA\u80FD\u5B9A\u4F4D\u5230\u5468\uFF0C\u4E0D\u80FD\u636E\u6B64\u786E\u5B9A\u751F\u6D3B\u539F\u56E0\u3002", Math.min(1, Math.abs(difference) / Math.max(1, early, late)), records, { early: fact2("\u524D\u56DB\u5468\u5468\u7B14\u6570\u4E2D\u4F4D\u6570", early, "\u7B14"), late: fact2("\u540E\u56DB\u5468\u5468\u7B14\u6570\u4E2D\u4F4D\u6570", late, "\u7B14"), slope: fact2("\u7A33\u5065\u8D8B\u52BF\u6BCF\u5468\u7B14\u6570\u53D8\u5316", slope, "\u7B14") }, timeLimits, temporalRanges);
+    if (Math.abs(difference) >= minDiff(early, late) && Math.abs(slope) * (weeks.length - 1) >= minDiff(early, late) && slope * difference > 0) add2(key, "trend", `${g.label}\u7684\u5468\u9891\u6B21\u5448\u6301\u7EED${slope > 0 ? "\u4E0A\u5347" : "\u4E0B\u964D"}`, "\u524D\u540E\u56DB\u5468\u4E2D\u4F4D\u6570\u548C\u7A33\u5065\u8D8B\u52BF\u65B9\u5411\u4E00\u81F4\uFF0C\u63D0\u793A\u8BB0\u5F55\u9891\u7387\u6301\u7EED\u53D8\u5316\u3002\u53EA\u80FD\u5B9A\u4F4D\u5230\u5468\uFF0C\u4E0D\u80FD\u636E\u6B64\u786E\u5B9A\u751F\u6D3B\u539F\u56E0\u3002", Math.min(1, Math.abs(difference) / Math.max(1, early, late)), records, { early: fact2("\u524D\u56DB\u5468\u5468\u7B14\u6570\u4E2D\u4F4D\u6570", early, "\u7B14"), late: fact2("\u540E\u56DB\u5468\u5468\u7B14\u6570\u4E2D\u4F4D\u6570", late, "\u7B14"), slope: fact2("\u7A33\u5065\u8D8B\u52BF\u6BCF\u5468\u7B14\u6570\u53D8\u5316", slope, "\u7B14") }, timeLimits, temporalRanges);
     let split;
     for (let i = T.trendSegmentWeeks; i <= counts.length - T.trendSegmentWeeks; i++) {
       const before = reportMedian(counts.slice(0, i)), after = reportMedian(counts.slice(i)), difference2 = Math.abs(after - before);
       if (difference2 >= minDiff(before, after) && (!split || difference2 > split.difference)) split = { index: i, before, after, difference: difference2 };
     }
-    if (split) add(key, "level", `${g.label}\u7684\u9891\u7387\u5728\u67D0\u4E00\u5468\u524D\u540E\u6539\u53D8`, `\u4EE5${weeks[split.index].start}\u5F00\u59CB\u7684\u5468\u9644\u8FD1\u4E3A\u5019\u9009\u5206\u754C\uFF0C\u524D\u540E\u5468\u7B14\u6570\u4E2D\u4F4D\u6570\u4E0D\u540C\uFF1B\u4E0D\u80FD\u7CBE\u786E\u5230\u67D0\u4E00\u5929\u6216\u65AD\u8A00\u539F\u56E0\u3002`, Math.min(1, split.difference / Math.max(1, split.before, split.after)), records, { before: fact2("\u5206\u754C\u524D\u5468\u7B14\u6570\u4E2D\u4F4D\u6570", split.before, "\u7B14"), after: fact2("\u5206\u754C\u540E\u5468\u7B14\u6570\u4E2D\u4F4D\u6570", split.after, "\u7B14") }, [...timeLimits, "\u5206\u754C\u6765\u81EA\u63A2\u7D22\u6027\u626B\u63CF\uFF0C\u4E0D\u4EE3\u8868\u7EDF\u8BA1\u663E\u8457\u6027\u3002"], temporalRanges);
+    if (split) add2(key, "level", `${g.label}\u7684\u9891\u7387\u5728\u67D0\u4E00\u5468\u524D\u540E\u6539\u53D8`, `\u4EE5${weeks[split.index].start}\u5F00\u59CB\u7684\u5468\u9644\u8FD1\u4E3A\u5019\u9009\u5206\u754C\uFF0C\u524D\u540E\u5468\u7B14\u6570\u4E2D\u4F4D\u6570\u4E0D\u540C\uFF1B\u4E0D\u80FD\u7CBE\u786E\u5230\u67D0\u4E00\u5929\u6216\u65AD\u8A00\u539F\u56E0\u3002`, Math.min(1, split.difference / Math.max(1, split.before, split.after)), records, { before: fact2("\u5206\u754C\u524D\u5468\u7B14\u6570\u4E2D\u4F4D\u6570", split.before, "\u7B14"), after: fact2("\u5206\u754C\u540E\u5468\u7B14\u6570\u4E2D\u4F4D\u6570", split.after, "\u7B14") }, [...timeLimits, "\u5206\u754C\u6765\u81EA\u63A2\u7D22\u6027\u626B\u63CF\uFF0C\u4E0D\u4EE3\u8868\u7EDF\u8BA1\u663E\u8457\u6027\u3002"], temporalRanges);
   }
   if (weeks.length >= T.trendMinWeeks && temporal.length >= T.temporalMinCount) {
     const byDate = group(temporal, (r) => r.date), vectors = weeks.map((w) => Array.from({ length: 7 }, (_, day) => {
@@ -2824,9 +2824,9 @@ function analyzeReport(files, preferences, now, excludedCategories, starredIds, 
     })), means = Array.from({ length: 7 }, (_, d) => vectors.reduce((s, v) => s + v[d], 0) / weeks.length), work = means.slice(0, 5).reduce((a, b) => a + b, 0) / 5, wknd = (means[5] + means[6]) / 2;
     const weekdayFacts = {};
     for (let d = 0; d < 7; d++) {
-      const label = ["\u5468\u4E00", "\u5468\u4E8C", "\u5468\u4E09", "\u5468\u56DB", "\u5468\u4E94", "\u5468\u516D", "\u5468\u65E5"][d];
-      weekdayFacts[`weekday_amount_${d}`] = fact2(`${label}\u65E5\u5747\u91D1\u989D`, means[d] / 100, "\u5143");
-      weekdayFacts[`weekday_count_${d}`] = fact2(`${label}\u65E5\u5747\u7B14\u6570`, vectors.reduce((s, _v, i) => {
+      const label2 = ["\u5468\u4E00", "\u5468\u4E8C", "\u5468\u4E09", "\u5468\u56DB", "\u5468\u4E94", "\u5468\u516D", "\u5468\u65E5"][d];
+      weekdayFacts[`weekday_amount_${d}`] = fact2(`${label2}\u65E5\u5747\u91D1\u989D`, means[d] / 100, "\u5143");
+      weekdayFacts[`weekday_count_${d}`] = fact2(`${label2}\u65E5\u5747\u7B14\u6570`, vectors.reduce((s, _v, i) => {
         var _a2, _b2;
         return s + ((_b2 = (_a2 = byDate.get(addDays(weeks[i].start, d))) == null ? void 0 : _a2.length) != null ? _b2 : 0);
       }, 0) / weeks.length, "\u7B14");
@@ -2844,7 +2844,7 @@ function analyzeReport(files, preferences, now, excludedCategories, starredIds, 
       return b.repeat - a.repeat || ((_a2 = b.ratio) != null ? _a2 : Infinity) - ((_b2 = a.ratio) != null ? _b2 : Infinity);
     });
     const best = rhythm[0], similarities = vectors.slice(1).map((v, i) => cosine(vectors[i], v));
-    if (best) add("rhythm", "rhythm", best.title, best.observation, Math.min(1, best.repeat), temporal, { ...weekdayFacts, ...best.ratio !== null ? { ratio: fact2("\u9AD8\u5CF0\u4E0E\u5BF9\u7167\u65E5\u5747\u91D1\u989D\u4E4B\u6BD4", best.ratio, "\u500D") } : {}, peak_daily: fact2("\u9AD8\u5CF0\u65E5\u5747\u91D1\u989D", best.peak / 100, "\u5143"), reference_daily: fact2("\u5BF9\u7167\u65E5\u5747\u91D1\u989D", best.reference / 100, "\u5143"), repeat_share: fact2("\u91CD\u590D\u9AD8\u5CF0\u7684\u5468\u5360\u6BD4", best.repeat * 100, "%"), persistence: fact2("\u76F8\u90BB\u5468\u5206\u5E03\u76F8\u4F3C\u5EA6\u4E2D\u4F4D\u6570", reportMedian(similarities) * 100, "%") }, [...timeLimits, "\u65E5\u5747\u91D1\u989D\u4E0E\u91CD\u590D\u5468\u540C\u65F6\u6838\u5BF9\uFF1B\u76F8\u4F3C\u5EA6\u4E0D\u4EE3\u8868\u9884\u7B97\u5408\u7406\u6216\u751F\u6D3B\u539F\u56E0\u3002"], temporalRanges);
+    if (best) add2("rhythm", "rhythm", best.title, best.observation, Math.min(1, best.repeat), temporal, { ...weekdayFacts, ...best.ratio !== null ? { ratio: fact2("\u9AD8\u5CF0\u4E0E\u5BF9\u7167\u65E5\u5747\u91D1\u989D\u4E4B\u6BD4", best.ratio, "\u500D") } : {}, peak_daily: fact2("\u9AD8\u5CF0\u65E5\u5747\u91D1\u989D", best.peak / 100, "\u5143"), reference_daily: fact2("\u5BF9\u7167\u65E5\u5747\u91D1\u989D", best.reference / 100, "\u5143"), repeat_share: fact2("\u91CD\u590D\u9AD8\u5CF0\u7684\u5468\u5360\u6BD4", best.repeat * 100, "%"), persistence: fact2("\u76F8\u90BB\u5468\u5206\u5E03\u76F8\u4F3C\u5EA6\u4E2D\u4F4D\u6570", reportMedian(similarities) * 100, "%") }, [...timeLimits, "\u65E5\u5747\u91D1\u989D\u4E0E\u91CD\u590D\u5468\u540C\u65F6\u6838\u5BF9\uFF1B\u76F8\u4F3C\u5EA6\u4E0D\u4EE3\u8868\u9884\u7B97\u5408\u7406\u6216\u751F\u6D3B\u539F\u56E0\u3002"], temporalRanges);
   }
   if (weeks.length >= T.associationMinWeeks) {
     const objects = objectGroups(temporal), frequent = [...objects.entries()].filter(([, g]) => g.kind === "object" && new Set(g.records.map((r) => r.date)).size >= T.associationMinDays).sort((a, b) => b[1].records.length - a[1].records.length || a[0].localeCompare(b[0])).slice(0, T.associationMaxObjects), dd = dates(temporalRange);
@@ -2870,20 +2870,20 @@ function analyzeReport(files, preferences, now, excludedCategories, starredIds, 
       if (!chosen || chosen.lift < T.associationLift) continue;
       const test = stratifiedAssociationTail(Array.from({ length: 7 }, (_, d) => ({ days: weeks.length, a: [...ad].filter((day) => weekday(day) === d).length, b: [...bd].filter((day) => weekday(day) === d).length })), together.length);
       if (test.p >= T.associationAlpha / Math.max(1, pairs)) continue;
-      add([aKey, bKey].sort().join("+"), "association", `${chosen.a}\u4E0E${chosen.b}\u7ECF\u5E38\u5728\u540C\u4E00\u5929\u51FA\u73B0`, `\u5728\u6709${chosen.a}\u8BB0\u5F55\u7684\u65E5\u671F\uFF0C${chosen.b}\u66F4\u5E38\u51FA\u73B0\uFF1B\u6309\u661F\u671F\u5BF9\u7167\u5E76\u63A7\u5236\u6BD4\u8F83\u5BF9\u6570\u540E\u4ECD\u6709\u7EBF\u7D22\u3002\u53EA\u63CF\u8FF0\u540C\u65E5\u5173\u8054\uFF0C\u4E0D\u4EE3\u8868\u5148\u540E\u3001\u89E6\u53D1\u6216\u56E0\u679C\u3002`, Math.min(1, together.length / (T.associationTogether * 2)), [...a.records, ...b.records], { together: fact2("\u4E0D\u540C\u8BB0\u5F55\u5171\u540C\u51FA\u73B0\u5929\u6570", together.length, "\u5929"), lift: fact2("\u661F\u671F\u5339\u914D\u5BF9\u7167\u540E\u7684\u6BD4\u4F8B\u500D\u6570", chosen.lift, "\u500D"), expected_together: fact2("\u661F\u671F\u5339\u914D\u5BF9\u7167\u9884\u8BA1\u5171\u540C\u51FA\u73B0\u5929\u6570", chosen.expected, "\u5929"), independent_expected: fact2("\u56FA\u5B9A\u661F\u671F\u9891\u7387\u4E0B\u9884\u8BA1\u5171\u540C\u51FA\u73B0\u5929\u6570", test.expected, "\u5929"), tested_pairs: fact2("\u5B9E\u9645\u6BD4\u8F83\u5BF9\u6570", pairs, "\u5BF9"), adjusted_p: fact2("\u63A2\u7D22\u68C0\u9A8C\u6821\u6B63\u5C3E\u6982\u7387", Math.min(1, test.p * pairs) * 100, "%") }, [...timeLimits, "\u6309\u661F\u671F\u5206\u5C42\u7684\u56FA\u5B9A\u9891\u7387\u7CBE\u786E\u5C3E\u6982\u7387\u4F5C\u63A2\u7D22\u7B5B\u9009\uFF1B\u8FDE\u7EED\u65E5\u671F\u4F9D\u8D56\u548C\u672A\u8BB0\u5F55\u60C5\u5883\u4ECD\u53EF\u80FD\u5F71\u54CD\u5173\u8054\uFF0C\u4E0D\u662F\u53EF\u4FE1\u6982\u7387\u3002"], temporalRanges);
+      add2([aKey, bKey].sort().join("+"), "association", `${chosen.a}\u4E0E${chosen.b}\u7ECF\u5E38\u5728\u540C\u4E00\u5929\u51FA\u73B0`, `\u5728\u6709${chosen.a}\u8BB0\u5F55\u7684\u65E5\u671F\uFF0C${chosen.b}\u66F4\u5E38\u51FA\u73B0\uFF1B\u6309\u661F\u671F\u5BF9\u7167\u5E76\u63A7\u5236\u6BD4\u8F83\u5BF9\u6570\u540E\u4ECD\u6709\u7EBF\u7D22\u3002\u53EA\u63CF\u8FF0\u540C\u65E5\u5173\u8054\uFF0C\u4E0D\u4EE3\u8868\u5148\u540E\u3001\u89E6\u53D1\u6216\u56E0\u679C\u3002`, Math.min(1, together.length / (T.associationTogether * 2)), [...a.records, ...b.records], { together: fact2("\u4E0D\u540C\u8BB0\u5F55\u5171\u540C\u51FA\u73B0\u5929\u6570", together.length, "\u5929"), lift: fact2("\u661F\u671F\u5339\u914D\u5BF9\u7167\u540E\u7684\u6BD4\u4F8B\u500D\u6570", chosen.lift, "\u500D"), expected_together: fact2("\u661F\u671F\u5339\u914D\u5BF9\u7167\u9884\u8BA1\u5171\u540C\u51FA\u73B0\u5929\u6570", chosen.expected, "\u5929"), independent_expected: fact2("\u56FA\u5B9A\u661F\u671F\u9891\u7387\u4E0B\u9884\u8BA1\u5171\u540C\u51FA\u73B0\u5929\u6570", test.expected, "\u5929"), tested_pairs: fact2("\u5B9E\u9645\u6BD4\u8F83\u5BF9\u6570", pairs, "\u5BF9"), adjusted_p: fact2("\u63A2\u7D22\u68C0\u9A8C\u6821\u6B63\u5C3E\u6982\u7387", Math.min(1, test.p * pairs) * 100, "%") }, [...timeLimits, "\u6309\u661F\u671F\u5206\u5C42\u7684\u56FA\u5B9A\u9891\u7387\u7CBE\u786E\u5C3E\u6982\u7387\u4F5C\u63A2\u7D22\u7B5B\u9009\uFF1B\u8FDE\u7EED\u65E5\u671F\u4F9D\u8D56\u548C\u672A\u8BB0\u5F55\u60C5\u5883\u4ECD\u53EF\u80FD\u5F71\u54CD\u5173\u8054\uFF0C\u4E0D\u662F\u53EF\u4FE1\u6982\u7387\u3002"], temporalRanges);
     }
   }
   if (coverage2[0].complete && snapshot.historicalRanges.length >= T.historyPeriods) for (const [key, s] of subjects) {
     if (!["category", "object"].includes(s.kind) || s.a.length < T.minSubjectCount) continue;
     const historyRows = snapshot.historicalRanges.map((range) => selected(range).filter((r) => s.kind === "category" ? r.category === s.label : identifyReportObjects(r.note, rules).some((o) => o.key === key)));
     const values = historyRows.map((rs, i) => total(rs) / reportDays(snapshot.historicalRanges[i])), median3 = reportMedian(values), mad = reportMedian(values.map((v) => Math.abs(v - median3))), daily = total(s.a) / Math.max(1, observed[0]), diff = daily - median3, margin = Math.max(T.historyMadMultiplier * T.historyScale * mad, T.amountDeltaCents / Math.max(1, observed[0]));
-    if (Math.abs(diff) > margin) add(key, "history", `${s.label}\u660E\u663E${diff > 0 ? "\u9AD8" : "\u4F4E"}\u4E8E\u8FD1${values.length}\u671F\u8BB0\u5F55\u5E38\u6001`, "\u6309\u5B8C\u6574\u5386\u53F2\u5468\u671F\u7684\u65E5\u5747\u8BB0\u5F55\u91D1\u989D\u6BD4\u8F83\uFF0C\u672C\u671F\u504F\u79BB\u5386\u53F2\u4E2D\u4F4D\u6570\uFF1B\u5386\u53F2\u8F83\u5C11\u6216\u6CE2\u52A8\u5F88\u5C0F\u65F6\u4ECD\u91C7\u7528\u7EDD\u5BF9\u5F71\u54CD\u95E8\u69DB\uFF0C\u4E0D\u628A\u504F\u79BB\u89E3\u91CA\u4E3A\u539F\u56E0\u6216\u5931\u63A7\u3002", Math.min(1, Math.abs(diff) / Math.max(1, margin * 2)), [...s.a, ...historyRows.flat()], { current_daily: fact2("\u672C\u671F\u6BCF\u89C2\u5BDF\u65E5\u91D1\u989D", daily / 100, "\u5143"), history_median: fact2("\u5386\u53F2\u65E5\u5747\u91D1\u989D\u4E2D\u4F4D\u6570", median3 / 100, "\u5143"), history_mad: fact2("\u5386\u53F2\u65E5\u5747\u91D1\u989D\u7EDD\u5BF9\u504F\u5DEE\u4E2D\u4F4D\u6570", mad / 100, "\u5143"), periods_used: fact2("\u5B8C\u6574\u5386\u53F2\u5468\u671F\u6570", values.length, "\u671F") }, limits, [ranges[0], ...snapshot.historicalRanges.map((r) => ({ label: "\u5B8C\u6574\u5386\u53F2\u5468\u671F", range: r }))]);
+    if (Math.abs(diff) > margin) add2(key, "history", `${s.label}\u660E\u663E${diff > 0 ? "\u9AD8" : "\u4F4E"}\u4E8E\u8FD1${values.length}\u671F\u8BB0\u5F55\u5E38\u6001`, "\u6309\u5B8C\u6574\u5386\u53F2\u5468\u671F\u7684\u65E5\u5747\u8BB0\u5F55\u91D1\u989D\u6BD4\u8F83\uFF0C\u672C\u671F\u504F\u79BB\u5386\u53F2\u4E2D\u4F4D\u6570\uFF1B\u5386\u53F2\u8F83\u5C11\u6216\u6CE2\u52A8\u5F88\u5C0F\u65F6\u4ECD\u91C7\u7528\u7EDD\u5BF9\u5F71\u54CD\u95E8\u69DB\uFF0C\u4E0D\u628A\u504F\u79BB\u89E3\u91CA\u4E3A\u539F\u56E0\u6216\u5931\u63A7\u3002", Math.min(1, Math.abs(diff) / Math.max(1, margin * 2)), [...s.a, ...historyRows.flat()], { current_daily: fact2("\u672C\u671F\u6BCF\u89C2\u5BDF\u65E5\u91D1\u989D", daily / 100, "\u5143"), history_median: fact2("\u5386\u53F2\u65E5\u5747\u91D1\u989D\u4E2D\u4F4D\u6570", median3 / 100, "\u5143"), history_mad: fact2("\u5386\u53F2\u65E5\u5747\u91D1\u989D\u7EDD\u5BF9\u504F\u5DEE\u4E2D\u4F4D\u6570", mad / 100, "\u5143"), periods_used: fact2("\u5B8C\u6574\u5386\u53F2\u5468\u671F\u6570", values.length, "\u671F") }, limits, [ranges[0], ...snapshot.historicalRanges.map((r) => ({ label: "\u5B8C\u6574\u5386\u53F2\u5468\u671F", range: r }))]);
   }
   for (const c of cats) {
     const historical = all.filter((r2) => r2.category === c && snapshot.historicalRanges.some((h) => r2.date >= h.start && r2.date <= h.end));
     if (historical.length < T.outlierHistoryCount) continue;
     const p90 = quantile2(historical.map((r2) => r2.cents), 0.9), threshold = Math.max(T.outlierP90Multiplier * p90, T.outlierFloorCents), r = [...(_h = aCats.get(c)) != null ? _h : []].sort((a, b) => b.cents - a.cents)[0];
-    if (r && r.cents >= threshold) add(`category:${c}`, "outlier", `${c}\u6709\u4E00\u7B14\u660E\u663E\u9AD8\u4E8E\u5386\u53F2\u7684\u4ED8\u6B3E`, "\u8FD9\u7B14\u4ED8\u6B3E\u660E\u663E\u9AD8\u4E8E\u8BE5\u5206\u7C7B\u5B8C\u6574\u5386\u53F2\u671F\u7684\u591A\u6570\u8BB0\u5F55\u3002\u5B83\u662F\u53EF\u6838\u5BF9\u7684\u5927\u989D\u7EBF\u7D22\uFF0C\u4E0D\u76F4\u63A5\u5224\u5B9A\u6D6A\u8D39\u3001\u5F02\u5E38\u4EA4\u6613\u6216\u6D88\u8D39\u5931\u63A7\u3002", Math.min(1, r.cents / (threshold * 2)), [r, ...historical], { outlier_amount: fact2("\u672C\u671F\u5355\u7B14\u91D1\u989D", r.cents / 100, "\u5143"), history_p90: fact2("\u5386\u53F2\u5355\u7B14\u91D1\u989DP90", p90 / 100, "\u5143"), outlier_share: fact2("\u5360\u672C\u671F\u8BE5\u5206\u7C7B\u91D1\u989D", r.cents / Math.max(1, total((_i = aCats.get(c)) != null ? _i : [])) * 100, "%") }, limits, [ranges[0], ...snapshot.historicalRanges.map((range) => ({ label: "\u5B8C\u6574\u5386\u53F2\u5468\u671F", range }))]);
+    if (r && r.cents >= threshold) add2(`category:${c}`, "outlier", `${c}\u6709\u4E00\u7B14\u660E\u663E\u9AD8\u4E8E\u5386\u53F2\u7684\u4ED8\u6B3E`, "\u8FD9\u7B14\u4ED8\u6B3E\u660E\u663E\u9AD8\u4E8E\u8BE5\u5206\u7C7B\u5B8C\u6574\u5386\u53F2\u671F\u7684\u591A\u6570\u8BB0\u5F55\u3002\u5B83\u662F\u53EF\u6838\u5BF9\u7684\u5927\u989D\u7EBF\u7D22\uFF0C\u4E0D\u76F4\u63A5\u5224\u5B9A\u6D6A\u8D39\u3001\u5F02\u5E38\u4EA4\u6613\u6216\u6D88\u8D39\u5931\u63A7\u3002", Math.min(1, r.cents / (threshold * 2)), [r, ...historical], { outlier_amount: fact2("\u672C\u671F\u5355\u7B14\u91D1\u989D", r.cents / 100, "\u5143"), history_p90: fact2("\u5386\u53F2\u5355\u7B14\u91D1\u989DP90", p90 / 100, "\u5143"), outlier_share: fact2("\u5360\u672C\u671F\u8BE5\u5206\u7C7B\u91D1\u989D", r.cents / Math.max(1, total((_i = aCats.get(c)) != null ? _i : [])) * 100, "%") }, limits, [ranges[0], ...snapshot.historicalRanges.map((range) => ({ label: "\u5B8C\u6574\u5386\u53F2\u5468\u671F", range }))]);
   }
   const evidenceById = new Map(snapshot.evidence.map((e) => [e.id, e])), recordSet = (f) => new Set(f.evidenceIds.flatMap((id) => {
     var _a2, _b2;
@@ -2982,7 +2982,7 @@ function formatReportText(text2) {
 }
 function reportTextParts(text2, emphasis) {
   const parts = [];
-  const add = (value, bold) => {
+  const add2 = (value, bold) => {
     const pattern2 = /[+−](?:[¥￥])?\d+(?:\.\d+)?(?:元|块钱|块|%|笔|天)|[¥￥][+−]\d+(?:\.\d+)?/g;
     let cursor2 = 0;
     for (const m of value.matchAll(pattern2)) {
@@ -2995,13 +2995,13 @@ function reportTextParts(text2, emphasis) {
   const formatted = formatReportText(text2), pattern = /\*\*([^\n]+?)\*\*/g;
   let cursor = 0;
   for (const m of formatted.matchAll(pattern)) {
-    add(formatted.slice(cursor, m.index), false);
+    add2(formatted.slice(cursor, m.index), false);
     const bold = emphasis.remaining > 0;
     if (bold) emphasis.remaining--;
-    add(m[1], bold);
+    add2(m[1], bold);
     cursor = m.index + m[0].length;
   }
-  add(formatted.slice(cursor), false);
+  add2(formatted.slice(cursor), false);
   return parts;
 }
 function reportProgress(snapshot) {
@@ -3126,8 +3126,8 @@ function identifyReportObjects(note, rules = DEFAULT_OBJECT_RULES) {
   const text2 = normalizeLedgerText(note).trim().toLocaleLowerCase("zh-CN").replace(/\s+/g, " ");
   if (!text2) return [];
   const matches = rules.objects.filter(([, re]) => re.test(text2));
-  const mixed = matches.length > 1 && (/超市|购物|[+、]/.test(text2) || matches.some(([label]) => ["\u6C34\u679C", "\u751F\u6D3B\u7528\u54C1", "\u96F6\u98DF"].includes(label)));
-  const result = mixed ? [{ key: "mixed:\u8D2D\u7269", label: "\u6DF7\u5408\u8D2D\u7269", kind: "mixed" }] : matches.map(([label]) => ({ key: `object:${label}`, label, kind: "object" }));
+  const mixed = matches.length > 1 && (/超市|购物|[+、]/.test(text2) || matches.some(([label2]) => ["\u6C34\u679C", "\u751F\u6D3B\u7528\u54C1", "\u96F6\u98DF"].includes(label2)));
+  const result = mixed ? [{ key: "mixed:\u8D2D\u7269", label: "\u6DF7\u5408\u8D2D\u7269", kind: "mixed" }] : matches.map(([label2]) => ({ key: `object:${label2}`, label: label2, kind: "object" }));
   for (const [brand, re] of rules.brands) {
     if (re.test(text2)) result.push({ key: `brand:${brand}`, label: `${brand}\uFF08\u54C1\u724C\uFF09`, kind: "brand" });
   }
@@ -3180,8 +3180,2459 @@ function localSpendingReport(snapshot) {
   return { title: snapshot.label, summary, paragraphs };
 }
 
+// node_modules/decimal.js/decimal.mjs
+var EXP_LIMIT = 9e15;
+var MAX_DIGITS = 1e9;
+var NUMERALS = "0123456789abcdef";
+var LN10 = "2.3025850929940456840179914546843642076011014886287729760333279009675726096773524802359972050895982983419677840422862486334095254650828067566662873690987816894829072083255546808437998948262331985283935053089653777326288461633662222876982198867465436674744042432743651550489343149393914796194044002221051017141748003688084012647080685567743216228355220114804663715659121373450747856947683463616792101806445070648000277502684916746550586856935673420670581136429224554405758925724208241314695689016758940256776311356919292033376587141660230105703089634572075440370847469940168269282808481184289314848524948644871927809676271275775397027668605952496716674183485704422507197965004714951050492214776567636938662976979522110718264549734772662425709429322582798502585509785265383207606726317164309505995087807523710333101197857547331541421808427543863591778117054309827482385045648019095610299291824318237525357709750539565187697510374970888692180205189339507238539205144634197265287286965110862571492198849978748873771345686209167058";
+var PI = "3.1415926535897932384626433832795028841971693993751058209749445923078164062862089986280348253421170679821480865132823066470938446095505822317253594081284811174502841027019385211055596446229489549303819644288109756659334461284756482337867831652712019091456485669234603486104543266482133936072602491412737245870066063155881748815209209628292540917153643678925903600113305305488204665213841469519415116094330572703657595919530921861173819326117931051185480744623799627495673518857527248912279381830119491298336733624406566430860213949463952247371907021798609437027705392171762931767523846748184676694051320005681271452635608277857713427577896091736371787214684409012249534301465495853710507922796892589235420199561121290219608640344181598136297747713099605187072113499999983729780499510597317328160963185950244594553469083026425223082533446850352619311881710100031378387528865875332083814206171776691473035982534904287554687311595628638823537875937519577818577805321712268066130019278766111959092164201989380952572010654858632789";
+var DEFAULTS = {
+  // These values must be integers within the stated ranges (inclusive).
+  // Most of these values can be changed at run-time using the `Decimal.config` method.
+  // The maximum number of significant digits of the result of a calculation or base conversion.
+  // E.g. `Decimal.config({ precision: 20 });`
+  precision: 20,
+  // 1 to MAX_DIGITS
+  // The rounding mode used when rounding to `precision`.
+  //
+  // ROUND_UP         0 Away from zero.
+  // ROUND_DOWN       1 Towards zero.
+  // ROUND_CEIL       2 Towards +Infinity.
+  // ROUND_FLOOR      3 Towards -Infinity.
+  // ROUND_HALF_UP    4 Towards nearest neighbour. If equidistant, up.
+  // ROUND_HALF_DOWN  5 Towards nearest neighbour. If equidistant, down.
+  // ROUND_HALF_EVEN  6 Towards nearest neighbour. If equidistant, towards even neighbour.
+  // ROUND_HALF_CEIL  7 Towards nearest neighbour. If equidistant, towards +Infinity.
+  // ROUND_HALF_FLOOR 8 Towards nearest neighbour. If equidistant, towards -Infinity.
+  //
+  // E.g.
+  // `Decimal.rounding = 4;`
+  // `Decimal.rounding = Decimal.ROUND_HALF_UP;`
+  rounding: 4,
+  // 0 to 8
+  // The modulo mode used when calculating the modulus: a mod n.
+  // The quotient (q = a / n) is calculated according to the corresponding rounding mode.
+  // The remainder (r) is calculated as: r = a - n * q.
+  //
+  // UP         0 The remainder is positive if the dividend is negative, else is negative.
+  // DOWN       1 The remainder has the same sign as the dividend (JavaScript %).
+  // FLOOR      3 The remainder has the same sign as the divisor (Python %).
+  // HALF_EVEN  6 The IEEE 754 remainder function.
+  // EUCLID     9 Euclidian division. q = sign(n) * floor(a / abs(n)). Always positive.
+  //
+  // Truncated division (1), floored division (3), the IEEE 754 remainder (6), and Euclidian
+  // division (9) are commonly used for the modulus operation. The other rounding modes can also
+  // be used, but they may not give useful results.
+  modulo: 1,
+  // 0 to 9
+  // The exponent value at and beneath which `toString` returns exponential notation.
+  // JavaScript numbers: -7
+  toExpNeg: -7,
+  // 0 to -EXP_LIMIT
+  // The exponent value at and above which `toString` returns exponential notation.
+  // JavaScript numbers: 21
+  toExpPos: 21,
+  // 0 to EXP_LIMIT
+  // The minimum exponent value, beneath which underflow to zero occurs.
+  // JavaScript numbers: -324  (5e-324)
+  minE: -EXP_LIMIT,
+  // -1 to -EXP_LIMIT
+  // The maximum exponent value, above which overflow to Infinity occurs.
+  // JavaScript numbers: 308  (1.7976931348623157e+308)
+  maxE: EXP_LIMIT,
+  // 1 to EXP_LIMIT
+  // Whether to use cryptographically-secure random number generation, if available.
+  crypto: false
+  // true/false
+};
+var inexact;
+var quadrant;
+var external = true;
+var decimalError = "[DecimalError] ";
+var invalidArgument = decimalError + "Invalid argument: ";
+var precisionLimitExceeded = decimalError + "Precision limit exceeded";
+var cryptoUnavailable = decimalError + "crypto unavailable";
+var tag = "[object Decimal]";
+var mathfloor = Math.floor;
+var mathpow = Math.pow;
+var isBinary = /^0b([01]+(\.[01]*)?|\.[01]+)(p[+-]?\d+)?$/i;
+var isHex2 = /^0x([0-9a-f]+(\.[0-9a-f]*)?|\.[0-9a-f]+)(p[+-]?\d+)?$/i;
+var isOctal = /^0o([0-7]+(\.[0-7]*)?|\.[0-7]+)(p[+-]?\d+)?$/i;
+var isDecimal = /^(\d+(\.\d*)?|\.\d+)(e[+-]?\d+)?$/i;
+var BASE = 1e7;
+var LOG_BASE = 7;
+var MAX_SAFE_INTEGER = 9007199254740991;
+var LN10_PRECISION = LN10.length - 1;
+var PI_PRECISION = PI.length - 1;
+var P = { toStringTag: tag };
+P.absoluteValue = P.abs = function() {
+  var x = new this.constructor(this);
+  if (x.s < 0) x.s = 1;
+  return finalise(x);
+};
+P.ceil = function() {
+  return finalise(new this.constructor(this), this.e + 1, 2);
+};
+P.clampedTo = P.clamp = function(min2, max2) {
+  var k, x = this, Ctor = x.constructor;
+  min2 = new Ctor(min2);
+  max2 = new Ctor(max2);
+  if (!min2.s || !max2.s) return new Ctor(NaN);
+  if (min2.gt(max2)) throw Error(invalidArgument + max2);
+  k = x.cmp(min2);
+  return k < 0 ? min2 : x.cmp(max2) > 0 ? max2 : new Ctor(x);
+};
+P.comparedTo = P.cmp = function(y) {
+  var i, j, xdL, ydL, x = this, xd = x.d, yd = (y = new x.constructor(y)).d, xs = x.s, ys = y.s;
+  if (!xd || !yd) {
+    return !xs || !ys ? NaN : xs !== ys ? xs : xd === yd ? 0 : !xd ^ xs < 0 ? 1 : -1;
+  }
+  if (!xd[0] || !yd[0]) return xd[0] ? xs : yd[0] ? -ys : 0;
+  if (xs !== ys) return xs;
+  if (x.e !== y.e) return x.e > y.e ^ xs < 0 ? 1 : -1;
+  xdL = xd.length;
+  ydL = yd.length;
+  for (i = 0, j = xdL < ydL ? xdL : ydL; i < j; ++i) {
+    if (xd[i] !== yd[i]) return xd[i] > yd[i] ^ xs < 0 ? 1 : -1;
+  }
+  return xdL === ydL ? 0 : xdL > ydL ^ xs < 0 ? 1 : -1;
+};
+P.cosine = P.cos = function() {
+  var pr, rm, x = this, Ctor = x.constructor;
+  if (!x.d) return new Ctor(NaN);
+  if (!x.d[0]) return new Ctor(1);
+  pr = Ctor.precision;
+  rm = Ctor.rounding;
+  Ctor.precision = pr + Math.max(x.e, x.sd()) + LOG_BASE;
+  Ctor.rounding = 1;
+  x = cosine2(Ctor, toLessThanHalfPi(Ctor, x));
+  Ctor.precision = pr;
+  Ctor.rounding = rm;
+  return finalise(quadrant == 2 || quadrant == 3 ? x.neg() : x, pr, rm, true);
+};
+P.cubeRoot = P.cbrt = function() {
+  var e, m, n, r, rep, s, sd, t, t3, t3plusx, x = this, Ctor = x.constructor;
+  if (!x.isFinite() || x.isZero()) return new Ctor(x);
+  external = false;
+  s = x.s * mathpow(x.s * x, 1 / 3);
+  if (!s || Math.abs(s) == 1 / 0) {
+    n = digitsToString(x.d);
+    e = x.e;
+    if (s = (e - n.length + 1) % 3) n += s == 1 || s == -2 ? "0" : "00";
+    s = mathpow(n, 1 / 3);
+    e = mathfloor((e + 1) / 3) - (e % 3 == (e < 0 ? -1 : 2));
+    if (s == 1 / 0) {
+      n = "5e" + e;
+    } else {
+      n = s.toExponential();
+      n = n.slice(0, n.indexOf("e") + 1) + e;
+    }
+    r = new Ctor(n);
+    r.s = x.s;
+  } else {
+    r = new Ctor(s.toString());
+  }
+  sd = (e = Ctor.precision) + 3;
+  for (; ; ) {
+    t = r;
+    t3 = t.times(t).times(t);
+    t3plusx = t3.plus(x);
+    r = divide(t3plusx.plus(x).times(t), t3plusx.plus(t3), sd + 2, 1);
+    if (digitsToString(t.d).slice(0, sd) === (n = digitsToString(r.d)).slice(0, sd)) {
+      n = n.slice(sd - 3, sd + 1);
+      if (n == "9999" || !rep && n == "4999") {
+        if (!rep) {
+          finalise(t, e + 1, 0);
+          if (t.times(t).times(t).eq(x)) {
+            r = t;
+            break;
+          }
+        }
+        sd += 4;
+        rep = 1;
+      } else {
+        if (!+n || !+n.slice(1) && n.charAt(0) == "5") {
+          finalise(r, e + 1, 1);
+          m = !r.times(r).times(r).eq(x);
+        }
+        break;
+      }
+    }
+  }
+  external = true;
+  return finalise(r, e, Ctor.rounding, m);
+};
+P.decimalPlaces = P.dp = function() {
+  var w, d = this.d, n = NaN;
+  if (d) {
+    w = d.length - 1;
+    n = (w - mathfloor(this.e / LOG_BASE)) * LOG_BASE;
+    w = d[w];
+    if (w) for (; w % 10 == 0; w /= 10) n--;
+    if (n < 0) n = 0;
+  }
+  return n;
+};
+P.dividedBy = P.div = function(y) {
+  return divide(this, new this.constructor(y));
+};
+P.dividedToIntegerBy = P.divToInt = function(y) {
+  var x = this, Ctor = x.constructor;
+  return finalise(divide(x, new Ctor(y), 0, 1, 1), Ctor.precision, Ctor.rounding);
+};
+P.equals = P.eq = function(y) {
+  return this.cmp(y) === 0;
+};
+P.floor = function() {
+  return finalise(new this.constructor(this), this.e + 1, 3);
+};
+P.greaterThan = P.gt = function(y) {
+  return this.cmp(y) > 0;
+};
+P.greaterThanOrEqualTo = P.gte = function(y) {
+  var k = this.cmp(y);
+  return k == 1 || k === 0;
+};
+P.hyperbolicCosine = P.cosh = function() {
+  var k, n, pr, rm, len, x = this, Ctor = x.constructor, one = new Ctor(1);
+  if (!x.isFinite()) return new Ctor(x.s ? 1 / 0 : NaN);
+  if (x.isZero()) return one;
+  pr = Ctor.precision;
+  rm = Ctor.rounding;
+  Ctor.precision = pr + Math.max(x.e, x.sd()) + 4;
+  Ctor.rounding = 1;
+  len = x.d.length;
+  if (len < 32) {
+    k = Math.ceil(len / 3);
+    n = (1 / tinyPow(4, k)).toString();
+  } else {
+    k = 16;
+    n = "2.3283064365386962890625e-10";
+  }
+  x = taylorSeries(Ctor, 1, x.times(n), new Ctor(1), true);
+  var cosh2_x, i = k, d8 = new Ctor(8);
+  for (; i--; ) {
+    cosh2_x = x.times(x);
+    x = one.minus(cosh2_x.times(d8.minus(cosh2_x.times(d8))));
+  }
+  return finalise(x, Ctor.precision = pr, Ctor.rounding = rm, true);
+};
+P.hyperbolicSine = P.sinh = function() {
+  var k, pr, rm, len, x = this, Ctor = x.constructor;
+  if (!x.isFinite() || x.isZero()) return new Ctor(x);
+  pr = Ctor.precision;
+  rm = Ctor.rounding;
+  Ctor.precision = pr + Math.max(x.e, x.sd()) + 4;
+  Ctor.rounding = 1;
+  len = x.d.length;
+  if (len < 3) {
+    x = taylorSeries(Ctor, 2, x, x, true);
+  } else {
+    k = 1.4 * Math.sqrt(len);
+    k = k > 16 ? 16 : k | 0;
+    x = x.times(1 / tinyPow(5, k));
+    x = taylorSeries(Ctor, 2, x, x, true);
+    var sinh2_x, d5 = new Ctor(5), d16 = new Ctor(16), d20 = new Ctor(20);
+    for (; k--; ) {
+      sinh2_x = x.times(x);
+      x = x.times(d5.plus(sinh2_x.times(d16.times(sinh2_x).plus(d20))));
+    }
+  }
+  Ctor.precision = pr;
+  Ctor.rounding = rm;
+  return finalise(x, pr, rm, true);
+};
+P.hyperbolicTangent = P.tanh = function() {
+  var pr, rm, x = this, Ctor = x.constructor;
+  if (!x.isFinite()) return new Ctor(x.s);
+  if (x.isZero()) return new Ctor(x);
+  pr = Ctor.precision;
+  rm = Ctor.rounding;
+  Ctor.precision = pr + 7;
+  Ctor.rounding = 1;
+  return divide(x.sinh(), x.cosh(), Ctor.precision = pr, Ctor.rounding = rm);
+};
+P.inverseCosine = P.acos = function() {
+  var x = this, Ctor = x.constructor, k = x.abs().cmp(1), pr = Ctor.precision, rm = Ctor.rounding;
+  if (k !== -1) {
+    return k === 0 ? x.isNeg() ? getPi(Ctor, pr, rm) : new Ctor(0) : new Ctor(NaN);
+  }
+  if (x.isZero()) return getPi(Ctor, pr + 4, rm).times(0.5);
+  Ctor.precision = pr + 6;
+  Ctor.rounding = 1;
+  x = new Ctor(1).minus(x).div(x.plus(1)).sqrt().atan();
+  Ctor.precision = pr;
+  Ctor.rounding = rm;
+  return x.times(2);
+};
+P.inverseHyperbolicCosine = P.acosh = function() {
+  var pr, rm, x = this, Ctor = x.constructor;
+  if (x.lte(1)) return new Ctor(x.eq(1) ? 0 : NaN);
+  if (!x.isFinite()) return new Ctor(x);
+  pr = Ctor.precision;
+  rm = Ctor.rounding;
+  Ctor.precision = pr + Math.max(Math.abs(x.e), x.sd()) + 4;
+  Ctor.rounding = 1;
+  external = false;
+  x = x.times(x).minus(1).sqrt().plus(x);
+  external = true;
+  Ctor.precision = pr;
+  Ctor.rounding = rm;
+  return x.ln();
+};
+P.inverseHyperbolicSine = P.asinh = function() {
+  var pr, rm, x = this, Ctor = x.constructor;
+  if (!x.isFinite() || x.isZero()) return new Ctor(x);
+  pr = Ctor.precision;
+  rm = Ctor.rounding;
+  Ctor.precision = pr + 2 * Math.max(Math.abs(x.e), x.sd()) + 6;
+  Ctor.rounding = 1;
+  external = false;
+  x = x.times(x).plus(1).sqrt().plus(x);
+  external = true;
+  Ctor.precision = pr;
+  Ctor.rounding = rm;
+  return x.ln();
+};
+P.inverseHyperbolicTangent = P.atanh = function() {
+  var pr, rm, wpr, xsd, x = this, Ctor = x.constructor;
+  if (!x.isFinite()) return new Ctor(NaN);
+  if (x.e >= 0) return new Ctor(x.abs().eq(1) ? x.s / 0 : x.isZero() ? x : NaN);
+  pr = Ctor.precision;
+  rm = Ctor.rounding;
+  xsd = x.sd();
+  if (Math.max(xsd, pr) < 2 * -x.e - 1) return finalise(new Ctor(x), pr, rm, true);
+  Ctor.precision = wpr = xsd - x.e;
+  x = divide(x.plus(1), new Ctor(1).minus(x), wpr + pr, 1);
+  Ctor.precision = pr + 4;
+  Ctor.rounding = 1;
+  x = x.ln();
+  Ctor.precision = pr;
+  Ctor.rounding = rm;
+  return x.times(0.5);
+};
+P.inverseSine = P.asin = function() {
+  var halfPi, k, pr, rm, x = this, Ctor = x.constructor;
+  if (x.isZero()) return new Ctor(x);
+  k = x.abs().cmp(1);
+  pr = Ctor.precision;
+  rm = Ctor.rounding;
+  if (k !== -1) {
+    if (k === 0) {
+      halfPi = getPi(Ctor, pr + 4, rm).times(0.5);
+      halfPi.s = x.s;
+      return halfPi;
+    }
+    return new Ctor(NaN);
+  }
+  Ctor.precision = pr + 6;
+  Ctor.rounding = 1;
+  x = x.div(new Ctor(1).minus(x.times(x)).sqrt().plus(1)).atan();
+  Ctor.precision = pr;
+  Ctor.rounding = rm;
+  return x.times(2);
+};
+P.inverseTangent = P.atan = function() {
+  var i, j, k, n, px, t, r, wpr, x2, x = this, Ctor = x.constructor, pr = Ctor.precision, rm = Ctor.rounding;
+  if (!x.isFinite()) {
+    if (!x.s) return new Ctor(NaN);
+    if (pr + 4 <= PI_PRECISION) {
+      r = getPi(Ctor, pr + 4, rm).times(0.5);
+      r.s = x.s;
+      return r;
+    }
+  } else if (x.isZero()) {
+    return new Ctor(x);
+  } else if (x.abs().eq(1) && pr + 4 <= PI_PRECISION) {
+    r = getPi(Ctor, pr + 4, rm).times(0.25);
+    r.s = x.s;
+    return r;
+  }
+  Ctor.precision = wpr = pr + 10;
+  Ctor.rounding = 1;
+  k = Math.min(28, wpr / LOG_BASE + 2 | 0);
+  for (i = k; i; --i) x = x.div(x.times(x).plus(1).sqrt().plus(1));
+  external = false;
+  j = Math.ceil(wpr / LOG_BASE);
+  n = 1;
+  x2 = x.times(x);
+  r = new Ctor(x);
+  px = x;
+  for (; i !== -1; ) {
+    px = px.times(x2);
+    t = r.minus(px.div(n += 2));
+    px = px.times(x2);
+    r = t.plus(px.div(n += 2));
+    if (r.d[j] !== void 0) for (i = j; r.d[i] === t.d[i] && i--; ) ;
+  }
+  if (k) r = r.times(2 << k - 1);
+  external = true;
+  return finalise(r, Ctor.precision = pr, Ctor.rounding = rm, true);
+};
+P.isFinite = function() {
+  return !!this.d;
+};
+P.isInteger = P.isInt = function() {
+  return !!this.d && mathfloor(this.e / LOG_BASE) > this.d.length - 2;
+};
+P.isNaN = function() {
+  return !this.s;
+};
+P.isNegative = P.isNeg = function() {
+  return this.s < 0;
+};
+P.isPositive = P.isPos = function() {
+  return this.s > 0;
+};
+P.isZero = function() {
+  return !!this.d && this.d[0] === 0;
+};
+P.lessThan = P.lt = function(y) {
+  return this.cmp(y) < 0;
+};
+P.lessThanOrEqualTo = P.lte = function(y) {
+  return this.cmp(y) < 1;
+};
+P.logarithm = P.log = function(base) {
+  var isBase10, d, denominator, k, inf, num, sd, r, arg = this, Ctor = arg.constructor, pr = Ctor.precision, rm = Ctor.rounding, guard = 5;
+  if (base == null) {
+    base = new Ctor(10);
+    isBase10 = true;
+  } else {
+    base = new Ctor(base);
+    d = base.d;
+    if (base.s < 0 || !d || !d[0] || base.eq(1)) return new Ctor(NaN);
+    isBase10 = base.eq(10);
+  }
+  d = arg.d;
+  if (arg.s < 0 || !d || !d[0] || arg.eq(1)) {
+    return new Ctor(d && !d[0] ? -1 / 0 : arg.s != 1 ? NaN : d ? 0 : 1 / 0);
+  }
+  if (isBase10) {
+    if (d.length > 1) {
+      inf = true;
+    } else {
+      for (k = d[0]; k % 10 === 0; ) k /= 10;
+      inf = k !== 1;
+    }
+  }
+  external = false;
+  sd = pr + guard;
+  num = naturalLogarithm(arg, sd);
+  denominator = isBase10 ? getLn10(Ctor, sd + 10) : naturalLogarithm(base, sd);
+  r = divide(num, denominator, sd, 1);
+  if (checkRoundingDigits(r.d, k = pr, rm)) {
+    do {
+      sd += 10;
+      num = naturalLogarithm(arg, sd);
+      denominator = isBase10 ? getLn10(Ctor, sd + 10) : naturalLogarithm(base, sd);
+      r = divide(num, denominator, sd, 1);
+      if (!inf) {
+        if (+digitsToString(r.d).slice(k + 1, k + 15) + 1 == 1e14) {
+          r = finalise(r, pr + 1, 0);
+        }
+        break;
+      }
+    } while (checkRoundingDigits(r.d, k += 10, rm));
+  }
+  external = true;
+  return finalise(r, pr, rm);
+};
+P.minus = P.sub = function(y) {
+  var d, e, i, j, k, len, pr, rm, xd, xe, xLTy, yd, x = this, Ctor = x.constructor;
+  y = new Ctor(y);
+  if (!x.d || !y.d) {
+    if (!x.s || !y.s) y = new Ctor(NaN);
+    else if (x.d) y.s = -y.s;
+    else y = new Ctor(y.d || x.s !== y.s ? x : NaN);
+    return y;
+  }
+  if (x.s != y.s) {
+    y.s = -y.s;
+    return x.plus(y);
+  }
+  xd = x.d;
+  yd = y.d;
+  pr = Ctor.precision;
+  rm = Ctor.rounding;
+  if (!xd[0] || !yd[0]) {
+    if (yd[0]) y.s = -y.s;
+    else if (xd[0]) y = new Ctor(x);
+    else return new Ctor(rm === 3 ? -0 : 0);
+    return external ? finalise(y, pr, rm) : y;
+  }
+  e = mathfloor(y.e / LOG_BASE);
+  xe = mathfloor(x.e / LOG_BASE);
+  xd = xd.slice();
+  k = xe - e;
+  if (k) {
+    xLTy = k < 0;
+    if (xLTy) {
+      d = xd;
+      k = -k;
+      len = yd.length;
+    } else {
+      d = yd;
+      e = xe;
+      len = xd.length;
+    }
+    i = Math.max(Math.ceil(pr / LOG_BASE), len) + 2;
+    if (k > i) {
+      k = i;
+      d.length = 1;
+    }
+    d.reverse();
+    for (i = k; i--; ) d.push(0);
+    d.reverse();
+  } else {
+    i = xd.length;
+    len = yd.length;
+    xLTy = i < len;
+    if (xLTy) len = i;
+    for (i = 0; i < len; i++) {
+      if (xd[i] != yd[i]) {
+        xLTy = xd[i] < yd[i];
+        break;
+      }
+    }
+    k = 0;
+  }
+  if (xLTy) {
+    d = xd;
+    xd = yd;
+    yd = d;
+    y.s = -y.s;
+  }
+  len = xd.length;
+  for (i = yd.length - len; i > 0; --i) xd[len++] = 0;
+  for (i = yd.length; i > k; ) {
+    if (xd[--i] < yd[i]) {
+      for (j = i; j && xd[--j] === 0; ) xd[j] = BASE - 1;
+      --xd[j];
+      xd[i] += BASE;
+    }
+    xd[i] -= yd[i];
+  }
+  for (; xd[--len] === 0; ) xd.pop();
+  for (; xd[0] === 0; xd.shift()) --e;
+  if (!xd[0]) return new Ctor(rm === 3 ? -0 : 0);
+  y.d = xd;
+  y.e = getBase10Exponent(xd, e);
+  return external ? finalise(y, pr, rm) : y;
+};
+P.modulo = P.mod = function(y) {
+  var q, x = this, Ctor = x.constructor;
+  y = new Ctor(y);
+  if (!x.d || !y.s || y.d && !y.d[0]) return new Ctor(NaN);
+  if (!y.d || x.d && !x.d[0]) {
+    return finalise(new Ctor(x), Ctor.precision, Ctor.rounding);
+  }
+  external = false;
+  if (Ctor.modulo == 9) {
+    q = divide(x, y.abs(), 0, 3, 1);
+    q.s *= y.s;
+  } else {
+    q = divide(x, y, 0, Ctor.modulo, 1);
+  }
+  q = q.times(y);
+  external = true;
+  return x.minus(q);
+};
+P.naturalExponential = P.exp = function() {
+  return naturalExponential(this);
+};
+P.naturalLogarithm = P.ln = function() {
+  return naturalLogarithm(this);
+};
+P.negated = P.neg = function() {
+  var x = new this.constructor(this);
+  x.s = -x.s;
+  return finalise(x);
+};
+P.plus = P.add = function(y) {
+  var carry, d, e, i, k, len, pr, rm, xd, yd, x = this, Ctor = x.constructor;
+  y = new Ctor(y);
+  if (!x.d || !y.d) {
+    if (!x.s || !y.s) y = new Ctor(NaN);
+    else if (!x.d) y = new Ctor(y.d || x.s === y.s ? x : NaN);
+    return y;
+  }
+  if (x.s != y.s) {
+    y.s = -y.s;
+    return x.minus(y);
+  }
+  xd = x.d;
+  yd = y.d;
+  pr = Ctor.precision;
+  rm = Ctor.rounding;
+  if (!xd[0] || !yd[0]) {
+    if (!yd[0]) y = new Ctor(x);
+    return external ? finalise(y, pr, rm) : y;
+  }
+  k = mathfloor(x.e / LOG_BASE);
+  e = mathfloor(y.e / LOG_BASE);
+  xd = xd.slice();
+  i = k - e;
+  if (i) {
+    if (i < 0) {
+      d = xd;
+      i = -i;
+      len = yd.length;
+    } else {
+      d = yd;
+      e = k;
+      len = xd.length;
+    }
+    k = Math.ceil(pr / LOG_BASE);
+    len = k > len ? k + 1 : len + 1;
+    if (i > len) {
+      i = len;
+      d.length = 1;
+    }
+    d.reverse();
+    for (; i--; ) d.push(0);
+    d.reverse();
+  }
+  len = xd.length;
+  i = yd.length;
+  if (len - i < 0) {
+    i = len;
+    d = yd;
+    yd = xd;
+    xd = d;
+  }
+  for (carry = 0; i; ) {
+    carry = (xd[--i] = xd[i] + yd[i] + carry) / BASE | 0;
+    xd[i] %= BASE;
+  }
+  if (carry) {
+    xd.unshift(carry);
+    ++e;
+  }
+  for (len = xd.length; xd[--len] == 0; ) xd.pop();
+  y.d = xd;
+  y.e = getBase10Exponent(xd, e);
+  return external ? finalise(y, pr, rm) : y;
+};
+P.precision = P.sd = function(z) {
+  var k, x = this;
+  if (z !== void 0 && z !== !!z && z !== 1 && z !== 0) throw Error(invalidArgument + z);
+  if (x.d) {
+    k = getPrecision(x.d);
+    if (z && x.e + 1 > k) k = x.e + 1;
+  } else {
+    k = NaN;
+  }
+  return k;
+};
+P.round = function() {
+  var x = this, Ctor = x.constructor;
+  return finalise(new Ctor(x), x.e + 1, Ctor.rounding);
+};
+P.sine = P.sin = function() {
+  var pr, rm, x = this, Ctor = x.constructor;
+  if (!x.isFinite()) return new Ctor(NaN);
+  if (x.isZero()) return new Ctor(x);
+  pr = Ctor.precision;
+  rm = Ctor.rounding;
+  Ctor.precision = pr + Math.max(x.e, x.sd()) + LOG_BASE;
+  Ctor.rounding = 1;
+  x = sine(Ctor, toLessThanHalfPi(Ctor, x));
+  Ctor.precision = pr;
+  Ctor.rounding = rm;
+  return finalise(quadrant > 2 ? x.neg() : x, pr, rm, true);
+};
+P.squareRoot = P.sqrt = function() {
+  var m, n, sd, r, rep, t, x = this, d = x.d, e = x.e, s = x.s, Ctor = x.constructor;
+  if (s !== 1 || !d || !d[0]) {
+    return new Ctor(!s || s < 0 && (!d || d[0]) ? NaN : d ? x : 1 / 0);
+  }
+  external = false;
+  s = Math.sqrt(+x);
+  if (s == 0 || s == 1 / 0) {
+    n = digitsToString(d);
+    if ((n.length + e) % 2 == 0) n += "0";
+    s = Math.sqrt(n);
+    e = mathfloor((e + 1) / 2) - (e < 0 || e % 2);
+    if (s == 1 / 0) {
+      n = "5e" + e;
+    } else {
+      n = s.toExponential();
+      n = n.slice(0, n.indexOf("e") + 1) + e;
+    }
+    r = new Ctor(n);
+  } else {
+    r = new Ctor(s.toString());
+  }
+  sd = (e = Ctor.precision) + 3;
+  for (; ; ) {
+    t = r;
+    r = t.plus(divide(x, t, sd + 2, 1)).times(0.5);
+    if (digitsToString(t.d).slice(0, sd) === (n = digitsToString(r.d)).slice(0, sd)) {
+      n = n.slice(sd - 3, sd + 1);
+      if (n == "9999" || !rep && n == "4999") {
+        if (!rep) {
+          finalise(t, e + 1, 0);
+          if (t.times(t).eq(x)) {
+            r = t;
+            break;
+          }
+        }
+        sd += 4;
+        rep = 1;
+      } else {
+        if (!+n || !+n.slice(1) && n.charAt(0) == "5") {
+          finalise(r, e + 1, 1);
+          m = !r.times(r).eq(x);
+        }
+        break;
+      }
+    }
+  }
+  external = true;
+  return finalise(r, e, Ctor.rounding, m);
+};
+P.tangent = P.tan = function() {
+  var pr, rm, x = this, Ctor = x.constructor;
+  if (!x.isFinite()) return new Ctor(NaN);
+  if (x.isZero()) return new Ctor(x);
+  pr = Ctor.precision;
+  rm = Ctor.rounding;
+  Ctor.precision = pr + 10;
+  Ctor.rounding = 1;
+  x = x.sin();
+  x.s = 1;
+  x = divide(x, new Ctor(1).minus(x.times(x)).sqrt(), pr + 10, 0);
+  Ctor.precision = pr;
+  Ctor.rounding = rm;
+  return finalise(quadrant == 2 || quadrant == 4 ? x.neg() : x, pr, rm, true);
+};
+P.times = P.mul = function(y) {
+  var carry, e, i, k, r, rL, t, xdL, ydL, x = this, Ctor = x.constructor, xd = x.d, yd = (y = new Ctor(y)).d;
+  y.s *= x.s;
+  if (!xd || !xd[0] || !yd || !yd[0]) {
+    return new Ctor(!y.s || xd && !xd[0] && !yd || yd && !yd[0] && !xd ? NaN : !xd || !yd ? y.s / 0 : y.s * 0);
+  }
+  e = mathfloor(x.e / LOG_BASE) + mathfloor(y.e / LOG_BASE);
+  xdL = xd.length;
+  ydL = yd.length;
+  if (xdL < ydL) {
+    r = xd;
+    xd = yd;
+    yd = r;
+    rL = xdL;
+    xdL = ydL;
+    ydL = rL;
+  }
+  r = [];
+  rL = xdL + ydL;
+  for (i = rL; i--; ) r.push(0);
+  for (i = ydL; --i >= 0; ) {
+    carry = 0;
+    for (k = xdL + i; k > i; ) {
+      t = r[k] + yd[i] * xd[k - i - 1] + carry;
+      r[k--] = t % BASE | 0;
+      carry = t / BASE | 0;
+    }
+    r[k] = (r[k] + carry) % BASE | 0;
+  }
+  for (; !r[--rL]; ) r.pop();
+  if (carry) ++e;
+  else r.shift();
+  y.d = r;
+  y.e = getBase10Exponent(r, e);
+  return external ? finalise(y, Ctor.precision, Ctor.rounding) : y;
+};
+P.toBinary = function(sd, rm) {
+  return toStringBinary(this, 2, sd, rm);
+};
+P.toDecimalPlaces = P.toDP = function(dp, rm) {
+  var x = this, Ctor = x.constructor;
+  x = new Ctor(x);
+  if (dp === void 0) return x;
+  checkInt32(dp, 0, MAX_DIGITS);
+  if (rm === void 0) rm = Ctor.rounding;
+  else checkInt32(rm, 0, 8);
+  return finalise(x, dp + x.e + 1, rm);
+};
+P.toExponential = function(dp, rm) {
+  var str, x = this, Ctor = x.constructor;
+  if (dp === void 0) {
+    str = finiteToString(x, true);
+  } else {
+    checkInt32(dp, 0, MAX_DIGITS);
+    if (rm === void 0) rm = Ctor.rounding;
+    else checkInt32(rm, 0, 8);
+    x = finalise(new Ctor(x), dp + 1, rm);
+    str = finiteToString(x, true, dp + 1);
+  }
+  return x.isNeg() && !x.isZero() ? "-" + str : str;
+};
+P.toFixed = function(dp, rm) {
+  var str, y, x = this, Ctor = x.constructor;
+  if (dp === void 0) {
+    str = finiteToString(x);
+  } else {
+    checkInt32(dp, 0, MAX_DIGITS);
+    if (rm === void 0) rm = Ctor.rounding;
+    else checkInt32(rm, 0, 8);
+    y = finalise(new Ctor(x), dp + x.e + 1, rm);
+    str = finiteToString(y, false, dp + y.e + 1);
+  }
+  return x.isNeg() && !x.isZero() ? "-" + str : str;
+};
+P.toFraction = function(maxD) {
+  var d, d0, d1, d2, e, k, n, n0, n1, pr, q, r, x = this, xd = x.d, Ctor = x.constructor;
+  if (!xd) return new Ctor(x);
+  n1 = d0 = new Ctor(1);
+  d1 = n0 = new Ctor(0);
+  d = new Ctor(d1);
+  e = d.e = getPrecision(xd) - x.e - 1;
+  k = e % LOG_BASE;
+  d.d[0] = mathpow(10, k < 0 ? LOG_BASE + k : k);
+  if (maxD == null) {
+    maxD = e > 0 ? d : n1;
+  } else {
+    n = new Ctor(maxD);
+    if (!n.isInt() || n.lt(n1)) throw Error(invalidArgument + n);
+    maxD = n.gt(d) ? e > 0 ? d : n1 : n;
+  }
+  external = false;
+  n = new Ctor(digitsToString(xd));
+  pr = Ctor.precision;
+  Ctor.precision = e = xd.length * LOG_BASE * 2;
+  for (; ; ) {
+    q = divide(n, d, 0, 1, 1);
+    d2 = d0.plus(q.times(d1));
+    if (d2.cmp(maxD) == 1) break;
+    d0 = d1;
+    d1 = d2;
+    d2 = n1;
+    n1 = n0.plus(q.times(d2));
+    n0 = d2;
+    d2 = d;
+    d = n.minus(q.times(d2));
+    n = d2;
+  }
+  d2 = divide(maxD.minus(d0), d1, 0, 1, 1);
+  n0 = n0.plus(d2.times(n1));
+  d0 = d0.plus(d2.times(d1));
+  n0.s = n1.s = x.s;
+  r = divide(n1, d1, e, 1).minus(x).abs().cmp(divide(n0, d0, e, 1).minus(x).abs()) < 1 ? [n1, d1] : [n0, d0];
+  Ctor.precision = pr;
+  external = true;
+  return r;
+};
+P.toHexadecimal = P.toHex = function(sd, rm) {
+  return toStringBinary(this, 16, sd, rm);
+};
+P.toNearest = function(y, rm) {
+  var x = this, Ctor = x.constructor;
+  x = new Ctor(x);
+  if (y == null) {
+    if (!x.d) return x;
+    y = new Ctor(1);
+    rm = Ctor.rounding;
+  } else {
+    y = new Ctor(y);
+    if (rm === void 0) {
+      rm = Ctor.rounding;
+    } else {
+      checkInt32(rm, 0, 8);
+    }
+    if (!x.d) return y.s ? x : y;
+    if (!y.d) {
+      if (y.s) y.s = x.s;
+      return y;
+    }
+  }
+  if (y.d[0]) {
+    external = false;
+    x = divide(x, y, 0, rm, 1).times(y);
+    external = true;
+    finalise(x);
+  } else {
+    y.s = x.s;
+    x = y;
+  }
+  return x;
+};
+P.toNumber = function() {
+  return +this;
+};
+P.toOctal = function(sd, rm) {
+  return toStringBinary(this, 8, sd, rm);
+};
+P.toPower = P.pow = function(y) {
+  var e, k, pr, r, rm, s, x = this, Ctor = x.constructor, yn = +(y = new Ctor(y));
+  if (!x.d || !y.d || !x.d[0] || !y.d[0]) return new Ctor(mathpow(+x, yn));
+  x = new Ctor(x);
+  if (x.eq(1)) return x;
+  pr = Ctor.precision;
+  rm = Ctor.rounding;
+  if (y.eq(1)) return finalise(x, pr, rm);
+  e = mathfloor(y.e / LOG_BASE);
+  if (e >= y.d.length - 1 && (k = yn < 0 ? -yn : yn) <= MAX_SAFE_INTEGER) {
+    r = intPow(Ctor, x, k, pr);
+    return y.s < 0 ? new Ctor(1).div(r) : finalise(r, pr, rm);
+  }
+  s = x.s;
+  if (s < 0) {
+    if (e < y.d.length - 1) return new Ctor(NaN);
+    if ((y.d[e] & 1) == 0) s = 1;
+    if (x.e == 0 && x.d[0] == 1 && x.d.length == 1) {
+      x.s = s;
+      return x;
+    }
+  }
+  k = mathpow(+x, yn);
+  e = k == 0 || !isFinite(k) ? mathfloor(yn * (Math.log("0." + digitsToString(x.d)) / Math.LN10 + x.e + 1)) : new Ctor(k + "").e;
+  if (e > Ctor.maxE + 1 || e < Ctor.minE - 1) return new Ctor(e > 0 ? s / 0 : 0);
+  external = false;
+  Ctor.rounding = x.s = 1;
+  k = Math.min(12, (e + "").length);
+  r = naturalExponential(y.times(naturalLogarithm(x, pr + k)), pr);
+  if (r.d) {
+    r = finalise(r, pr + 5, 1);
+    if (checkRoundingDigits(r.d, pr, rm)) {
+      e = pr + 10;
+      r = finalise(naturalExponential(y.times(naturalLogarithm(x, e + k)), e), e + 5, 1);
+      if (+digitsToString(r.d).slice(pr + 1, pr + 15) + 1 == 1e14) {
+        r = finalise(r, pr + 1, 0);
+      }
+    }
+  }
+  r.s = s;
+  external = true;
+  Ctor.rounding = rm;
+  return finalise(r, pr, rm);
+};
+P.toPrecision = function(sd, rm) {
+  var str, x = this, Ctor = x.constructor;
+  if (sd === void 0) {
+    str = finiteToString(x, x.e <= Ctor.toExpNeg || x.e >= Ctor.toExpPos);
+  } else {
+    checkInt32(sd, 1, MAX_DIGITS);
+    if (rm === void 0) rm = Ctor.rounding;
+    else checkInt32(rm, 0, 8);
+    x = finalise(new Ctor(x), sd, rm);
+    str = finiteToString(x, sd <= x.e || x.e <= Ctor.toExpNeg, sd);
+  }
+  return x.isNeg() && !x.isZero() ? "-" + str : str;
+};
+P.toSignificantDigits = P.toSD = function(sd, rm) {
+  var x = this, Ctor = x.constructor;
+  if (sd === void 0) {
+    sd = Ctor.precision;
+    rm = Ctor.rounding;
+  } else {
+    checkInt32(sd, 1, MAX_DIGITS);
+    if (rm === void 0) rm = Ctor.rounding;
+    else checkInt32(rm, 0, 8);
+  }
+  return finalise(new Ctor(x), sd, rm);
+};
+P.toString = function() {
+  var x = this, Ctor = x.constructor, str = finiteToString(x, x.e <= Ctor.toExpNeg || x.e >= Ctor.toExpPos);
+  return x.isNeg() && !x.isZero() ? "-" + str : str;
+};
+P.truncated = P.trunc = function() {
+  return finalise(new this.constructor(this), this.e + 1, 1);
+};
+P.valueOf = P.toJSON = function() {
+  var x = this, Ctor = x.constructor, str = finiteToString(x, x.e <= Ctor.toExpNeg || x.e >= Ctor.toExpPos);
+  return x.isNeg() ? "-" + str : str;
+};
+function digitsToString(d) {
+  var i, k, ws, indexOfLastWord = d.length - 1, str = "", w = d[0];
+  if (indexOfLastWord > 0) {
+    str += w;
+    for (i = 1; i < indexOfLastWord; i++) {
+      ws = d[i] + "";
+      k = LOG_BASE - ws.length;
+      if (k) str += getZeroString(k);
+      str += ws;
+    }
+    w = d[i];
+    ws = w + "";
+    k = LOG_BASE - ws.length;
+    if (k) str += getZeroString(k);
+  } else if (w === 0) {
+    return "0";
+  }
+  for (; w % 10 === 0; ) w /= 10;
+  return str + w;
+}
+function checkInt32(i, min2, max2) {
+  if (i !== ~~i || i < min2 || i > max2) {
+    throw Error(invalidArgument + i);
+  }
+}
+function checkRoundingDigits(d, i, rm, repeating) {
+  var di, k, r, rd;
+  for (k = d[0]; k >= 10; k /= 10) --i;
+  if (--i < 0) {
+    i += LOG_BASE;
+    di = 0;
+  } else {
+    di = Math.ceil((i + 1) / LOG_BASE);
+    i %= LOG_BASE;
+  }
+  k = mathpow(10, LOG_BASE - i);
+  rd = d[di] % k | 0;
+  if (repeating == null) {
+    if (i < 3) {
+      if (i == 0) rd = rd / 100 | 0;
+      else if (i == 1) rd = rd / 10 | 0;
+      r = rm < 4 && rd == 99999 || rm > 3 && rd == 49999 || rd == 5e4 || rd == 0;
+    } else {
+      r = (rm < 4 && rd + 1 == k || rm > 3 && rd + 1 == k / 2) && (d[di + 1] / k / 100 | 0) == mathpow(10, i - 2) - 1 || (rd == k / 2 || rd == 0) && (d[di + 1] / k / 100 | 0) == 0;
+    }
+  } else {
+    if (i < 4) {
+      if (i == 0) rd = rd / 1e3 | 0;
+      else if (i == 1) rd = rd / 100 | 0;
+      else if (i == 2) rd = rd / 10 | 0;
+      r = (repeating || rm < 4) && rd == 9999 || !repeating && rm > 3 && rd == 4999;
+    } else {
+      r = ((repeating || rm < 4) && rd + 1 == k || !repeating && rm > 3 && rd + 1 == k / 2) && (d[di + 1] / k / 1e3 | 0) == mathpow(10, i - 3) - 1;
+    }
+  }
+  return r;
+}
+function convertBase(str, baseIn, baseOut) {
+  var j, arr = [0], arrL, i = 0, strL = str.length;
+  for (; i < strL; ) {
+    for (arrL = arr.length; arrL--; ) arr[arrL] *= baseIn;
+    arr[0] += NUMERALS.indexOf(str.charAt(i++));
+    for (j = 0; j < arr.length; j++) {
+      if (arr[j] > baseOut - 1) {
+        if (arr[j + 1] === void 0) arr[j + 1] = 0;
+        arr[j + 1] += arr[j] / baseOut | 0;
+        arr[j] %= baseOut;
+      }
+    }
+  }
+  return arr.reverse();
+}
+function cosine2(Ctor, x) {
+  var k, len, y;
+  if (x.isZero()) return x;
+  len = x.d.length;
+  if (len < 32) {
+    k = Math.ceil(len / 3);
+    y = (1 / tinyPow(4, k)).toString();
+  } else {
+    k = 16;
+    y = "2.3283064365386962890625e-10";
+  }
+  Ctor.precision += k;
+  x = taylorSeries(Ctor, 1, x.times(y), new Ctor(1));
+  for (var i = k; i--; ) {
+    var cos2x = x.times(x);
+    x = cos2x.times(cos2x).minus(cos2x).times(8).plus(1);
+  }
+  Ctor.precision -= k;
+  return x;
+}
+var divide = /* @__PURE__ */ function() {
+  function multiplyInteger(x, k, base) {
+    var temp, carry = 0, i = x.length;
+    for (x = x.slice(); i--; ) {
+      temp = x[i] * k + carry;
+      x[i] = temp % base | 0;
+      carry = temp / base | 0;
+    }
+    if (carry) x.unshift(carry);
+    return x;
+  }
+  function compare(a, b, aL, bL) {
+    var i, r;
+    if (aL != bL) {
+      r = aL > bL ? 1 : -1;
+    } else {
+      for (i = r = 0; i < aL; i++) {
+        if (a[i] != b[i]) {
+          r = a[i] > b[i] ? 1 : -1;
+          break;
+        }
+      }
+    }
+    return r;
+  }
+  function subtract(a, b, aL, base) {
+    var i = 0;
+    for (; aL--; ) {
+      a[aL] -= i;
+      i = a[aL] < b[aL] ? 1 : 0;
+      a[aL] = i * base + a[aL] - b[aL];
+    }
+    for (; !a[0] && a.length > 1; ) a.shift();
+  }
+  return function(x, y, pr, rm, dp, base) {
+    var cmp, e, i, k, logBase, more, prod, prodL, q, qd, rem, remL, rem0, sd, t, xi, xL, yd0, yL, yz, Ctor = x.constructor, sign2 = x.s == y.s ? 1 : -1, xd = x.d, yd = y.d;
+    if (!xd || !xd[0] || !yd || !yd[0]) {
+      return new Ctor(
+        // Return NaN if either NaN, or both Infinity or 0.
+        !x.s || !y.s || (xd ? yd && xd[0] == yd[0] : !yd) ? NaN : (
+          // Return ±0 if x is 0 or y is ±Infinity, or return ±Infinity as y is 0.
+          xd && xd[0] == 0 || !yd ? sign2 * 0 : sign2 / 0
+        )
+      );
+    }
+    if (base) {
+      logBase = 1;
+      e = x.e - y.e;
+    } else {
+      base = BASE;
+      logBase = LOG_BASE;
+      e = mathfloor(x.e / logBase) - mathfloor(y.e / logBase);
+    }
+    yL = yd.length;
+    xL = xd.length;
+    q = new Ctor(sign2);
+    qd = q.d = [];
+    for (i = 0; yd[i] == (xd[i] || 0); i++) ;
+    if (yd[i] > (xd[i] || 0)) e--;
+    if (pr == null) {
+      sd = pr = Ctor.precision;
+      rm = Ctor.rounding;
+    } else if (dp) {
+      sd = pr + (x.e - y.e) + 1;
+    } else {
+      sd = pr;
+    }
+    if (sd < 0) {
+      qd.push(1);
+      more = true;
+    } else {
+      sd = sd / logBase + 2 | 0;
+      i = 0;
+      if (yL == 1) {
+        k = 0;
+        yd = yd[0];
+        sd++;
+        for (; (i < xL || k) && sd--; i++) {
+          t = k * base + (xd[i] || 0);
+          qd[i] = t / yd | 0;
+          k = t % yd | 0;
+        }
+        more = k || i < xL;
+      } else {
+        k = base / (yd[0] + 1) | 0;
+        if (k > 1) {
+          yd = multiplyInteger(yd, k, base);
+          xd = multiplyInteger(xd, k, base);
+          yL = yd.length;
+          xL = xd.length;
+        }
+        xi = yL;
+        rem = xd.slice(0, yL);
+        remL = rem.length;
+        for (; remL < yL; ) rem[remL++] = 0;
+        yz = yd.slice();
+        yz.unshift(0);
+        yd0 = yd[0];
+        if (yd[1] >= base / 2) ++yd0;
+        do {
+          k = 0;
+          cmp = compare(yd, rem, yL, remL);
+          if (cmp < 0) {
+            rem0 = rem[0];
+            if (yL != remL) rem0 = rem0 * base + (rem[1] || 0);
+            k = rem0 / yd0 | 0;
+            if (k > 1) {
+              if (k >= base) k = base - 1;
+              prod = multiplyInteger(yd, k, base);
+              prodL = prod.length;
+              remL = rem.length;
+              cmp = compare(prod, rem, prodL, remL);
+              if (cmp == 1) {
+                k--;
+                subtract(prod, yL < prodL ? yz : yd, prodL, base);
+              }
+            } else {
+              if (k == 0) cmp = k = 1;
+              prod = yd.slice();
+            }
+            prodL = prod.length;
+            if (prodL < remL) prod.unshift(0);
+            subtract(rem, prod, remL, base);
+            if (cmp == -1) {
+              remL = rem.length;
+              cmp = compare(yd, rem, yL, remL);
+              if (cmp < 1) {
+                k++;
+                subtract(rem, yL < remL ? yz : yd, remL, base);
+              }
+            }
+            remL = rem.length;
+          } else if (cmp === 0) {
+            k++;
+            rem = [0];
+          }
+          qd[i++] = k;
+          if (cmp && rem[0]) {
+            rem[remL++] = xd[xi] || 0;
+          } else {
+            rem = [xd[xi]];
+            remL = 1;
+          }
+        } while ((xi++ < xL || rem[0] !== void 0) && sd--);
+        more = rem[0] !== void 0;
+      }
+      if (!qd[0]) qd.shift();
+    }
+    if (logBase == 1) {
+      q.e = e;
+      inexact = more;
+    } else {
+      for (i = 1, k = qd[0]; k >= 10; k /= 10) i++;
+      q.e = i + e * logBase - 1;
+      finalise(q, dp ? pr + q.e + 1 : pr, rm, more);
+    }
+    return q;
+  };
+}();
+function finalise(x, sd, rm, isTruncated) {
+  var digits, i, j, k, rd, roundUp, w, xd, xdi, Ctor = x.constructor;
+  out: if (sd != null) {
+    xd = x.d;
+    if (!xd) return x;
+    for (digits = 1, k = xd[0]; k >= 10; k /= 10) digits++;
+    i = sd - digits;
+    if (i < 0) {
+      i += LOG_BASE;
+      j = sd;
+      w = xd[xdi = 0];
+      rd = w / mathpow(10, digits - j - 1) % 10 | 0;
+    } else {
+      xdi = Math.ceil((i + 1) / LOG_BASE);
+      k = xd.length;
+      if (xdi >= k) {
+        if (isTruncated) {
+          for (; k++ <= xdi; ) xd.push(0);
+          w = rd = 0;
+          digits = 1;
+          i %= LOG_BASE;
+          j = i - LOG_BASE + 1;
+        } else {
+          break out;
+        }
+      } else {
+        w = k = xd[xdi];
+        for (digits = 1; k >= 10; k /= 10) digits++;
+        i %= LOG_BASE;
+        j = i - LOG_BASE + digits;
+        rd = j < 0 ? 0 : w / mathpow(10, digits - j - 1) % 10 | 0;
+      }
+    }
+    isTruncated = isTruncated || sd < 0 || xd[xdi + 1] !== void 0 || (j < 0 ? w : w % mathpow(10, digits - j - 1));
+    roundUp = rm < 4 ? (rd || isTruncated) && (rm == 0 || rm == (x.s < 0 ? 3 : 2)) : rd > 5 || rd == 5 && (rm == 4 || isTruncated || rm == 6 && // Check whether the digit to the left of the rounding digit is odd.
+    (i > 0 ? j > 0 ? w / mathpow(10, digits - j) : 0 : xd[xdi - 1]) % 10 & 1 || rm == (x.s < 0 ? 8 : 7));
+    if (sd < 1 || !xd[0]) {
+      xd.length = 0;
+      if (roundUp) {
+        sd -= x.e + 1;
+        xd[0] = mathpow(10, (LOG_BASE - sd % LOG_BASE) % LOG_BASE);
+        x.e = -sd || 0;
+      } else {
+        xd[0] = x.e = 0;
+      }
+      return x;
+    }
+    if (i == 0) {
+      xd.length = xdi;
+      k = 1;
+      xdi--;
+    } else {
+      xd.length = xdi + 1;
+      k = mathpow(10, LOG_BASE - i);
+      xd[xdi] = j > 0 ? (w / mathpow(10, digits - j) % mathpow(10, j) | 0) * k : 0;
+    }
+    if (roundUp) {
+      for (; ; ) {
+        if (xdi == 0) {
+          for (i = 1, j = xd[0]; j >= 10; j /= 10) i++;
+          j = xd[0] += k;
+          for (k = 1; j >= 10; j /= 10) k++;
+          if (i != k) {
+            x.e++;
+            if (xd[0] == BASE) xd[0] = 1;
+          }
+          break;
+        } else {
+          xd[xdi] += k;
+          if (xd[xdi] != BASE) break;
+          xd[xdi--] = 0;
+          k = 1;
+        }
+      }
+    }
+    for (i = xd.length; xd[--i] === 0; ) xd.pop();
+  }
+  if (external) {
+    if (x.e > Ctor.maxE) {
+      x.d = null;
+      x.e = NaN;
+    } else if (x.e < Ctor.minE) {
+      x.e = 0;
+      x.d = [0];
+    }
+  }
+  return x;
+}
+function finiteToString(x, isExp, sd) {
+  if (!x.isFinite()) return nonFiniteToString(x);
+  var k, e = x.e, str = digitsToString(x.d), len = str.length;
+  if (isExp) {
+    if (sd && (k = sd - len) > 0) {
+      str = str.charAt(0) + "." + str.slice(1) + getZeroString(k);
+    } else if (len > 1) {
+      str = str.charAt(0) + "." + str.slice(1);
+    }
+    str = str + (x.e < 0 ? "e" : "e+") + x.e;
+  } else if (e < 0) {
+    str = "0." + getZeroString(-e - 1) + str;
+    if (sd && (k = sd - len) > 0) str += getZeroString(k);
+  } else if (e >= len) {
+    str += getZeroString(e + 1 - len);
+    if (sd && (k = sd - e - 1) > 0) str = str + "." + getZeroString(k);
+  } else {
+    if ((k = e + 1) < len) str = str.slice(0, k) + "." + str.slice(k);
+    if (sd && (k = sd - len) > 0) {
+      if (e + 1 === len) str += ".";
+      str += getZeroString(k);
+    }
+  }
+  return str;
+}
+function getBase10Exponent(digits, e) {
+  var w = digits[0];
+  for (e *= LOG_BASE; w >= 10; w /= 10) e++;
+  return e;
+}
+function getLn10(Ctor, sd, pr) {
+  if (sd > LN10_PRECISION) {
+    external = true;
+    if (pr) Ctor.precision = pr;
+    throw Error(precisionLimitExceeded);
+  }
+  return finalise(new Ctor(LN10), sd, 1, true);
+}
+function getPi(Ctor, sd, rm) {
+  if (sd > PI_PRECISION) throw Error(precisionLimitExceeded);
+  return finalise(new Ctor(PI), sd, rm, true);
+}
+function getPrecision(digits) {
+  var w = digits.length - 1, len = w * LOG_BASE + 1;
+  w = digits[w];
+  if (w) {
+    for (; w % 10 == 0; w /= 10) len--;
+    for (w = digits[0]; w >= 10; w /= 10) len++;
+  }
+  return len;
+}
+function getZeroString(k) {
+  var zs = "";
+  for (; k--; ) zs += "0";
+  return zs;
+}
+function intPow(Ctor, x, n, pr) {
+  var isTruncated, r = new Ctor(1), k = Math.ceil(pr / LOG_BASE + 4);
+  external = false;
+  for (; ; ) {
+    if (n % 2) {
+      r = r.times(x);
+      if (truncate(r.d, k)) isTruncated = true;
+    }
+    n = mathfloor(n / 2);
+    if (n === 0) {
+      n = r.d.length - 1;
+      if (isTruncated && r.d[n] === 0) ++r.d[n];
+      break;
+    }
+    x = x.times(x);
+    truncate(x.d, k);
+  }
+  external = true;
+  return r;
+}
+function isOdd(n) {
+  return n.d[n.d.length - 1] & 1;
+}
+function maxOrMin(Ctor, args, n) {
+  var k, y, x = new Ctor(args[0]), i = 0;
+  for (; ++i < args.length; ) {
+    y = new Ctor(args[i]);
+    if (!y.s) {
+      x = y;
+      break;
+    }
+    k = x.cmp(y);
+    if (k === n || k === 0 && x.s === n) {
+      x = y;
+    }
+  }
+  return x;
+}
+function naturalExponential(x, sd) {
+  var denominator, guard, j, pow2, sum3, t, wpr, rep = 0, i = 0, k = 0, Ctor = x.constructor, rm = Ctor.rounding, pr = Ctor.precision;
+  if (!x.d || !x.d[0] || x.e > 17) {
+    return new Ctor(x.d ? !x.d[0] ? 1 : x.s < 0 ? 0 : 1 / 0 : x.s ? x.s < 0 ? 0 : x : 0 / 0);
+  }
+  if (sd == null) {
+    external = false;
+    wpr = pr;
+  } else {
+    wpr = sd;
+  }
+  t = new Ctor(0.03125);
+  while (x.e > -2) {
+    x = x.times(t);
+    k += 5;
+  }
+  guard = Math.log(mathpow(2, k)) / Math.LN10 * 2 + 5 | 0;
+  wpr += guard;
+  denominator = pow2 = sum3 = new Ctor(1);
+  Ctor.precision = wpr;
+  for (; ; ) {
+    pow2 = finalise(pow2.times(x), wpr, 1);
+    denominator = denominator.times(++i);
+    t = sum3.plus(divide(pow2, denominator, wpr, 1));
+    if (digitsToString(t.d).slice(0, wpr) === digitsToString(sum3.d).slice(0, wpr)) {
+      j = k;
+      while (j--) sum3 = finalise(sum3.times(sum3), wpr, 1);
+      if (sd == null) {
+        if (rep < 3 && checkRoundingDigits(sum3.d, wpr - guard, rm, rep)) {
+          Ctor.precision = wpr += 10;
+          denominator = pow2 = t = new Ctor(1);
+          i = 0;
+          rep++;
+        } else {
+          return finalise(sum3, Ctor.precision = pr, rm, external = true);
+        }
+      } else {
+        Ctor.precision = pr;
+        return sum3;
+      }
+    }
+    sum3 = t;
+  }
+}
+function naturalLogarithm(y, sd) {
+  var c, c0, denominator, e, numerator, rep, sum3, t, wpr, x1, x2, n = 1, guard = 10, x = y, xd = x.d, Ctor = x.constructor, rm = Ctor.rounding, pr = Ctor.precision;
+  if (x.s < 0 || !xd || !xd[0] || !x.e && xd[0] == 1 && xd.length == 1) {
+    return new Ctor(xd && !xd[0] ? -1 / 0 : x.s != 1 ? NaN : xd ? 0 : x);
+  }
+  if (sd == null) {
+    external = false;
+    wpr = pr;
+  } else {
+    wpr = sd;
+  }
+  Ctor.precision = wpr += guard;
+  c = digitsToString(xd);
+  c0 = c.charAt(0);
+  if (Math.abs(e = x.e) < 15e14) {
+    while (c0 < 7 && c0 != 1 || c0 == 1 && c.charAt(1) > 3) {
+      x = x.times(y);
+      c = digitsToString(x.d);
+      c0 = c.charAt(0);
+      n++;
+    }
+    e = x.e;
+    if (c0 > 1) {
+      x = new Ctor("0." + c);
+      e++;
+    } else {
+      x = new Ctor(c0 + "." + c.slice(1));
+    }
+  } else {
+    t = getLn10(Ctor, wpr + 2, pr).times(e + "");
+    x = naturalLogarithm(new Ctor(c0 + "." + c.slice(1)), wpr - guard).plus(t);
+    Ctor.precision = pr;
+    return sd == null ? finalise(x, pr, rm, external = true) : x;
+  }
+  x1 = x;
+  sum3 = numerator = x = divide(x.minus(1), x.plus(1), wpr, 1);
+  x2 = finalise(x.times(x), wpr, 1);
+  denominator = 3;
+  for (; ; ) {
+    numerator = finalise(numerator.times(x2), wpr, 1);
+    t = sum3.plus(divide(numerator, new Ctor(denominator), wpr, 1));
+    if (digitsToString(t.d).slice(0, wpr) === digitsToString(sum3.d).slice(0, wpr)) {
+      sum3 = sum3.times(2);
+      if (e !== 0) sum3 = sum3.plus(getLn10(Ctor, wpr + 2, pr).times(e + ""));
+      sum3 = divide(sum3, new Ctor(n), wpr, 1);
+      if (sd == null) {
+        if (checkRoundingDigits(sum3.d, wpr - guard, rm, rep)) {
+          Ctor.precision = wpr += guard;
+          t = numerator = x = divide(x1.minus(1), x1.plus(1), wpr, 1);
+          x2 = finalise(x.times(x), wpr, 1);
+          denominator = rep = 1;
+        } else {
+          return finalise(sum3, Ctor.precision = pr, rm, external = true);
+        }
+      } else {
+        Ctor.precision = pr;
+        return sum3;
+      }
+    }
+    sum3 = t;
+    denominator += 2;
+  }
+}
+function nonFiniteToString(x) {
+  return String(x.s * x.s / 0);
+}
+function parseDecimal(x, str) {
+  var e, i, len;
+  if ((e = str.indexOf(".")) > -1) str = str.replace(".", "");
+  if ((i = str.search(/e/i)) > 0) {
+    if (e < 0) e = i;
+    e += +str.slice(i + 1);
+    str = str.substring(0, i);
+  } else if (e < 0) {
+    e = str.length;
+  }
+  for (i = 0; str.charCodeAt(i) === 48; i++) ;
+  for (len = str.length; str.charCodeAt(len - 1) === 48; --len) ;
+  str = str.slice(i, len);
+  if (str) {
+    len -= i;
+    x.e = e = e - i - 1;
+    x.d = [];
+    i = (e + 1) % LOG_BASE;
+    if (e < 0) i += LOG_BASE;
+    if (i < len) {
+      if (i) x.d.push(+str.slice(0, i));
+      for (len -= LOG_BASE; i < len; ) x.d.push(+str.slice(i, i += LOG_BASE));
+      str = str.slice(i);
+      i = LOG_BASE - str.length;
+    } else {
+      i -= len;
+    }
+    for (; i--; ) str += "0";
+    x.d.push(+str);
+    if (external) {
+      if (x.e > x.constructor.maxE) {
+        x.d = null;
+        x.e = NaN;
+      } else if (x.e < x.constructor.minE) {
+        x.e = 0;
+        x.d = [0];
+      }
+    }
+  } else {
+    x.e = 0;
+    x.d = [0];
+  }
+  return x;
+}
+function parseOther(x, str) {
+  var base, Ctor, divisor, i, isFloat, len, p, xd, xe;
+  if (str.indexOf("_") > -1) {
+    str = str.replace(/(\d)_(?=\d)/g, "$1");
+    if (isDecimal.test(str)) return parseDecimal(x, str);
+  } else if (str === "Infinity" || str === "NaN") {
+    if (!+str) x.s = NaN;
+    x.e = NaN;
+    x.d = null;
+    return x;
+  }
+  if (isHex2.test(str)) {
+    base = 16;
+    str = str.toLowerCase();
+  } else if (isBinary.test(str)) {
+    base = 2;
+  } else if (isOctal.test(str)) {
+    base = 8;
+  } else {
+    throw Error(invalidArgument + str);
+  }
+  i = str.search(/p/i);
+  if (i > 0) {
+    p = +str.slice(i + 1);
+    str = str.substring(2, i);
+  } else {
+    str = str.slice(2);
+  }
+  i = str.indexOf(".");
+  isFloat = i >= 0;
+  Ctor = x.constructor;
+  if (isFloat) {
+    str = str.replace(".", "");
+    len = str.length;
+    i = len - i;
+    divisor = intPow(Ctor, new Ctor(base), i, i * 2);
+  }
+  xd = convertBase(str, base, BASE);
+  xe = xd.length - 1;
+  for (i = xe; xd[i] === 0; --i) xd.pop();
+  if (i < 0) return new Ctor(x.s * 0);
+  x.e = getBase10Exponent(xd, xe);
+  x.d = xd;
+  external = false;
+  if (isFloat) x = divide(x, divisor, len * 4);
+  if (p) x = x.times(Math.abs(p) < 54 ? mathpow(2, p) : Decimal.pow(2, p));
+  external = true;
+  return x;
+}
+function sine(Ctor, x) {
+  var k, len = x.d.length;
+  if (len < 3) {
+    return x.isZero() ? x : taylorSeries(Ctor, 2, x, x);
+  }
+  k = 1.4 * Math.sqrt(len);
+  k = k > 16 ? 16 : k | 0;
+  x = x.times(1 / tinyPow(5, k));
+  x = taylorSeries(Ctor, 2, x, x);
+  var sin2_x, d5 = new Ctor(5), d16 = new Ctor(16), d20 = new Ctor(20);
+  for (; k--; ) {
+    sin2_x = x.times(x);
+    x = x.times(d5.plus(sin2_x.times(d16.times(sin2_x).minus(d20))));
+  }
+  return x;
+}
+function taylorSeries(Ctor, n, x, y, isHyperbolic) {
+  var j, t, u, x2, i = 1, pr = Ctor.precision, k = Math.ceil(pr / LOG_BASE);
+  external = false;
+  x2 = x.times(x);
+  u = new Ctor(y);
+  for (; ; ) {
+    t = divide(u.times(x2), new Ctor(n++ * n++), pr, 1);
+    u = isHyperbolic ? y.plus(t) : y.minus(t);
+    y = divide(t.times(x2), new Ctor(n++ * n++), pr, 1);
+    t = u.plus(y);
+    if (t.d[k] !== void 0) {
+      for (j = k; t.d[j] === u.d[j] && j--; ) ;
+      if (j == -1) break;
+    }
+    j = u;
+    u = y;
+    y = t;
+    t = j;
+    i++;
+  }
+  external = true;
+  t.d.length = k + 1;
+  return t;
+}
+function tinyPow(b, e) {
+  var n = b;
+  while (--e) n *= b;
+  return n;
+}
+function toLessThanHalfPi(Ctor, x) {
+  var t, isNeg = x.s < 0, pi = getPi(Ctor, Ctor.precision, 1), halfPi = pi.times(0.5);
+  x = x.abs();
+  if (x.lte(halfPi)) {
+    quadrant = isNeg ? 4 : 1;
+    return x;
+  }
+  t = x.divToInt(pi);
+  if (t.isZero()) {
+    quadrant = isNeg ? 3 : 2;
+  } else {
+    x = x.minus(t.times(pi));
+    if (x.lte(halfPi)) {
+      quadrant = isOdd(t) ? isNeg ? 2 : 3 : isNeg ? 4 : 1;
+      return x;
+    }
+    quadrant = isOdd(t) ? isNeg ? 1 : 4 : isNeg ? 3 : 2;
+  }
+  return x.minus(pi).abs();
+}
+function toStringBinary(x, baseOut, sd, rm) {
+  var base, e, i, k, len, roundUp, str, xd, y, Ctor = x.constructor, isExp = sd !== void 0;
+  if (isExp) {
+    checkInt32(sd, 1, MAX_DIGITS);
+    if (rm === void 0) rm = Ctor.rounding;
+    else checkInt32(rm, 0, 8);
+  } else {
+    sd = Ctor.precision;
+    rm = Ctor.rounding;
+  }
+  if (!x.isFinite()) {
+    str = nonFiniteToString(x);
+  } else {
+    str = finiteToString(x);
+    i = str.indexOf(".");
+    if (isExp) {
+      base = 2;
+      if (baseOut == 16) {
+        sd = sd * 4 - 3;
+      } else if (baseOut == 8) {
+        sd = sd * 3 - 2;
+      }
+    } else {
+      base = baseOut;
+    }
+    if (i >= 0) {
+      str = str.replace(".", "");
+      y = new Ctor(1);
+      y.e = str.length - i;
+      y.d = convertBase(finiteToString(y), 10, base);
+      y.e = y.d.length;
+    }
+    xd = convertBase(str, 10, base);
+    e = len = xd.length;
+    for (; xd[--len] == 0; ) xd.pop();
+    if (!xd[0]) {
+      str = isExp ? "0p+0" : "0";
+    } else {
+      if (i < 0) {
+        e--;
+      } else {
+        x = new Ctor(x);
+        x.d = xd;
+        x.e = e;
+        x = divide(x, y, sd, rm, 0, base);
+        xd = x.d;
+        e = x.e;
+        roundUp = inexact;
+      }
+      i = xd[sd];
+      k = base / 2;
+      roundUp = roundUp || xd[sd + 1] !== void 0;
+      roundUp = rm < 4 ? (i !== void 0 || roundUp) && (rm === 0 || rm === (x.s < 0 ? 3 : 2)) : i > k || i === k && (rm === 4 || roundUp || rm === 6 && xd[sd - 1] & 1 || rm === (x.s < 0 ? 8 : 7));
+      xd.length = sd;
+      if (roundUp) {
+        for (; ++xd[--sd] > base - 1; ) {
+          xd[sd] = 0;
+          if (!sd) {
+            ++e;
+            xd.unshift(1);
+          }
+        }
+      }
+      for (len = xd.length; !xd[len - 1]; --len) ;
+      for (i = 0, str = ""; i < len; i++) str += NUMERALS.charAt(xd[i]);
+      if (isExp) {
+        if (len > 1) {
+          if (baseOut == 16 || baseOut == 8) {
+            i = baseOut == 16 ? 4 : 3;
+            for (--len; len % i; len++) str += "0";
+            xd = convertBase(str, base, baseOut);
+            for (len = xd.length; !xd[len - 1]; --len) ;
+            for (i = 1, str = "1."; i < len; i++) str += NUMERALS.charAt(xd[i]);
+          } else {
+            str = str.charAt(0) + "." + str.slice(1);
+          }
+        }
+        str = str + (e < 0 ? "p" : "p+") + e;
+      } else if (e < 0) {
+        for (; ++e; ) str = "0" + str;
+        str = "0." + str;
+      } else {
+        if (++e > len) for (e -= len; e--; ) str += "0";
+        else if (e < len) str = str.slice(0, e) + "." + str.slice(e);
+      }
+    }
+    str = (baseOut == 16 ? "0x" : baseOut == 2 ? "0b" : baseOut == 8 ? "0o" : "") + str;
+  }
+  return x.s < 0 ? "-" + str : str;
+}
+function truncate(arr, len) {
+  if (arr.length > len) {
+    arr.length = len;
+    return true;
+  }
+}
+function abs(x) {
+  return new this(x).abs();
+}
+function acos(x) {
+  return new this(x).acos();
+}
+function acosh(x) {
+  return new this(x).acosh();
+}
+function add(x, y) {
+  return new this(x).plus(y);
+}
+function asin(x) {
+  return new this(x).asin();
+}
+function asinh(x) {
+  return new this(x).asinh();
+}
+function atan(x) {
+  return new this(x).atan();
+}
+function atanh(x) {
+  return new this(x).atanh();
+}
+function atan2(y, x) {
+  y = new this(y);
+  x = new this(x);
+  var r, pr = this.precision, rm = this.rounding, wpr = pr + 4;
+  if (!y.s || !x.s) {
+    r = new this(NaN);
+  } else if (!y.d && !x.d) {
+    r = getPi(this, wpr, 1).times(x.s > 0 ? 0.25 : 0.75);
+    r.s = y.s;
+  } else if (!x.d || y.isZero()) {
+    r = x.s < 0 ? getPi(this, pr, rm) : new this(0);
+    r.s = y.s;
+  } else if (!y.d || x.isZero()) {
+    r = getPi(this, wpr, 1).times(0.5);
+    r.s = y.s;
+  } else if (x.s < 0) {
+    this.precision = wpr;
+    this.rounding = 1;
+    r = this.atan(divide(y, x, wpr, 1));
+    x = getPi(this, wpr, 1);
+    this.precision = pr;
+    this.rounding = rm;
+    r = y.s < 0 ? r.minus(x) : r.plus(x);
+  } else {
+    r = this.atan(divide(y, x, wpr, 1));
+  }
+  return r;
+}
+function cbrt(x) {
+  return new this(x).cbrt();
+}
+function ceil(x) {
+  return finalise(x = new this(x), x.e + 1, 2);
+}
+function clamp(x, min2, max2) {
+  return new this(x).clamp(min2, max2);
+}
+function config(obj) {
+  if (!obj || typeof obj !== "object") throw Error(decimalError + "Object expected");
+  var i, p, v, useDefaults = obj.defaults === true, ps = [
+    "precision",
+    1,
+    MAX_DIGITS,
+    "rounding",
+    0,
+    8,
+    "toExpNeg",
+    -EXP_LIMIT,
+    0,
+    "toExpPos",
+    0,
+    EXP_LIMIT,
+    "maxE",
+    0,
+    EXP_LIMIT,
+    "minE",
+    -EXP_LIMIT,
+    0,
+    "modulo",
+    0,
+    9
+  ];
+  for (i = 0; i < ps.length; i += 3) {
+    if (p = ps[i], useDefaults) this[p] = DEFAULTS[p];
+    if ((v = obj[p]) !== void 0) {
+      if (mathfloor(v) === v && v >= ps[i + 1] && v <= ps[i + 2]) this[p] = v;
+      else throw Error(invalidArgument + p + ": " + v);
+    }
+  }
+  if (p = "crypto", useDefaults) this[p] = DEFAULTS[p];
+  if ((v = obj[p]) !== void 0) {
+    if (v === true || v === false || v === 0 || v === 1) {
+      if (v) {
+        if (typeof crypto != "undefined" && crypto && (crypto.getRandomValues || crypto.randomBytes)) {
+          this[p] = true;
+        } else {
+          throw Error(cryptoUnavailable);
+        }
+      } else {
+        this[p] = false;
+      }
+    } else {
+      throw Error(invalidArgument + p + ": " + v);
+    }
+  }
+  return this;
+}
+function cos(x) {
+  return new this(x).cos();
+}
+function cosh(x) {
+  return new this(x).cosh();
+}
+function clone(obj) {
+  var i, p, ps;
+  function Decimal2(v) {
+    var e, i2, t, x = this;
+    if (!(x instanceof Decimal2)) return new Decimal2(v);
+    x.constructor = Decimal2;
+    if (isDecimalInstance(v)) {
+      x.s = v.s;
+      if (external) {
+        if (!v.d || v.e > Decimal2.maxE) {
+          x.e = NaN;
+          x.d = null;
+        } else if (v.e < Decimal2.minE) {
+          x.e = 0;
+          x.d = [0];
+        } else {
+          x.e = v.e;
+          x.d = v.d.slice();
+        }
+      } else {
+        x.e = v.e;
+        x.d = v.d ? v.d.slice() : v.d;
+      }
+      return;
+    }
+    t = typeof v;
+    if (t === "number") {
+      if (v === 0) {
+        x.s = 1 / v < 0 ? -1 : 1;
+        x.e = 0;
+        x.d = [0];
+        return;
+      }
+      if (v < 0) {
+        v = -v;
+        x.s = -1;
+      } else {
+        x.s = 1;
+      }
+      if (v === ~~v && v < 1e7) {
+        for (e = 0, i2 = v; i2 >= 10; i2 /= 10) e++;
+        if (external) {
+          if (e > Decimal2.maxE) {
+            x.e = NaN;
+            x.d = null;
+          } else if (e < Decimal2.minE) {
+            x.e = 0;
+            x.d = [0];
+          } else {
+            x.e = e;
+            x.d = [v];
+          }
+        } else {
+          x.e = e;
+          x.d = [v];
+        }
+        return;
+      }
+      if (v * 0 !== 0) {
+        if (!v) x.s = NaN;
+        x.e = NaN;
+        x.d = null;
+        return;
+      }
+      return parseDecimal(x, v.toString());
+    }
+    if (t === "string") {
+      if ((i2 = v.charCodeAt(0)) === 45) {
+        v = v.slice(1);
+        x.s = -1;
+      } else {
+        if (i2 === 43) v = v.slice(1);
+        x.s = 1;
+      }
+      return isDecimal.test(v) ? parseDecimal(x, v) : parseOther(x, v);
+    }
+    if (t === "bigint") {
+      if (v < 0) {
+        v = -v;
+        x.s = -1;
+      } else {
+        x.s = 1;
+      }
+      return parseDecimal(x, v.toString());
+    }
+    throw Error(invalidArgument + v);
+  }
+  Decimal2.prototype = P;
+  Decimal2.ROUND_UP = 0;
+  Decimal2.ROUND_DOWN = 1;
+  Decimal2.ROUND_CEIL = 2;
+  Decimal2.ROUND_FLOOR = 3;
+  Decimal2.ROUND_HALF_UP = 4;
+  Decimal2.ROUND_HALF_DOWN = 5;
+  Decimal2.ROUND_HALF_EVEN = 6;
+  Decimal2.ROUND_HALF_CEIL = 7;
+  Decimal2.ROUND_HALF_FLOOR = 8;
+  Decimal2.EUCLID = 9;
+  Decimal2.config = Decimal2.set = config;
+  Decimal2.clone = clone;
+  Decimal2.isDecimal = isDecimalInstance;
+  Decimal2.abs = abs;
+  Decimal2.acos = acos;
+  Decimal2.acosh = acosh;
+  Decimal2.add = add;
+  Decimal2.asin = asin;
+  Decimal2.asinh = asinh;
+  Decimal2.atan = atan;
+  Decimal2.atanh = atanh;
+  Decimal2.atan2 = atan2;
+  Decimal2.cbrt = cbrt;
+  Decimal2.ceil = ceil;
+  Decimal2.clamp = clamp;
+  Decimal2.cos = cos;
+  Decimal2.cosh = cosh;
+  Decimal2.div = div;
+  Decimal2.exp = exp;
+  Decimal2.floor = floor;
+  Decimal2.hypot = hypot;
+  Decimal2.ln = ln;
+  Decimal2.log = log;
+  Decimal2.log10 = log10;
+  Decimal2.log2 = log2;
+  Decimal2.max = max;
+  Decimal2.min = min;
+  Decimal2.mod = mod;
+  Decimal2.mul = mul;
+  Decimal2.pow = pow;
+  Decimal2.random = random;
+  Decimal2.round = round;
+  Decimal2.sign = sign;
+  Decimal2.sin = sin;
+  Decimal2.sinh = sinh;
+  Decimal2.sqrt = sqrt;
+  Decimal2.sub = sub;
+  Decimal2.sum = sum2;
+  Decimal2.tan = tan;
+  Decimal2.tanh = tanh;
+  Decimal2.trunc = trunc;
+  if (obj === void 0) obj = {};
+  if (obj) {
+    if (obj.defaults !== true) {
+      ps = ["precision", "rounding", "toExpNeg", "toExpPos", "maxE", "minE", "modulo", "crypto"];
+      for (i = 0; i < ps.length; ) if (!obj.hasOwnProperty(p = ps[i++])) obj[p] = this[p];
+    }
+  }
+  Decimal2.config(obj);
+  return Decimal2;
+}
+function div(x, y) {
+  return new this(x).div(y);
+}
+function exp(x) {
+  return new this(x).exp();
+}
+function floor(x) {
+  return finalise(x = new this(x), x.e + 1, 3);
+}
+function hypot() {
+  var i, n, t = new this(0);
+  external = false;
+  for (i = 0; i < arguments.length; ) {
+    n = new this(arguments[i++]);
+    if (!n.d) {
+      if (n.s) {
+        external = true;
+        return new this(1 / 0);
+      }
+      t = n;
+    } else if (t.d) {
+      t = t.plus(n.times(n));
+    }
+  }
+  external = true;
+  return t.sqrt();
+}
+function isDecimalInstance(obj) {
+  return obj instanceof Decimal || obj && obj.toStringTag === tag || false;
+}
+function ln(x) {
+  return new this(x).ln();
+}
+function log(x, y) {
+  return new this(x).log(y);
+}
+function log2(x) {
+  return new this(x).log(2);
+}
+function log10(x) {
+  return new this(x).log(10);
+}
+function max() {
+  return maxOrMin(this, arguments, -1);
+}
+function min() {
+  return maxOrMin(this, arguments, 1);
+}
+function mod(x, y) {
+  return new this(x).mod(y);
+}
+function mul(x, y) {
+  return new this(x).mul(y);
+}
+function pow(x, y) {
+  return new this(x).pow(y);
+}
+function random(sd) {
+  var d, e, k, n, i = 0, r = new this(1), rd = [];
+  if (sd === void 0) sd = this.precision;
+  else checkInt32(sd, 1, MAX_DIGITS);
+  k = Math.ceil(sd / LOG_BASE);
+  if (!this.crypto) {
+    for (; i < k; ) rd[i++] = Math.random() * 1e7 | 0;
+  } else if (crypto.getRandomValues) {
+    d = crypto.getRandomValues(new Uint32Array(k));
+    for (; i < k; ) {
+      n = d[i];
+      if (n >= 429e7) {
+        d[i] = crypto.getRandomValues(new Uint32Array(1))[0];
+      } else {
+        rd[i++] = n % 1e7;
+      }
+    }
+  } else if (crypto.randomBytes) {
+    d = crypto.randomBytes(k *= 4);
+    for (; i < k; ) {
+      n = d[i] + (d[i + 1] << 8) + (d[i + 2] << 16) + ((d[i + 3] & 127) << 24);
+      if (n >= 214e7) {
+        crypto.randomBytes(4).copy(d, i);
+      } else {
+        rd.push(n % 1e7);
+        i += 4;
+      }
+    }
+    i = k / 4;
+  } else {
+    throw Error(cryptoUnavailable);
+  }
+  k = rd[--i];
+  sd %= LOG_BASE;
+  if (k && sd) {
+    n = mathpow(10, LOG_BASE - sd);
+    rd[i] = (k / n | 0) * n;
+  }
+  for (; rd[i] === 0; i--) rd.pop();
+  if (i < 0) {
+    e = 0;
+    rd = [0];
+  } else {
+    e = -1;
+    for (; rd[0] === 0; e -= LOG_BASE) rd.shift();
+    for (k = 1, n = rd[0]; n >= 10; n /= 10) k++;
+    if (k < LOG_BASE) e -= LOG_BASE - k;
+  }
+  r.e = e;
+  r.d = rd;
+  return r;
+}
+function round(x) {
+  return finalise(x = new this(x), x.e + 1, this.rounding);
+}
+function sign(x) {
+  x = new this(x);
+  return x.d ? x.d[0] ? x.s : 0 * x.s : x.s || NaN;
+}
+function sin(x) {
+  return new this(x).sin();
+}
+function sinh(x) {
+  return new this(x).sinh();
+}
+function sqrt(x) {
+  return new this(x).sqrt();
+}
+function sub(x, y) {
+  return new this(x).sub(y);
+}
+function sum2() {
+  var i = 0, args = arguments, x = new this(args[i]);
+  external = false;
+  for (; x.s && ++i < args.length; ) x = x.plus(args[i]);
+  external = true;
+  return finalise(x, this.precision, this.rounding);
+}
+function tan(x) {
+  return new this(x).tan();
+}
+function tanh(x) {
+  return new this(x).tanh();
+}
+function trunc(x) {
+  return finalise(x = new this(x), x.e + 1, 1);
+}
+P[Symbol.for("nodejs.util.inspect.custom")] = P.toString;
+P[Symbol.toStringTag] = "Decimal";
+var Decimal = P.constructor = clone(DEFAULTS);
+LN10 = new Decimal(LN10);
+PI = new Decimal(PI);
+var decimal_default = Decimal;
+
+// src/assets.ts
+decimal_default.set({ precision: 32, rounding: decimal_default.ROUND_HALF_UP });
+var ASSET_NAMES = { cash: "\u6D41\u52A8\u8D44\u91D1", investment: "\u6295\u8D44\u7406\u8D22", fixed: "\u56FA\u5B9A\u8D44\u4EA7", receivable: "\u5E94\u6536\u6B3E", liability: "\u8D1F\u503A" };
+function emptyAssets() {
+  return { version: 1, accounts: [], holdings: [], events: [], epochs: [], defaultCashId: "", quotes: {}, snapshots: [], hideAmounts: false, excludeFixed: false, recordAssignments: {} };
+}
+function assetId() {
+  return `asset-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 11)}`;
+}
+function decimal2(value) {
+  if (!/^-?\d+(?:\.\d{1,12})?$/.test(value.trim())) throw new Error("\u8BF7\u8F93\u5165\u6709\u6548\u6570\u5B57\uFF08\u6700\u591A12\u4F4D\u5C0F\u6570\uFF09");
+  return new decimal_default(value);
+}
+function moneyCents(value, signed = false) {
+  const amount = decimal2(value);
+  if (!signed && amount.isNegative() || amount.decimalPlaces() > 2) throw new Error("\u91D1\u989D\u987B\u4E3A\u975E\u8D1F\u6570\uFF0C\u6700\u591A\u4E24\u4F4D\u5C0F\u6570");
+  const cents = amount.times(100).toNumber();
+  if (!Number.isSafeInteger(cents)) throw new Error("\u91D1\u989D\u8D85\u51FA\u53EF\u8BA1\u7B97\u8303\u56F4");
+  return cents;
+}
+function valueCents(quantity, price) {
+  const result = decimal2(quantity).times(decimal2(price)).times(100).toDecimalPlaces(0).toNumber();
+  if (!Number.isSafeInteger(result)) throw new Error("\u5E02\u503C\u8D85\u51FA\u53EF\u8BA1\u7B97\u8303\u56F4");
+  return result;
+}
+function quantityFromAmount(amountCents, feeCents, price, kind, sell = false) {
+  const net = new decimal_default(amountCents).plus(sell ? feeCents : -feeCents);
+  if (net.lte(0) || decimal2(price).lte(0)) throw new Error("\u6210\u4EA4\u91D1\u989D\u6263\u9664\u8D39\u7528\u540E\u53CA\u6210\u4EA4\u4EF7\u683C\u5FC5\u987B\u5927\u4E8E\u96F6");
+  return net.div(100).div(price).toDecimalPlaces(kind === "fund" ? 2 : 0, kind === "fund" ? decimal_default.ROUND_HALF_UP : decimal_default.ROUND_DOWN).toFixed();
+}
+function validateQuantity(value, kind) {
+  const q = decimal2(value);
+  if (q.lte(0) || kind !== "fund" && !q.isInteger()) throw new Error(kind === "fund" ? "\u4EFD\u989D\u5FC5\u987B\u5927\u4E8E\u96F6" : "\u80A1\u7968\u548CETF\u5FC5\u987B\u586B\u5199\u5B9E\u9645\u6210\u4EA4\u7684\u6574\u6570\u6570\u91CF");
+  return q.toFixed();
+}
+function quoteKey(kind, code) {
+  return `${kind}:${normalizeCode(kind, code)}`;
+}
+function normalizeCode(kind, input2) {
+  const code = input2.trim().toLowerCase();
+  if (kind === "fund") {
+    if (!/^\d{6}$/.test(code)) throw new Error("\u57FA\u91D1\u4EE3\u7801\u987B\u4E3A6\u4F4D\u6570\u5B57");
+    return code;
+  }
+  if (/^(sh|sz|bj)\d{6}$/.test(code)) return code;
+  if (!/^\d{6}$/.test(code)) throw new Error("\u4EE3\u7801\u987B\u4E3A6\u4F4D\u6570\u5B57\uFF0C\u53EF\u52A0sh\uFF0Fsz\uFF0Fbj\u524D\u7F00");
+  return `${/^[569]/.test(code) ? "sh" : /^[48]/.test(code) ? "bj" : "sz"}${code}`;
+}
+function validCents(value) {
+  return typeof value === "number" && Number.isSafeInteger(value);
+}
+function validInstant(value) {
+  return typeof value === "string" && Number.isFinite(Date.parse(value));
+}
+function validQuantity(value) {
+  try {
+    return typeof value === "string" && decimal2(value).gte(0);
+  } catch (e) {
+    return false;
+  }
+}
+function stringIds(value) {
+  return Array.isArray(value) ? value.filter((v) => typeof v === "string") : [];
+}
+function normalizeAssets(input2) {
+  var _a, _b;
+  if (!input2 || typeof input2 !== "object") return emptyAssets();
+  const s = input2, out = emptyAssets();
+  out.accounts = (Array.isArray(s.accounts) ? s.accounts : []).filter((a) => a && typeof a.id === "string" && typeof a.name === "string" && a.kind in ASSET_NAMES && validCents(a.balanceCents) && validInstant(a.baselineAt)).map((a) => ({ ...a, includedEventIds: stringIds(a.includedEventIds), includedRecordIds: stringIds(a.includedRecordIds) }));
+  const accounts = new Set(out.accounts.map((a) => a.id));
+  out.holdings = (Array.isArray(s.holdings) ? s.holdings : []).filter((h) => {
+    try {
+      return h && typeof h.id === "string" && typeof h.name === "string" && accounts.has(h.accountId) && ["fund", "stock", "etf"].includes(h.kind) && normalizeCode(h.kind, h.code) === h.code && validQuantity(h.quantity) && validCents(h.costCents) && h.costCents >= 0 && isValidIsoDate(h.acquiredOn);
+    } catch (e) {
+      return false;
+    }
+  });
+  out.events = (Array.isArray(s.events) ? s.events : []).filter((e) => e && typeof e.id === "string" && ["buy", "sell", "income", "transfer", "repay", "dividend", "reinvest", "quantity", "adjust"].includes(e.kind) && accounts.has(e.accountId) && isValidIsoDate(e.date) && validInstant(e.createdAt) && validCents(e.amountCents) && validCents(e.feeCents));
+  out.epochs = (Array.isArray(s.epochs) ? s.epochs : []).filter((e) => e && accounts.has(e.accountId) && validInstant(e.from) && (!e.to || validInstant(e.to))).map((e) => ({ ...e, includedRecordIds: stringIds(e.includedRecordIds) }));
+  out.defaultCashId = out.accounts.some((a) => a.id === s.defaultCashId && a.kind === "cash") ? s.defaultCashId : "";
+  for (const [key, q] of Object.entries((_a = s.quotes) != null ? _a : {})) {
+    if (q && q.key === key && typeof q.name === "string" && validInstant(q.fetchedAt) && validQuantity(q.price) && (validInstant(q.asOf) || q.asOf === "" && decimal2(q.price).eq(0) && typeof q.error === "string" && validInstant(q.attemptedAt))) out.quotes[key] = q;
+  }
+  out.snapshots = (Array.isArray(s.snapshots) ? s.snapshots : []).filter((snap) => snap && isValidIsoDate(snap.date) && validInstant(snap.savedAt) && Array.isArray(snap.accounts) && snap.accounts.every((a) => a && typeof a.id === "string" && a.kind in ASSET_NAMES && validCents(a.cents) && Array.isArray(a.holdings))).map((snap) => ({ ...snap, pending: stringIds(snap.pending) }));
+  out.hideAmounts = s.hideAmounts === true;
+  out.excludeFixed = s.excludeFixed === true;
+  for (const [id, account] of Object.entries((_b = s.recordAssignments) != null ? _b : {})) if (typeof account === "string" && (account === "exclude" || accounts.has(account))) out.recordAssignments[id] = account;
+  return out;
+}
+function linkRecord(record) {
+  return { id: record.id, date: record.date, time: record.time, cents: record.cents, note: record.note };
+}
+function stableIdentity(id) {
+  if (!id.startsWith("ledger-v2:")) return id;
+  try {
+    const p = JSON.parse(id.slice(10));
+    return JSON.stringify([...p.slice(0, 6), p[7]]);
+  } catch (e) {
+    return id;
+  }
+}
+function knownRecord(ids, id) {
+  return ids.some((saved) => stableIdentity(saved) === stableIdentity(id));
+}
+function recordInstant(record) {
+  return /^\d{1,2}:\d{2}$/.test(record.time) ? (/* @__PURE__ */ new Date(`${record.date}T${record.time.padStart(5, "0")}:00`)).getTime() : null;
+}
+function baselineRecordIds(records, now) {
+  const date = isoFromDate(now);
+  return records.filter((r) => r.date < date || r.date === date && (recordInstant(r) === null || recordInstant(r) <= now.getTime())).map((r) => r.id);
+}
+function setDefaultCash(state, accountId, records, now) {
+  if (!state.accounts.some((a) => a.id === accountId && a.kind === "cash")) throw new Error("\u8BF7\u9009\u62E9\u73B0\u91D1\u8D26\u6237");
+  if (state.defaultCashId === accountId) return;
+  const at = now.toISOString();
+  for (const epoch of state.epochs) if (!epoch.to) epoch.to = at;
+  state.epochs.push({ accountId, from: at, includedRecordIds: baselineRecordIds(records, now) });
+  state.defaultCashId = accountId;
+}
+function calibrateAccount(state, id, cents, records, now) {
+  const account = state.accounts.find((a) => a.id === id);
+  if (!account || account.kind === "investment" || !validCents(cents) || account.kind === "liability" && cents < 0) throw new Error("\u4F59\u989D\u65E0\u6548\u6216\u8BE5\u8D26\u6237\u987B\u901A\u8FC7\u6301\u4ED3\u4F30\u503C");
+  account.balanceCents = cents;
+  account.baselineAt = now.toISOString();
+  account.includedEventIds = state.events.map((e) => e.id);
+  account.includedRecordIds = baselineRecordIds(records, now);
+}
+function linkedRecords(state, records, pending) {
+  const excluded = /* @__PURE__ */ new Set();
+  for (const event of state.events) if (event.link) {
+    const matches = records.filter((r) => stableIdentity(r.id) === stableIdentity(event.link.id));
+    if (matches.length === 1) excluded.add(matches[0].id);
+    else {
+      pending.add(`\u4EA4\u6613\u201C${event.note || event.kind}\u201D\u5173\u8054\u7684\u8D26\u672C\u6D41\u6C34\u5DF2\u53D8\u5316\uFF0C\u8BF7\u6838\u5BF9\u5173\u8054`);
+      for (const r of records) if (r.date === event.link.date && r.time === event.link.time && (r.note === event.link.note || r.cents === event.link.cents)) excluded.add(r.id);
+    }
+  }
+  return excluded;
+}
+function buildAssetSnapshot(state, records, now = /* @__PURE__ */ new Date()) {
+  const pending = /* @__PURE__ */ new Set(), excluded = linkedRecords(state, records, pending), nowMs = now.getTime(), today = isoFromDate(now);
+  for (const id of Object.keys(state.recordAssignments)) {
+    if (records.some((r) => stableIdentity(r.id) === stableIdentity(id))) continue;
+    try {
+      const identity = JSON.parse(id.slice(10));
+      const candidates = records.filter((r) => r.path === identity[0] && r.date === identity[1] && r.time === identity[2] && (r.note === identity[5] || r.cents === identity[4]));
+      if (candidates.length) {
+        pending.add(`${identity[1]} ${identity[2]}\uFF1A\u5DF2\u6307\u5B9A\u4ED8\u6B3E\u8D26\u6237\u7684\u6D41\u6C34\u53D1\u751F\u53D8\u5316\uFF0C\u8BF7\u91CD\u65B0\u6838\u5BF9`);
+        for (const r of candidates) excluded.add(r.id);
+      }
+    } catch (e) {
+    }
+  }
+  const accounts = state.accounts.map((account) => {
+    var _a, _b, _c;
+    let cents = account.balanceCents;
+    const baseline = Date.parse(account.baselineAt);
+    for (const event of state.events) {
+      if (event.date > today || account.includedEventIds.includes(event.id)) continue;
+      const cashDelta = event.kind === "buy" ? -event.amountCents : event.kind === "sell" || event.kind === "dividend" ? event.amountCents : event.kind === "transfer" ? event.amountCents : event.kind === "repay" ? -(event.amountCents + event.feeCents) : 0;
+      if (event.cashAccountId === account.id) cents += cashDelta;
+      if (event.accountId === account.id) {
+        if (event.kind === "income" || event.kind === "adjust") cents += event.amountCents;
+        if (event.kind === "transfer") cents -= event.amountCents + event.feeCents;
+        if (event.kind === "repay") cents -= event.amountCents;
+      }
+    }
+    if (account.kind === "cash") for (const epoch of state.epochs.filter((e) => e.accountId === account.id)) {
+      const start = Math.max(Date.parse(epoch.from), baseline), end = Math.min(epoch.to ? Date.parse(epoch.to) : nowMs, nowMs);
+      for (const record of records) {
+        if (excluded.has(record.id) || Object.keys(state.recordAssignments).some((id) => stableIdentity(id) === stableIdentity(record.id)) || knownRecord(account.includedRecordIds, record.id) || knownRecord(epoch.includedRecordIds, record.id)) continue;
+        const time = recordInstant(record), dayStart = (/* @__PURE__ */ new Date(`${record.date}T00:00:00`)).getTime();
+        if (time === null) {
+          if (dayStart > start && dayStart + 864e5 <= end) cents -= record.cents;
+          else if (dayStart <= end && dayStart + 864e5 > start) pending.add(`${record.date} ${record.note || record.category}\uFF1A\u8865\u8BB0\u65F6\u95F4\u672A\u77E5\uFF0C\u5C1A\u672A\u6263\u6B3E`);
+        } else if (epoch.to && Math.floor(time / 6e4) === Math.floor(Date.parse(epoch.to) / 6e4) && !knownRecord((_b = (_a = state.epochs.find((e) => e.from === epoch.to)) == null ? void 0 : _a.includedRecordIds) != null ? _b : [], record.id)) {
+          pending.add(`${record.date} ${record.time} ${record.note || record.category}\uFF1A\u4E0E\u8D26\u6237\u5207\u6362\u540C\u4E00\u5206\u949F\uFF0C\u5C1A\u672A\u6263\u6B3E`);
+        } else if (time > start && time <= end) cents -= record.cents;
+        else if (Math.floor(time / 6e4) === Math.floor(start / 6e4) && start <= end) pending.add(`${record.date} ${record.time} ${record.note || record.category}\uFF1A\u4E0E\u4F59\u989D\u57FA\u7EBF\u540C\u4E00\u5206\u949F\uFF0C\u5C1A\u672A\u6263\u6B3E`);
+      }
+    }
+    if (account.kind === "cash") for (const record of records) {
+      const assignment = (_c = Object.entries(state.recordAssignments).find(([id]) => stableIdentity(id) === stableIdentity(record.id))) == null ? void 0 : _c[1];
+      if (assignment === account.id && record.date <= today && !excluded.has(record.id) && !knownRecord(account.includedRecordIds, record.id)) cents -= record.cents;
+    }
+    const holdings = state.holdings.filter((h) => h.accountId === account.id).map((h) => {
+      const quote = state.quotes[quoteKey(h.kind, h.code)];
+      const value = decimal2(h.quantity).eq(0) ? 0 : quote && decimal2(quote.price).gt(0) ? valueCents(h.quantity, quote.price) : null;
+      return { ...h, quote: quote ? { ...quote } : void 0, valueCents: value };
+    });
+    if (account.kind === "investment") cents = holdings.reduce((sum3, h) => {
+      var _a2;
+      return sum3 + ((_a2 = h.valueCents) != null ? _a2 : 0);
+    }, 0);
+    if (!Number.isSafeInteger(cents)) throw new Error("\u8D26\u6237\u91D1\u989D\u8D85\u51FA\u53EF\u8BA1\u7B97\u8303\u56F4");
+    return { id: account.id, name: account.name, kind: account.kind, cents, missing: holdings.some((h) => h.valueCents === null), holdings };
+  });
+  return { date: today, savedAt: now.toISOString(), accounts, pending: [...pending] };
+}
+function assetTotals(snapshot, excludeFixed = false) {
+  const groups = { cash: 0, investment: 0, fixed: 0, receivable: 0, liability: 0 };
+  let missing = snapshot.pending.length > 0;
+  for (const a of snapshot.accounts) {
+    if (excludeFixed && a.kind === "fixed") continue;
+    groups[a.kind] += a.cents;
+    missing || (missing = a.missing);
+  }
+  const assetsCents = groups.cash + groups.investment + groups.fixed + groups.receivable;
+  return { assetsCents, liabilitiesCents: groups.liability, netCents: assetsCents - groups.liability, groups, missing };
+}
+function storeAssetSnapshot(state, snapshot) {
+  if (!state.accounts.length) return false;
+  const index = state.snapshots.findIndex((s) => s.date === snapshot.date), existing = state.snapshots[index];
+  if (existing && JSON.stringify([existing.accounts, existing.pending]) === JSON.stringify([snapshot.accounts, snapshot.pending])) return false;
+  const copy = JSON.parse(JSON.stringify(snapshot));
+  if (index >= 0) state.snapshots[index] = copy;
+  else state.snapshots.push(copy);
+  state.snapshots.sort((a, b) => a.date.localeCompare(b.date));
+  return true;
+}
+function previousMonthSnapshot(state, date) {
+  const previous = /* @__PURE__ */ new Date(`${date.slice(0, 7)}-01T12:00:00`);
+  previous.setMonth(previous.getMonth() - 1);
+  const prefix = isoFromDate(previous).slice(0, 7);
+  return state.snapshots.filter((s) => s.date.startsWith(prefix)).sort((a, b) => b.date.localeCompare(a.date))[0];
+}
+function addAssetEvent(state, event) {
+  var _a;
+  if (state.events.some((e) => e.id === event.id)) throw new Error("\u8FD9\u7B14\u4EA4\u6613\u5DF2\u4FDD\u5B58");
+  if (!isValidIsoDate(event.date) || event.date > isoFromDate(/* @__PURE__ */ new Date())) throw new Error("\u8BF7\u586B\u5199\u5DF2\u786E\u8BA4\u4EA4\u6613\u7684\u65E5\u671F\uFF0C\u4E0D\u80FD\u586B\u5199\u672A\u6765\u65E5\u671F");
+  if (!validCents(event.amountCents) || !validCents(event.feeCents) || event.feeCents < 0 || event.kind !== "adjust" && event.amountCents < 0) throw new Error("\u4EA4\u6613\u91D1\u989D\u65E0\u6548");
+  const account = state.accounts.find((a) => a.id === event.accountId), cash = state.accounts.find((a) => a.id === event.cashAccountId);
+  if (!account) throw new Error("\u8D26\u6237\u4E0D\u5B58\u5728");
+  if (event.link && state.events.some((e) => e.link && stableIdentity(e.link.id) === stableIdentity(event.link.id))) throw new Error("\u8FD9\u6761\u8D26\u672C\u6D41\u6C34\u5DF2\u5173\u8054\u5176\u4ED6\u4EA4\u6613");
+  if (["buy", "sell", "dividend", "transfer", "repay"].includes(event.kind) && (!cash || cash.kind !== "cash")) throw new Error("\u8BF7\u9009\u62E9\u73B0\u91D1\u8D26\u6237");
+  if (event.kind === "transfer" && (account.kind !== "cash" || account.id === (cash == null ? void 0 : cash.id))) throw new Error("\u8F6C\u51FA\u3001\u8F6C\u5165\u5FC5\u987B\u662F\u4E0D\u540C\u73B0\u91D1\u8D26\u6237");
+  if (event.kind === "income" && account.kind !== "cash") throw new Error("\u6536\u5165\u5FC5\u987B\u8FDB\u5165\u73B0\u91D1\u8D26\u6237");
+  if (event.kind === "repay" && account.kind !== "liability") throw new Error("\u8FD8\u6B3E\u987B\u9009\u62E9\u8D1F\u503A\u8D26\u6237");
+  if (account.kind === "liability" && ["repay", "adjust"].includes(event.kind)) {
+    const outstanding = account.balanceCents + state.events.filter((e) => e.accountId === account.id && !account.includedEventIds.includes(e.id)).reduce((sum3, e) => sum3 + (e.kind === "adjust" ? e.amountCents : e.kind === "repay" ? -e.amountCents : 0), 0);
+    if (outstanding + (event.kind === "repay" ? -event.amountCents : event.amountCents) < 0) throw new Error("\u8FD8\u6B3E\u6216\u8C03\u6574\u4E0D\u80FD\u8D85\u8FC7\u5C1A\u6B20\u91D1\u989D");
+  }
+  if (event.kind === "adjust" && account.kind === "investment") throw new Error("\u6295\u8D44\u8D26\u6237\u901A\u8FC7\u6301\u4ED3\u4F30\u503C\uFF0C\u4E0D\u80FD\u76F4\u63A5\u8C03\u6574\u4F59\u989D");
+  if (["buy", "sell", "dividend", "reinvest", "quantity"].includes(event.kind)) {
+    const h = state.holdings.find((h2) => h2.id === event.holdingId && h2.accountId === account.id);
+    if (!h) throw new Error("\u8BF7\u9009\u62E9\u8BE5\u8D26\u6237\u7684\u6301\u4ED3");
+    if (event.kind === "buy" && event.amountCents <= event.feeCents || event.kind === "sell" && event.amountCents + event.feeCents <= 0) throw new Error("\u8BF7\u586B\u5199\u5B9E\u9645\u6210\u4EA4\u91D1\u989D\u548C\u8D39\u7528");
+    if (event.price && decimal2(event.price).lte(0)) throw new Error("\u6210\u4EA4\u4EF7\u683C\u5FC5\u987B\u5927\u4E8E\u96F6");
+    if (["reinvest", "quantity"].includes(event.kind) && (event.amountCents !== 0 || event.feeCents !== 0)) throw new Error("\u4EFD\u989D\u8C03\u6574\u4E0D\u76F4\u63A5\u6539\u53D8\u73B0\u91D1\uFF0C\u91D1\u989D\u4E0E\u8D39\u7528\u5E94\u4E3A0");
+    if (event.kind !== "dividend") {
+      const q = validateQuantity((_a = event.quantity) != null ? _a : "", h.kind), current = decimal2(h.quantity);
+      if (event.kind === "sell") {
+        if (decimal2(q).gt(current)) throw new Error("\u5356\u51FA\u6570\u91CF\u4E0D\u80FD\u8D85\u8FC7\u5F53\u524D\u6301\u4ED3");
+        h.costCents = new decimal_default(h.costCents).times(current.minus(q)).div(current).toDecimalPlaces(0).toNumber();
+        h.quantity = current.minus(q).toFixed();
+      } else if (event.kind === "quantity") h.quantity = q;
+      else {
+        h.quantity = current.plus(q).toFixed();
+        if (event.kind === "buy") h.costCents += event.amountCents;
+      }
+    }
+  }
+  state.events.push(event);
+}
+function renameAssetLinks(state, oldPath, newPath) {
+  for (const a of state.accounts) a.includedRecordIds = renameStarredIds(a.includedRecordIds, oldPath, newPath);
+  for (const e of state.epochs) e.includedRecordIds = renameStarredIds(e.includedRecordIds, oldPath, newPath);
+  for (const e of state.events) if (e.link) e.link.id = renameStarredIds([e.link.id], oldPath, newPath)[0];
+  const assignments = {};
+  for (const [id, account] of Object.entries(state.recordAssignments)) assignments[renameStarredIds([id], oldPath, newPath)[0]] = account;
+  state.recordAssignments = assignments;
+}
+
 // src/settings.ts
 var DEFAULT_SETTINGS = {
+  assets: emptyAssets(),
   reportPreferences: defaultReportPreferences(),
   reportCaches: [],
   reportObjectRules: DEFAULT_REPORT_OBJECT_RULES,
@@ -3213,7 +5664,8 @@ var VIEW_NAMES = {
   calendar: "\u65E5\u5386",
   details: "\u660E\u7EC6",
   compare: "\u5BF9\u6BD4",
-  report: "\u652F\u51FA\u62A5\u544A"
+  report: "\u652F\u51FA\u62A5\u544A",
+  assets: "\u8D44\u4EA7"
 };
 var OPENAI_CHAT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
 var MIMO_CHAT_ENDPOINT = "https://api.xiaomimimo.com/v1/chat/completions";
@@ -3251,23 +5703,23 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
     const panels = /* @__PURE__ */ new Map();
     const buttons = /* @__PURE__ */ new Map();
     for (const section of SETTINGS_SECTIONS) {
-      const button = navigation.createEl("button", { cls: "ledger-settings-navigation-button", text: section.label });
-      button.type = "button";
-      button.setAttribute("aria-controls", `ledger-settings-${section.id}`);
-      buttons.set(section.id, button);
+      const button2 = navigation.createEl("button", { cls: "ledger-settings-navigation-button", text: section.label });
+      button2.type = "button";
+      button2.setAttribute("aria-controls", `ledger-settings-${section.id}`);
+      buttons.set(section.id, button2);
       const panel = this.containerEl.createDiv({ cls: "ledger-settings-panel" });
       panel.id = `ledger-settings-${section.id}`;
       panel.createEl("h3", { text: section.label });
       panel.createEl("p", { cls: "ledger-settings-panel-description", text: section.description });
       panels.set(section.id, panel);
-      button.addEventListener("click", () => showSection(section.id));
+      button2.addEventListener("click", () => showSection(section.id));
     }
     const showSection = (section) => {
       this.activeSection = section;
       for (const [id, panel] of panels) panel.hidden = id !== section;
-      for (const [id, button] of buttons) {
-        button.setAttribute("aria-pressed", String(id === section));
-        button.classList.toggle("is-active", id === section);
+      for (const [id, button2] of buttons) {
+        button2.setAttribute("aria-pressed", String(id === section));
+        button2.classList.toggle("is-active", id === section);
       }
     };
     showSection(this.activeSection);
@@ -3334,7 +5786,7 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
       return text2;
     });
     const calibrationInput = calibrationSetting.controlEl.querySelector("input");
-    calibrationSetting.addButton((button) => button.setButtonText("\u6821\u51C6\u4F59\u989D").setCta().onClick(async () => {
+    calibrationSetting.addButton((button2) => button2.setButtonText("\u6821\u51C6\u4F59\u989D").setCta().onClick(async () => {
       const cents = parseMoneyToCents(calibrationInput.value);
       if (cents === null) {
         calibrationSetting.setDesc("\u8BF7\u8F93\u5165\u6709\u6548\u7684\u975E\u8D1F\u91D1\u989D\uFF0C\u6700\u591A\u4E24\u4F4D\u5C0F\u6570\uFF1B\u8F93\u5165 0 \u4E5F\u53EF\u4EE5\u6821\u51C6\u3002");
@@ -3346,7 +5798,7 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
       calibrationSetting.setDesc("\u4F59\u989D\u5DF2\u6821\u51C6\u3002\u65B0\u8BB0\u8D26\u6D88\u8D39\u7EE7\u7EED\u6263\u51CF\uFF1B\u6821\u51C6\u524D\u7684\u8865\u8BB0\u4E0D\u4F1A\u91CD\u590D\u6263\u6B3E\u3002");
       refreshBalanceSummary();
     }));
-    calibrationSetting.addButton((button) => button.setButtonText("\u53D6\u6D88\u6821\u51C6").onClick(async () => {
+    calibrationSetting.addButton((button2) => button2.setButtonText("\u53D6\u6D88\u6821\u51C6").onClick(async () => {
       this.plugin.settings.balanceCalibration = null;
       await this.plugin.saveSettings(false);
       calibrationInput.value = "";
@@ -3368,9 +5820,9 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
       const cycle = salaryDayRange(now);
       const status = balanceStatus(flattenRecords(this.plugin.repository.files.values()), now, this.plugin.settings.salaryCents, this.plugin.settings.balanceCalibration);
       balanceSummary.createEl("strong", { text: `\u672C\u5468\u671F ${cycle.start} \u2014 ${cycle.end}` });
-      const addRow = (label, amount) => {
+      const addRow = (label2, amount) => {
         const row = balanceSummary.createDiv({ cls: "ledger-balance-summary-row" });
-        row.createSpan({ text: label });
+        row.createSpan({ text: label2 });
         row.createEl("strong", { text: formatCents(amount) });
       };
       addRow("\u5230\u8D26\u5DE5\u8D44", this.plugin.settings.salaryCents);
@@ -3386,8 +5838,8 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
     };
     refreshBalanceSummary();
     this.balanceSummaryRefresh = refreshBalanceSummary;
-    new import_obsidian4.Setting(salaryPanel).setName("\u56FA\u5B9A\u652F\u51FA").setDesc("\u624B\u52A8\u786E\u8BA4\u672C\u5468\u671F\u53CA\u524D\u4E24\u4E2A\u5468\u671F\u7684\u652F\u4ED8\u8BB0\u5F55\uFF0C\u51CF\u5C11\u4ED8\u6B3E\u65E5\u671F\u53D8\u5316\u5BF9\u9884\u6D4B\u7684\u5F71\u54CD\u3002").addButton((button) => button.setButtonText("\u7BA1\u7406\u56FA\u5B9A\u652F\u51FA").onClick(() => new FixedExpenseModal(this.plugin).open()));
-    new import_obsidian4.Setting(ledgerPanel).setName("\u661F\u6807\u6838\u5BF9").setDesc("\u68C0\u67E5\u4FEE\u6539\u3001\u5220\u9664\u6216\u79BB\u7EBF\u79FB\u52A8\u540E\u65E0\u6CD5\u5339\u914D\u7684\u661F\u6807\u3002").addButton((button) => button.setButtonText("\u6838\u5BF9\u661F\u6807").onClick(() => new StarRepairModal(this.plugin).open()));
+    new import_obsidian4.Setting(salaryPanel).setName("\u56FA\u5B9A\u652F\u51FA").setDesc("\u624B\u52A8\u786E\u8BA4\u672C\u5468\u671F\u53CA\u524D\u4E24\u4E2A\u5468\u671F\u7684\u652F\u4ED8\u8BB0\u5F55\uFF0C\u51CF\u5C11\u4ED8\u6B3E\u65E5\u671F\u53D8\u5316\u5BF9\u9884\u6D4B\u7684\u5F71\u54CD\u3002").addButton((button2) => button2.setButtonText("\u7BA1\u7406\u56FA\u5B9A\u652F\u51FA").onClick(() => new FixedExpenseModal(this.plugin).open()));
+    new import_obsidian4.Setting(ledgerPanel).setName("\u661F\u6807\u6838\u5BF9").setDesc("\u68C0\u67E5\u4FEE\u6539\u3001\u5220\u9664\u6216\u79BB\u7EBF\u79FB\u52A8\u540E\u65E0\u6CD5\u5339\u914D\u7684\u661F\u6807\u3002").addButton((button2) => button2.setButtonText("\u6838\u5BF9\u661F\u6807").onClick(() => new StarRepairModal(this.plugin).open()));
     new import_obsidian4.Setting(aiPanel).setName("\u542F\u7528 AI \u8D22\u52A1\u5224\u65AD").setDesc("\u53D1\u9001\u622A\u81F3\u6628\u5929\u7684\u8FD1 7 \u5929\u6570\u636E\u3001\u5BF9\u6BD4\u6C47\u603B\u53CA\u6709\u9650\u4EA4\u6613\u5907\u6CE8\uFF0C\u4E0D\u53D1\u9001\u8D26\u672C\u6587\u4EF6\u3001\u8DEF\u5F84\u6216\u5B8C\u6574\u539F\u59CB\u884C\u3002\u4EC5\u70B9\u51FB\u6D1E\u5BDF\u5361\u7247\u7684\u5237\u65B0\u6309\u94AE\u65F6\u8C03\u7528 AI\uFF08\u53EF\u80FD\u4EA7\u751F\u6A21\u578B\u8D39\u7528\uFF09\uFF1B\u91CD\u65B0\u6253\u5F00\u3001\u8DE8\u5929\u548C\u8D26\u76EE\u53D8\u5316\u5747\u4FDD\u7559\u4E0A\u6B21\u5206\u6790\u3002").addToggle((toggle) => toggle.setValue(this.plugin.settings.financeAiEnabled).onChange(async (value) => {
       this.plugin.settings.financeAiEnabled = value;
       await this.plugin.saveSettings(false);
@@ -3425,19 +5877,19 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
       });
       const test = new import_obsidian4.Setting(aiPanel).setName("\u6D4B\u8BD5 AI \u8FDE\u63A5").setDesc("\u53EA\u53D1\u9001\u7B80\u77ED\u6D4B\u8BD5\u6D88\u606F\uFF0C\u4E0D\u53D1\u9001\u8D26\u76EE\uFF1B\u53EF\u80FD\u4EA7\u751F\u5C11\u91CF\u6A21\u578B\u8C03\u7528\u8D39\u7528\u3002");
       test.descEl.setAttribute("aria-live", "polite");
-      test.addButton((button) => button.setButtonText("\u6D4B\u8BD5\u8FDE\u63A5").onClick(async () => {
+      test.addButton((button2) => button2.setButtonText("\u6D4B\u8BD5\u8FDE\u63A5").onClick(async () => {
         const controller = new AbortController();
         this.connectionController = controller;
-        const config = { endpoint: this.plugin.settings.financeAiEndpoint, model: this.plugin.settings.financeAiModel, apiKey: this.plugin.settings.financeAiApiKey };
-        button.setDisabled(true).setButtonText("\u6B63\u5728\u6D4B\u8BD5\u2026");
+        const config2 = { endpoint: this.plugin.settings.financeAiEndpoint, model: this.plugin.settings.financeAiModel, apiKey: this.plugin.settings.financeAiApiKey };
+        button2.setDisabled(true).setButtonText("\u6B63\u5728\u6D4B\u8BD5\u2026");
         test.setDesc("\u6B63\u5728\u7B49\u5F85\u63A5\u53E3\u54CD\u5E94\uFF0C\u6700\u957F\u7B49\u5F85 60 \u79D2\u2026");
         try {
-          await testFinanceConnection(config, controller.signal, sharedRequestGate(`ai:${this.app.vault.getName()}`));
-          if (!controller.signal.aborted) test.setDesc(config.endpoint === this.plugin.settings.financeAiEndpoint && config.model === this.plugin.settings.financeAiModel && config.apiKey === this.plugin.settings.financeAiApiKey ? "\u8FDE\u63A5\u6210\u529F\uFF1A\u6A21\u578B\u5DF2\u8FD4\u56DE\u6709\u6548\u5185\u5BB9\u3002" : "\u914D\u7F6E\u5DF2\u53D8\u5316\uFF0C\u8BF7\u91CD\u65B0\u6D4B\u8BD5\u3002");
+          await testFinanceConnection(config2, controller.signal, sharedRequestGate(`ai:${this.app.vault.getName()}`));
+          if (!controller.signal.aborted) test.setDesc(config2.endpoint === this.plugin.settings.financeAiEndpoint && config2.model === this.plugin.settings.financeAiModel && config2.apiKey === this.plugin.settings.financeAiApiKey ? "\u8FDE\u63A5\u6210\u529F\uFF1A\u6A21\u578B\u5DF2\u8FD4\u56DE\u6709\u6548\u5185\u5BB9\u3002" : "\u914D\u7F6E\u5DF2\u53D8\u5316\uFF0C\u8BF7\u91CD\u65B0\u6D4B\u8BD5\u3002");
         } catch (error) {
           if (!controller.signal.aborted) test.setDesc(error instanceof Error ? error.message : "\u8FDE\u63A5\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u7F51\u7EDC\u4E0E\u63A5\u53E3\u914D\u7F6E");
         } finally {
-          if (!controller.signal.aborted) button.setDisabled(false).setButtonText("\u6D4B\u8BD5\u8FDE\u63A5");
+          if (!controller.signal.aborted) button2.setDisabled(false).setButtonText("\u6D4B\u8BD5\u8FDE\u63A5");
         }
       }));
     }
@@ -3502,7 +5954,7 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
 };
 
 // src/view.ts
-var import_obsidian8 = require("obsidian");
+var import_obsidian9 = require("obsidian");
 
 // src/advice-lifecycle.ts
 function signal(snapshot, event) {
@@ -3634,9 +6086,9 @@ function withDailyInsight(snapshot, files, now, options) {
   const date = isoFromDate(insightAsOf(now));
   const dated = files.filter((file) => file.date === date);
   const records = flattenRecords(dated);
-  const spentCents = records.reduce((sum2, record) => sum2 + record.cents, 0);
+  const spentCents = records.reduce((sum3, record) => sum3 + record.cents, 0);
   const budgetRecords = budgetScopedRecords(records.filter((record) => !options.budgetCategory || record.category === options.budgetCategory), options.includeStarredInBudget, options.starredRecordIds);
-  const budgetSpentCents = budgetRecords.reduce((sum2, record) => sum2 + record.cents, 0);
+  const budgetSpentCents = budgetRecords.reduce((sum3, record) => sum3 + record.cents, 0);
   const progress = budgetProgress(budgetSpentCents, options.dailyBudgetCents);
   const incomplete = dated.some((file) => file.diagnostics.length > 0 || !file.records.length && file.frontmatterTotalCents !== 0) || files.some((file) => !file.date && file.diagnostics.length > 0);
   const status = incomplete ? "incomplete" : !dated.length ? "unrecorded" : !records.length ? "zero" : options.dailyBudgetCents <= 0 ? "recorded" : progress.overBudgetCents > 0 ? "over-budget" : progress.ratio >= 0.9 ? "near-budget" : "normal";
@@ -3701,7 +6153,7 @@ function withWeeklyInsight(snapshot, files, now, options) {
   const currentCoverage = coverage(files, range, undatedCount), previousCoverage = coverage(files, previousRange, undatedCount);
   const all = flattenRecords(files);
   const inRange = (r) => all.filter((record) => record.date >= r.start && record.date <= r.end);
-  const total3 = (records2) => records2.reduce((sum2, record) => sum2 + record.cents, 0);
+  const total3 = (records2) => records2.reduce((sum3, record) => sum3 + record.cents, 0);
   const records = inRange(range), previous = inRange(previousRange);
   const spentCents = total3(records), previousSpentCents = total3(previous);
   const comparable = currentCoverage.complete && previousCoverage.complete;
@@ -3712,7 +6164,7 @@ function withWeeklyInsight(snapshot, files, now, options) {
     const historyRange = { start: addDays(historyEnd, -6), end: historyEnd };
     if (coverage(files, historyRange, undatedCount).complete) history.push(total3(inRange(historyRange)));
   }
-  const historicalAverageCents = history.length ? Math.round(history.reduce((sum2, amount) => sum2 + amount, 0) / history.length) : null;
+  const historicalAverageCents = history.length ? Math.round(history.reduce((sum3, amount) => sum3 + amount, 0) / history.length) : null;
   const historicalChangeCents = currentCoverage.complete && historicalAverageCents !== null ? spentCents - historicalAverageCents : null;
   const budgetCents = options.dailyBudgetCents * 7;
   const budgetSpentCents = total3(budgetScopedRecords(records.filter((record) => !options.budgetCategory || record.category === options.budgetCategory), options.includeStarredInBudget, options.starredRecordIds));
@@ -3780,8 +6232,8 @@ var REPORT_AI_PROFILE = `\u4F60\u5728\u64B0\u5199\u4E2A\u4EBA\u6D88\u8D39\u5206\
 \u91D1\u989D\u7EDF\u4E00\u4E24\u4F4D\u5C0F\u6570\uFF0C\u767E\u5206\u6BD4\u7EDF\u4E00\u4E00\u4F4D\u5C0F\u6570\uFF1B\u660E\u786E\u8868\u793A\u53D8\u5316\u65F6\u589E\u52A0\u7528+\uFF0C\u51CF\u5C11\u7528\u2212\uFF0C\u7EDD\u5BF9\u91D1\u989D\u4E0E\u5360\u6BD4\u4E0D\u52A0\u589E\u51CF\u53F7\u3002\u7528**\u7ED3\u8BBA\u6216\u5173\u952E\u6570\u5B57**\u6807\u6CE8\u91CD\u70B9\uFF0C\u6BCF\u4E2A\u5206\u6790\u8282\u6700\u591A\u4E24\u5904\u3002\u4F18\u5148\u7528\u201C\u4E0A\u671F\u201D\u201C\u5E73\u5747\u6BCF\u7B14\u91D1\u989D\u53D8\u5316\u5BF9\u5E94\u7684\u5206\u89E3\u5DEE\u989D\u201D\u201C\u6700\u8D35\u7684\u51E0\u7B14\u201D\u201C\u6CE8\u610F\u4E8B\u9879\u201D\uFF0C\u4E0D\u7528\u201C\u57FA\u671F\u201D\u201C\u7B14\u6570\u8D21\u732E\u201D\u201C\u7B14\u5747\u8D21\u732E\u201D\u201C\u5934\u90E8\u5927\u989D\u8BB0\u5F55\u201D\u201C\u89E3\u91CA\u8FB9\u754C\u201D\uFF1B\u6BCF\u7B14\u4ED8\u6B3E\u91D1\u989D\u4E0D\u662F\u5546\u54C1\u5355\u4EF7\u3002\u5468\u671F\u8FDB\u5EA6\u548C\u6BD4\u8F83\u53E3\u5F84\u7531\u9875\u9762\u663E\u793A\uFF0C\u6B63\u6587\u65E0\u9700\u91CD\u590D\u3002
 \u65B9\u4FBF\u65F6\u6309\u4EE5\u4E0BJSON\u7EC4\u7EC7\u62A5\u544A\uFF1Bevidence_ids\u586B\u5199\u5B9E\u9645\u8BA8\u8BBA\u5BF9\u8C61\u53CA\u671F\u95F4\u5BF9\u5E94\u7684\u8BC1\u636EID\u3002\u603B\u652F\u51FA\u7528overview\uFF0C\u5206\u7C7B\u6216\u7528\u9014\u7528\u5BF9\u5E94\u8BC1\u636E\uFF0C\u4E0D\u4E3A\u4E86\u586BID\u786C\u5173\u8054\u5176\u4ED6\u53D1\u73B0\u3002\u5F15\u7528\u53EA\u8868\u793A\u63D0\u4F9B\u8FD9\u4E9B\u4E8B\u5B9E\uFF0C\u4E0D\u80FD\u5F53\u6210\u6B63\u6587\u5224\u65AD\u5DF2\u83B7\u8BC1\u660E\uFF1B\u6CA1\u6709\u5408\u9002\u5F15\u7528\u53EF\u4EE5\u7701\u7565\uFF0C\u666E\u901A\u6587\u5B57\u6216Markdown\u62A5\u544A\u4E5F\u53EF\u4EE5\u3002
 {"title":"\u62A5\u544A\u6807\u9898","summary":"\u7B80\u6D01\u6982\u62EC","paragraphs":[{"heading":"\u5206\u6790\u6807\u9898","text":"\u8FDE\u8D2F\u5206\u6790","evidence_ids":[]}]}\u3002`;
-function reportConfiguration(config) {
-  return reportHash(JSON.stringify([config.endpoint.trim(), config.model.trim(), config.apiKey]));
+function reportConfiguration(config2) {
+  return reportHash(JSON.stringify([config2.endpoint.trim(), config2.model.trim(), config2.apiKey]));
 }
 function reportNumericFacts(snapshot) {
   const facts = {};
@@ -3794,7 +6246,7 @@ function reportAiInput(snapshot) {
     const records = [...byId.values()].filter((r) => r.date >= range.start && r.date <= range.end);
     return {
       range,
-      recorded_amount_cents: records.reduce((sum2, r) => sum2 + r.cents, 0),
+      recorded_amount_cents: records.reduce((sum3, r) => sum3 + r.cents, 0),
       recorded_count: records.length,
       consumption_days: new Set(records.map((r) => r.date)).size,
       calendar_days: reportDays(range)
@@ -3910,14 +6362,14 @@ function normalizeReportCaches(value) {
     return cache;
   });
 }
-function findReportCache(caches, snapshot, config) {
-  return caches.find((c) => c.fingerprint === snapshot.fingerprint && c.configuration === reportConfiguration(config));
+function findReportCache(caches, snapshot, config2) {
+  return caches.find((c) => c.fingerprint === snapshot.fingerprint && c.configuration === reportConfiguration(config2));
 }
 function appendReportCache(caches, cache) {
   return [...caches.filter((c) => !(c.fingerprint === cache.fingerprint && c.configuration === cache.configuration)), cache].slice(-6);
 }
-async function requestSpendingReport(config, snapshot, signal2, gate = sharedRequestGate("ai")) {
-  return parseSpendingReport(await chatContent(config, [{ role: "system", content: REPORT_AI_PROFILE }, { role: "user", content: reportAiInput(snapshot) }], 4e3, signal2, gate), snapshot);
+async function requestSpendingReport(config2, snapshot, signal2, gate = sharedRequestGate("ai")) {
+  return parseSpendingReport(await chatContent(config2, [{ role: "system", content: REPORT_AI_PROFILE }, { role: "user", content: reportAiInput(snapshot) }], 4e3, signal2, gate), snapshot);
 }
 
 // src/ui.ts
@@ -3926,7 +6378,7 @@ var import_obsidian5 = require("obsidian");
 // src/donut.ts
 function prepareDonut(data) {
   const sorted = [...data].filter((item) => item.cents > 0).sort((a, b) => b.cents - a.cents || a.category.localeCompare(b.category));
-  const total3 = sorted.reduce((sum2, item) => sum2 + item.cents, 0);
+  const total3 = sorted.reduce((sum3, item) => sum3 + item.cents, 0);
   if (total3 === 0) return [];
   const leading = sorted.length > 6 ? sorted.slice(0, 5) : sorted;
   const rest = sorted.length > 6 ? sorted.slice(5) : [];
@@ -3934,14 +6386,14 @@ function prepareDonut(data) {
   if (rest.length > 0) {
     parts.push({
       category: `\u5176\u4F59 ${rest.length} \u7C7B`,
-      cents: rest.reduce((sum2, item) => sum2 + item.cents, 0),
-      count: rest.reduce((sum2, item) => sum2 + item.count, 0),
+      cents: rest.reduce((sum3, item) => sum3 + item.cents, 0),
+      count: rest.reduce((sum3, item) => sum3 + item.count, 0),
       members: rest
     });
   }
   const exact = parts.map((part) => part.cents / total3 * 100);
   const ticks = exact.map((value) => Math.max(1, Math.floor(value)));
-  let difference = 100 - ticks.reduce((sum2, value) => sum2 + value, 0);
+  let difference = 100 - ticks.reduce((sum3, value) => sum3 + value, 0);
   const fractions = exact.map((value, index) => ({ index, fraction: value - Math.floor(value) }));
   if (difference > 0) {
     fractions.sort((a, b) => b.fraction - a.fraction || a.index - b.index);
@@ -3966,8 +6418,8 @@ var FAINT = "#C0BFB7";
 var GRID = "#DBDAD3";
 var HERO = "#F5572F";
 var LADDER = ["#22211F", "#4A4945", "#6E6D66", "#8F8E86", "#AAA9A2", "#C0BFB7", "#DBDAD3"];
-function svgEl(tag, attrs = {}) {
-  const element = document.createElementNS(SVG_NS, tag);
+function svgEl(tag2, attrs = {}) {
+  const element = document.createElementNS(SVG_NS, tag2);
   for (const [key, value] of Object.entries(attrs)) element.setAttribute(key, String(value));
   return element;
 }
@@ -3993,10 +6445,10 @@ function niceCurrencyUnit(maxCents, targetTicks = 32) {
   const step = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
   return Math.max(1, Math.round(step * magnitude));
 }
-function accessibleTarget(element, label, activate) {
+function accessibleTarget(element, label2, activate) {
   element.setAttribute("tabindex", "0");
   element.setAttribute("role", "button");
-  element.setAttribute("aria-label", label);
+  element.setAttribute("aria-label", label2);
   element.classList.add("ledger-chart-target");
   element.addEventListener("click", activate);
   element.addEventListener("keydown", (event) => {
@@ -4022,20 +6474,20 @@ function trendTooltip(x, y, chartWidth, value, mobile = false) {
       class: "ledger-trend-tooltip-bg"
     })
   );
-  const label = svgEl("text", {
+  const label2 = svgEl("text", {
     x: centerX,
     y: textY,
     "text-anchor": "middle",
     class: mobile ? "ledger-trend-tooltip-text is-mobile" : "ledger-trend-tooltip-text"
   });
-  label.textContent = value;
-  tooltip.append(label);
+  label2.textContent = value;
+  tooltip.append(label2);
   return tooltip;
 }
-function interactiveTrendTarget(svg, group2, target2, label, activate, previewOnFirstActivation = false) {
+function interactiveTrendTarget(svg, group2, target2, label2, activate, previewOnFirstActivation = false) {
   target2.setAttribute("tabindex", "0");
   target2.setAttribute("role", "button");
-  target2.setAttribute("aria-label", label);
+  target2.setAttribute("aria-label", label2);
   target2.classList.add("ledger-chart-target", "ledger-trend-hit-target");
   target2.addEventListener("click", (event) => {
     if (previewOnFirstActivation && !group2.classList.contains("is-active")) {
@@ -4081,7 +6533,7 @@ function renderMobileTickRows(parent, data, unit, onClick, details) {
 }
 function renderHorizontalBars(parent, data, onClick, options = {}) {
   var _a, _b;
-  const total3 = data.reduce((sum2, item) => sum2 + item.cents, 0);
+  const total3 = data.reduce((sum3, item) => sum3 + item.cents, 0);
   const leader = data[0];
   const { shell, chart } = monoCard(
     parent,
@@ -4095,9 +6547,9 @@ function renderHorizontalBars(parent, data, onClick, options = {}) {
   const rowHeight = (height - 58) / data.length;
   const x0 = 126;
   const plotWidth = 520;
-  const max = Math.max(...data.map((item) => item.cents), 1);
-  const unit = niceCurrencyUnit(max);
-  const maxUnits = max / unit;
+  const max2 = Math.max(...data.map((item) => item.cents), 1);
+  const unit = niceCurrencyUnit(max2);
+  const maxUnits = max2 / unit;
   const px = plotWidth / Math.max(maxUnits, 1);
   const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "\u5206\u7C7B\u652F\u51FA\u523B\u7EBF\u961F\u5217\u56FE" });
   svg.classList.add("ledger-svg", "ledger-tick-rows", "ledger-desktop-chart");
@@ -4107,11 +6559,11 @@ function renderHorizontalBars(parent, data, onClick, options = {}) {
     const group2 = svgEl("g");
     group2.dataset.cents = String(item.cents);
     accessibleTarget(group2, `${item.category} ${formatCents(item.cents)}\uFF0C${item.count} \u7B14`, () => onClick(item.category));
-    const label = svgEl("text", { x: x0 - 12, y: y + 3, "text-anchor": "end", class: "ledger-axis-label" });
+    const label2 = svgEl("text", { x: x0 - 12, y: y + 3, "text-anchor": "end", class: "ledger-axis-label" });
     const name = Array.from(item.category);
-    label.textContent = options.details && name.length > 10 ? `${name.slice(0, 10).join("")}\u2026` : item.category;
+    label2.textContent = options.details && name.length > 10 ? `${name.slice(0, 10).join("")}\u2026` : item.category;
     const baseline = svgEl("line", { x1: x0, y1: y + 9, x2: x0 + plotWidth, y2: y + 9, stroke: GRID, "stroke-width": 0.8 });
-    group2.append(label, baseline);
+    group2.append(label2, baseline);
     if ((_a2 = options.details) == null ? void 0 : _a2[item.category]) {
       const detail = svgEl("text", { x: x0, y: y + 29, class: "ledger-foot-label" });
       detail.textContent = options.details[item.category];
@@ -4150,7 +6602,7 @@ function renderHorizontalBars(parent, data, onClick, options = {}) {
         style: `animation-delay:${index * 0.08 + full * 0.012}s`
       }));
     }
-    const value = svgEl("text", { x: x0 + Math.min(plotWidth, item.cents / max * plotWidth) + 12, y: y + 3, class: "ledger-value-label" });
+    const value = svgEl("text", { x: x0 + Math.min(plotWidth, item.cents / max2 * plotWidth) + 12, y: y + 3, class: "ledger-value-label" });
     value.textContent = formatCents(item.cents);
     const count = svgEl("text", { x: 780, y: y + 3, "text-anchor": "end", class: "ledger-count-label" });
     count.textContent = `${item.count}\u7B14`;
@@ -4171,7 +6623,7 @@ function polar(cx, cy, radius, angle) {
 }
 function renderDonut(parent, data, onClick) {
   const segments = prepareDonut(data);
-  const total3 = segments.reduce((sum2, item) => sum2 + item.cents, 0);
+  const total3 = segments.reduce((sum3, item) => sum3 + item.cents, 0);
   const { shell, chart } = monoCard(
     parent,
     "LUPI BASICS \xB7 F4 TICK DONUT",
@@ -4227,26 +6679,26 @@ function renderDonut(parent, data, onClick) {
     });
     if (!mobile) {
       for (const side of ["left", "right"]) {
-        const column = labels.filter((label) => label.side === side).sort((a, b) => a.idealY - b.idealY);
-        column.forEach((label, index) => {
-          label.y = Math.max(label.idealY, 28 + index * 26, index === 0 ? 28 : column[index - 1].y + 26);
+        const column = labels.filter((label2) => label2.side === side).sort((a, b) => a.idealY - b.idealY);
+        column.forEach((label2, index) => {
+          label2.y = Math.max(label2.idealY, 28 + index * 26, index === 0 ? 28 : column[index - 1].y + 26);
         });
         const overflow = column.length ? Math.max(0, column[column.length - 1].y - 352) : 0;
-        column.forEach((label) => {
-          const y = label.y - overflow;
-          const from = polar(cx, cy, radius + 31, label.angle);
+        column.forEach((label2) => {
+          const y = label2.y - overflow;
+          const from = polar(cx, cy, radius + 31, label2.angle);
           const endX = side === "left" ? 122 : 438;
           const elbowX = side === "left" ? 132 : 428;
-          label.group.append(svgEl("path", {
+          label2.group.append(svgEl("path", {
             d: `M ${from.x} ${from.y} L ${elbowX} ${y} L ${endX} ${y}`,
             class: "ledger-donut-leader"
           }));
           const marker = svgEl("circle", { cx: side === "left" ? 119 : 441, cy: y, r: 2.2, class: "ledger-donut-label-dot" });
           const text2 = svgEl("text", { x: side === "left" ? 114 : 446, y: y + 3.5, "text-anchor": side === "left" ? "end" : "start", class: "ledger-donut-label" });
-          const name = Array.from(label.item.category);
-          const displayName = label.item.members.length > 1 ? `\u5176\u4F59${label.item.members.length}\u7C7B` : name.length > 5 ? `${name.slice(0, 5).join("")}\u2026` : label.item.category;
-          text2.textContent = `${displayName} \xB7 ${(label.item.share * 100).toFixed(1)}%`;
-          label.group.append(marker, text2);
+          const name = Array.from(label2.item.category);
+          const displayName = label2.item.members.length > 1 ? `\u5176\u4F59${label2.item.members.length}\u7C7B` : name.length > 5 ? `${name.slice(0, 5).join("")}\u2026` : label2.item.category;
+          text2.textContent = `${displayName} \xB7 ${(label2.item.share * 100).toFixed(1)}%`;
+          label2.group.append(marker, text2);
         });
       }
     }
@@ -4271,8 +6723,8 @@ function renderDonut(parent, data, onClick) {
     } else {
       const details = row.parentElement;
       for (const member of item.members) {
-        const button = details.createEl("button", { cls: "ledger-donut-other-item", text: `${member.category} \xB7 ${(member.cents / total3 * 100).toFixed(1)}%` });
-        button.addEventListener("click", () => onClick(member.category));
+        const button2 = details.createEl("button", { cls: "ledger-donut-other-item", text: `${member.category} \xB7 ${(member.cents / total3 * 100).toFixed(1)}%` });
+        button2.addEventListener("click", () => onClick(member.category));
       }
     }
   });
@@ -4293,16 +6745,16 @@ function renderMobileTrend(parent, points, isLine, onClick) {
   const base = 194;
   const plotWidth = right - left;
   const plotHeight = base - top;
-  const max = Math.max(...points.map((point) => point.cents), 1);
+  const max2 = Math.max(...points.map((point) => point.cents), 1);
   const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": isLine ? "\u79FB\u52A8\u7AEF\u652F\u51FA\u6298\u7EBF\u56FE" : "\u79FB\u52A8\u7AEF\u652F\u51FA\u67F1\u72B6\u56FE" });
   svg.classList.add("ledger-svg", "ledger-mobile-trend");
   svg.style.width = `${width}px`;
   for (let tick = 0; tick <= 3; tick += 1) {
     const y = base - tick / 3 * plotHeight;
     svg.append(svgEl("line", { x1: left, y1: y, x2: right, y2: y, stroke: GRID, "stroke-width": 0.8 }));
-    const label = svgEl("text", { x: left - 7, y: y + 4, "text-anchor": "end", class: "ledger-mobile-axis-value" });
-    label.textContent = formatCents(Math.round(max * tick / 3)).replace(".00", "");
-    svg.append(label);
+    const label2 = svgEl("text", { x: left - 7, y: y + 4, "text-anchor": "end", class: "ledger-mobile-axis-value" });
+    label2.textContent = formatCents(Math.round(max2 * tick / 3)).replace(".00", "");
+    svg.append(label2);
   }
   const slot = plotWidth / Math.max(points.length, 1);
   const coords = [];
@@ -4310,7 +6762,7 @@ function renderMobileTrend(parent, points, isLine, onClick) {
   const labelEvery = Math.max(1, Math.ceil(points.length / 6));
   points.forEach((point, index) => {
     const x = left + slot * index + slot / 2;
-    const y = base - point.cents / max * plotHeight;
+    const y = base - point.cents / max2 * plotHeight;
     coords.push({ x, y });
     if (!isLine) svg.append(svgEl("line", { x1: x, y1: base, x2: x, y2: y, stroke: index === peakIndex ? INK : MUTED, "stroke-width": index === peakIndex ? 2.4 : 1.4, class: "ledger-fade" }));
     if (isLine) {
@@ -4338,9 +6790,9 @@ function renderMobileTrend(parent, points, isLine, onClick) {
       svg.append(value);
     }
     if (index % labelEvery === 0 && index <= points.length - 1 - labelEvery || index === points.length - 1) {
-      const label = svgEl("text", { x, y: base + 23, "text-anchor": "middle", class: "ledger-mobile-axis-label" });
-      label.textContent = point.label.length > 5 ? point.label.slice(-5) : point.label;
-      svg.append(label);
+      const label2 = svgEl("text", { x, y: base + 23, "text-anchor": "middle", class: "ledger-mobile-axis-label" });
+      label2.textContent = point.label.length > 5 ? point.label.slice(-5) : point.label;
+      svg.append(label2);
     }
   });
   const outline = svgEl("path", { d: `M${coords.map((point) => `${point.x} ${point.y}`).join(" L ")}`, fill: "none", stroke: INK, "stroke-width": isLine ? 1.8 : 1.2, pathLength: 1, class: "ledger-draw" });
@@ -4367,22 +6819,22 @@ function renderTrendChart(parent, points, type, onClick) {
   const base = 254;
   const plotWidth = width - left - 26;
   const plotHeight = base - top;
-  const max = Math.max(...points.map((point) => point.cents), 1);
+  const max2 = Math.max(...points.map((point) => point.cents), 1);
   const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": isLine ? "\u652F\u51FA\u53D1\u4E1D\u6298\u7EBF\u56FE" : "\u652F\u51FA\u53D1\u4E1D\u67F1\u72B6\u56FE" });
   svg.classList.add("ledger-svg", "ledger-hairline-chart", "ledger-desktop-chart");
   for (let tick = 0; tick <= 4; tick += 1) {
     const y = base - tick / 4 * plotHeight;
     svg.append(svgEl("line", { x1: left, y1: y, x2: left + plotWidth, y2: y, stroke: GRID, "stroke-width": 0.6 }));
-    const label = svgEl("text", { x: left - 8, y: y + 3, "text-anchor": "end", class: "ledger-foot-label" });
-    label.textContent = formatCents(Math.round(max * tick / 4)).replace(".00", "");
-    svg.append(label);
+    const label2 = svgEl("text", { x: left - 8, y: y + 3, "text-anchor": "end", class: "ledger-foot-label" });
+    label2.textContent = formatCents(Math.round(max2 * tick / 4)).replace(".00", "");
+    svg.append(label2);
   }
   const slot = plotWidth / Math.max(points.length, 1);
   const coords = [];
   const peaks = [...points.keys()].sort((a, b) => points[b].cents - points[a].cents).filter((index, position, chosen) => position === 0 || chosen.slice(0, position).every((other) => Math.abs(other - index) >= 3)).slice(0, 2);
   points.forEach((point, index) => {
     const x = left + slot * index + slot / 2;
-    const y = base - point.cents / max * plotHeight;
+    const y = base - point.cents / max2 * plotHeight;
     coords.push({ x, y });
     svg.append(svgEl("line", { x1: x, y1: base, x2: x, y2: base - 8, stroke: FAINT, "stroke-width": 0.7 }));
     if (!isLine) {
@@ -4423,9 +6875,9 @@ function renderTrendChart(parent, points, type, onClick) {
     }
     const labelEvery = Math.max(1, Math.ceil(points.length / 8));
     if (index % labelEvery === 0 || index === points.length - 1) {
-      const label = svgEl("text", { x, y: base + 24, "text-anchor": "middle", class: "ledger-axis-label" });
-      label.textContent = point.label;
-      svg.append(label);
+      const label2 = svgEl("text", { x, y: base + 24, "text-anchor": "middle", class: "ledger-axis-label" });
+      label2.textContent = point.label;
+      svg.append(label2);
     }
   });
   const outline = svgEl("path", { d: `M${coords.map((point) => `${point.x} ${point.y}`).join(" L ")}`, fill: "none", stroke: INK, "stroke-width": isLine ? 1.2 : 1, pathLength: 1, class: "ledger-draw" });
@@ -4440,7 +6892,7 @@ function renderTrendChart(parent, points, type, onClick) {
 }
 function renderSalaryWaterfall(parent, steps, range, onCategory, onCalibrationNote) {
   var _a, _b, _c;
-  const spent = -steps.filter((step) => step.kind === "expense").reduce((sum2, step) => sum2 + step.deltaCents, 0);
+  const spent = -steps.filter((step) => step.kind === "expense").reduce((sum3, step) => sum3 + step.deltaCents, 0);
   const remaining = (_b = (_a = steps.at(-1)) == null ? void 0 : _a.toCents) != null ? _b : 0;
   const calibrated = ((_c = steps.at(-1)) == null ? void 0 : _c.label) === "\u5B9E\u9645\u4F59\u989D";
   const signedAdjustment = (cents) => `${cents < 0 ? "\u2212" : "+"}${formatCents(Math.abs(cents))}`;
@@ -4495,9 +6947,9 @@ function renderSalaryWaterfall(parent, steps, range, onCategory, onCalibrationNo
     }
     const value = svgEl("text", { x, y: Math.max(19, scale(Math.max(a, b)) - 11), "text-anchor": "middle", class: "ledger-waterfall-value" });
     value.textContent = step.kind === "expense" ? `\u2212${formatCents(-step.deltaCents)}` : step.kind === "calibration" ? signedAdjustment(step.deltaCents) : formatCents(step.toCents);
-    const label = svgEl("text", { x, y: 298, "text-anchor": "middle", class: "ledger-waterfall-label" });
-    label.textContent = step.label;
-    group2.append(value, label);
+    const label2 = svgEl("text", { x, y: 298, "text-anchor": "middle", class: "ledger-waterfall-label" });
+    label2.textContent = step.label;
+    group2.append(value, label2);
     if (step.categories.length === 1) accessibleTarget(group2, `${step.label}\u652F\u51FA ${formatCents(-step.deltaCents)}\uFF0C\u6253\u5F00\u5206\u7C7B\u660E\u7EC6`, () => onCategory(step.categories[0]));
     if (step.kind === "calibration" && onCalibrationNote) {
       group2.prepend(svgEl("rect", { x: x - 42, y: 8, width: 84, height: 302, fill: "transparent" }));
@@ -4581,9 +7033,9 @@ function renderCategoryBox(parent, data, onOpenRecord) {
       }
     });
     svg.append(current2);
-    for (const [x, label] of [[boxX, "\u5386\u53F2\u5355\u7B14"], [currentX, "\u672C\u671F\u6700\u5927"]]) {
+    for (const [x, label2] of [[boxX, "\u5386\u53F2\u5355\u7B14"], [currentX, "\u672C\u671F\u6700\u5927"]]) {
       const text2 = svgEl("text", { x, y: plotBottom + 20, "text-anchor": "middle", class: "ledger-box-label" });
-      text2.textContent = label;
+      text2.textContent = label2;
       svg.append(text2);
     }
     return svg;
@@ -4613,9 +7065,9 @@ function renderDumbbell(parent, data, currentLabel, previousLabel, onClick) {
   const height = data.length * rowHeight + 72;
   const left = 138;
   const right = 744;
-  const max = Math.max(...data.flatMap((item) => [item.currentCents, item.previousCents]), 1);
-  const unit = niceCurrencyUnit(max, 24);
-  const scale = (value) => left + value / max * (right - left);
+  const max2 = Math.max(...data.flatMap((item) => [item.currentCents, item.previousCents]), 1);
+  const unit = niceCurrencyUnit(max2, 24);
+  const scale = (value) => left + value / max2 * (right - left);
   const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "\u5206\u7C7B\u652F\u51FA\u4E24\u671F\u54D1\u94C3\u5BF9\u6BD4\u56FE" });
   svg.classList.add("ledger-svg", "ledger-dumbbell-chart", "ledger-desktop-chart");
   data.forEach((item, index) => {
@@ -4624,9 +7076,9 @@ function renderDumbbell(parent, data, currentLabel, previousLabel, onClick) {
     const currentX = scale(item.currentCents);
     const group2 = svgEl("g");
     accessibleTarget(group2, `${item.category}\uFF0C\u672C\u671F ${formatCents(item.currentCents)}\uFF0C\u57FA\u671F ${formatCents(item.previousCents)}`, () => onClick(item.category));
-    const label = svgEl("text", { x: left - 12, y: y + 3, "text-anchor": "end", class: "ledger-axis-label" });
-    label.textContent = item.category;
-    group2.append(label, svgEl("line", { x1: left, y1: y, x2: right, y2: y, stroke: GRID, "stroke-width": 0.7 }));
+    const label2 = svgEl("text", { x: left - 12, y: y + 3, "text-anchor": "end", class: "ledger-axis-label" });
+    label2.textContent = item.category;
+    group2.append(label2, svgEl("line", { x1: left, y1: y, x2: right, y2: y, stroke: GRID, "stroke-width": 0.7 }));
     const diff = Math.abs(item.currentCents - item.previousCents);
     const beadCount = Math.min(28, Math.floor(diff / unit));
     for (let bead = 0; bead < beadCount; bead += 1) {
@@ -4657,12 +7109,12 @@ function renderDumbbell(parent, data, currentLabel, previousLabel, onClick) {
     const delta = item.currentCents - item.previousCents;
     head.createSpan({ cls: "ledger-mobile-delta", text: `${delta > 0 ? "+" : ""}${formatCents(delta)}` });
     const scales = row.createDiv({ cls: "ledger-mobile-dumbbell-scales", attr: { "aria-hidden": "true" } });
-    for (const [label, value, kind] of [[previousLabel, item.previousCents, "is-base"], [currentLabel, item.currentCents, "is-current"]]) {
+    for (const [label2, value, kind] of [[previousLabel, item.previousCents, "is-base"], [currentLabel, item.currentCents, "is-current"]]) {
       const scaleRow = scales.createDiv({ cls: "ledger-mobile-scale-row" });
-      scaleRow.createSpan({ text: label });
+      scaleRow.createSpan({ text: label2 });
       const track = scaleRow.createDiv({ cls: "ledger-mobile-scale-track" });
       const line = track.createSpan({ cls: `ledger-mobile-scale-fill ${kind}` });
-      line.style.width = `${Math.max(value > 0 ? 2 : 0, value / max * 100)}%`;
+      line.style.width = `${Math.max(value > 0 ? 2 : 0, value / max2 * 100)}%`;
       const valueEl = scaleRow.createEl("strong", { text: formatCents(value) });
       valueEl.setAttribute("aria-hidden", "true");
     }
@@ -4775,15 +7227,15 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
     createButton(fixed, "\u7BA1\u7406\u56FA\u5B9A\u652F\u51FA").addEventListener("click", onManageFixed);
   }
   if (coverage2) {
-    const issueCount = coverage2.undated.length + coverage2.cycles.reduce((sum2, cycle) => sum2 + cycle.missingDates.length + cycle.problems.length, 0);
+    const issueCount = coverage2.undated.length + coverage2.cycles.reduce((sum3, cycle) => sum3 + cycle.missingDates.length + cycle.problems.length, 0);
     const details = infoPanel.createDiv({ cls: "ledger-advisor-info-section" });
-    const zeroDays = coverage2.cycles.reduce((sum2, cycle) => sum2 + cycle.assumedZeroDates.length, 0);
+    const zeroDays = coverage2.cycles.reduce((sum3, cycle) => sum3 + cycle.assumedZeroDates.length, 0);
     details.createEl("h5", { text: issueCount ? `\u7EDF\u8BA1\u53E3\u5F84 \xB7 ${issueCount} \u9879\u5F85\u6838\u5BF9` : zeroDays ? `\u7EDF\u8BA1\u53E3\u5F84 \xB7 ${zeroDays} \u5929\u672A\u8BB0\u8D26\u6309\u96F6\u6D88\u8D39` : "\u7EDF\u8BA1\u53E3\u5F84 \xB7 \u8BB0\u5F55\u9F50\u5168" });
     details.createEl("p", { text: snapshot.weekly ? "\u8FD1 7 \u5929\u548C\u524D 7 \u5929\u7F3A\u5931\u65E5\u671F\u4E0D\u6309\u96F6\u6D88\u8D39\uFF0C\u5B8C\u6574\u7684\u660E\u786E\u96F6\u6D88\u8D39\u65E5\u8BA1\u5165\u8986\u76D6\u3002\u5386\u53F2\u5468\u5747\u53EA\u53D6\u6B64\u524D 4 \u4E2A\u4E03\u5929\u7A97\u53E3\u4E2D\u5B8C\u6574\u7684\u7A97\u53E3\u3002\u4EE5\u4E0B\u5DE5\u8D44\u5468\u671F\u80CC\u666F\u4ECD\u6CBF\u7528\u539F\u6709\u672A\u8BB0\u8D26\u65E5\u6309\u96F6\u7684\u7EDF\u8BA1\u53E3\u5F84\uFF0C\u4E0D\u80FD\u636E\u6B64\u8BA4\u5B9A\u5468\u8D8B\u52BF\u5B8C\u6574\u3002" : "\u672A\u8BB0\u8D26\u65E5\u671F\u6309 \xA50 \u53C2\u4E0E\u6D1E\u5BDF\uFF1B\u82E5\u6709\u6F0F\u8BB0\uFF0C\u8865\u8BB0\u540E\u4F1A\u91CD\u65B0\u8BA1\u7B97\u3002\u89E3\u6790\u6216\u91D1\u989D\u6838\u5BF9\u5F02\u5E38\u4ECD\u9700\u5904\u7406\uFF0C\u4E0D\u4F1A\u5F53\u6210\u96F6\u6D88\u8D39\u3002" });
     const problemLink = (path, reason) => {
       const row = details.createDiv({ cls: "ledger-advisor-data-issue" });
-      const button = row.createEl("button", { text: path, attr: { type: "button" } });
-      button.addEventListener("click", () => onOpenFile == null ? void 0 : onOpenFile(path));
+      const button2 = row.createEl("button", { text: path, attr: { type: "button" } });
+      button2.addEventListener("click", () => onOpenFile == null ? void 0 : onOpenFile(path));
       row.createSpan({ text: reason });
     };
     for (const cycle of coverage2.cycles) {
@@ -4858,7 +7310,7 @@ function renderStarredExpenses(parent, records, onClick) {
   headingCopy.createDiv({ cls: "ledger-mono-badge", text: "STARRED EXPENSES \xB7 MANUAL CURATION" });
   headingCopy.createEl("h3", { text: "\u661F\u6807\u652F\u51FA" });
   headingCopy.createDiv({ cls: "ledger-mono-sub", text: "\u5F53\u524D\u7B5B\u9009\u4E0B\u7684\u624B\u52A8\u661F\u6807\u8BB0\u5F55\uFF0C\u4E0D\u6309\u91D1\u989D\u81EA\u52A8\u5224\u65AD\u3002" });
-  const totalCents = records.reduce((sum2, record) => sum2 + record.cents, 0);
+  const totalCents = records.reduce((sum3, record) => sum3 + record.cents, 0);
   const summary = heading.createDiv({ cls: "ledger-starred-summary" });
   summary.createEl("strong", { text: formatCents(totalCents) });
   summary.createSpan({ text: `${records.length} \u7B14\u661F\u6807` });
@@ -4885,9 +7337,9 @@ function renderStarredExpenses(parent, records, onClick) {
   card2.createDiv({ cls: "ledger-mono-source", text: "STARRED RECORDS \xB7 LOCAL LEDGER \xB7 MANUAL ONLY" });
 }
 function createButton(parent, text2, active = false) {
-  const button = parent.createEl("button", { cls: `ledger-button${active ? " is-active" : ""}`, text: text2 });
-  button.type = "button";
-  return button;
+  const button2 = parent.createEl("button", { cls: `ledger-button${active ? " is-active" : ""}`, text: text2 });
+  button2.type = "button";
+  return button2;
 }
 
 // src/report-ui.ts
@@ -4917,10 +7369,10 @@ var ReportEvidenceModal = class extends import_obsidian6.Modal {
       if (caution) section.createEl("p", { cls: "ledger-report-limit", text: `\u9700\u540C\u65F6\u8003\u8651\uFF1A${formatReportText(caution.text)}` });
       const interpretation = ((_b = e.readings) == null ? void 0 : _b.supporting.length) || ((_c = e.readings) == null ? void 0 : _c.counter.length) ? section.createEl("details", { cls: "ledger-report-evidence-group" }) : void 0;
       interpretation == null ? void 0 : interpretation.createEl("summary", { text: "\u89E3\u8BFB\u7EBF\u7D22\uFF1A\u89C2\u5BDF\u4E0E\u76F8\u53CD\u4FE1\u606F" });
-      const readings = (label, items) => {
+      const readings = (label2, items) => {
         if (!items.length || !interpretation) return;
         const group2 = interpretation.createDiv({ cls: "ledger-report-readings" });
-        group2.createEl("h4", { text: label });
+        group2.createEl("h4", { text: label2 });
         const list2 = group2.createEl("ul");
         items.forEach((item) => list2.createEl("li", { text: formatReportText(item.text) }));
       };
@@ -4958,9 +7410,9 @@ var ReportEvidenceModal = class extends import_obsidian6.Modal {
           card2.createEl("h4", { text: c.label });
           if (this.snapshot.comparable && c.status !== "existing") card2.createEl("p", { cls: "ledger-report-muted", text: c.status === "new" ? "\u4E0A\u671F\u8BE5\u5206\u7C7B\u672A\u8BB0\u5F55\u91D1\u989D\uFF0C\u672C\u671F\u6709\u8BB0\u5F55" : "\u672C\u671F\u8BE5\u5206\u7C7B\u672A\u8BB0\u5F55\u91D1\u989D\uFF0C\u4E0A\u671F\u6709\u8BB0\u5F55" });
           const list2 = card2.createEl("dl", { cls: "ledger-report-facts" });
-          const row = (key, label, value) => {
-            const formatted = formatReportFact(key, { label, value, unit: "\u5143" });
-            list2.createEl("dt", { text: label });
+          const row = (key, label2, value) => {
+            const formatted = formatReportFact(key, { label: label2, value, unit: "\u5143" });
+            list2.createEl("dt", { text: label2 });
             list2.createEl("dd", { text: formatted.text, cls: formatted.tone ? `ledger-report-${formatted.tone}` : "" });
           };
           row("current", "\u672C\u671F\u5DF2\u8BB0\u5F55\u91D1\u989D", c.current);
@@ -4981,9 +7433,9 @@ var ReportEvidenceModal = class extends import_obsidian6.Modal {
     const more = createButton(this.contentEl, "\u663E\u793A\u66F4\u591A\u6D41\u6C34");
     const show = () => {
       records.slice(shown, shown + 40).forEach((r) => {
-        const button = createButton(list, `${r.date} \xB7 ${r.category} \xB7 ${formatCents(r.cents)} \xB7 ${r.note || "\u65E0\u5907\u6CE8"}`);
-        button.addClass("ledger-report-record");
-        button.addEventListener("click", () => {
+        const button2 = createButton(list, `${r.date} \xB7 ${r.category} \xB7 ${formatCents(r.cents)} \xB7 ${r.note || "\u65E0\u5907\u6CE8"}`);
+        button2.addClass("ledger-report-record");
+        button2.addEventListener("click", () => {
           this.close();
           void this.openRecord(r);
         });
@@ -5067,43 +7519,43 @@ var ReportPanel = class {
     const reportSnapshot = cache ? (_b = cache.snapshot) != null ? _b : findReportCache(caches, snapshot, this.config()) === cache ? snapshot : void 0 : snapshot;
     const shell = parent.createDiv({ cls: "ledger-report" });
     const toolbar = shell.createDiv({ cls: "ledger-report-toolbar" });
-    const select = (label, value, options, changed2) => {
+    const select2 = (label2, value, options, changed2) => {
       const field = toolbar.createEl("label", { cls: "ledger-field" });
-      field.createSpan({ text: label });
-      const el2 = field.createEl("select");
-      options.forEach(([v, text2]) => el2.createEl("option", { value: v, text: text2 }));
-      el2.value = value;
-      el2.addEventListener("change", () => changed2(el2.value));
-      return el2;
+      field.createSpan({ text: label2 });
+      const el3 = field.createEl("select");
+      options.forEach(([v, text2]) => el3.createEl("option", { value: v, text: text2 }));
+      el3.value = value;
+      el3.addEventListener("change", () => changed2(el3.value));
+      return el3;
     };
-    select("\u62A5\u544A\u671F\u95F4", p.mode, [["salary", "\u5DE5\u8D44\u5468\u671F"], ["month", "\u81EA\u7136\u6708"], ["custom", "\u81EA\u5B9A\u4E49"]], (mode) => this.change({ mode, offset: 0, anchorDate: void 0, ...mode === "custom" ? { customRange: { ...snapshot.range } } : {} }));
+    select2("\u62A5\u544A\u671F\u95F4", p.mode, [["salary", "\u5DE5\u8D44\u5468\u671F"], ["month", "\u81EA\u7136\u6708"], ["custom", "\u81EA\u5B9A\u4E49"]], (mode) => this.change({ mode, offset: 0, anchorDate: void 0, ...mode === "custom" ? { customRange: { ...snapshot.range } } : {} }));
     const nav = toolbar.createDiv({ cls: "ledger-report-period-nav" });
     createButton(nav, "\u4E0A\u4E00\u671F").addEventListener("click", () => this.shift(-1));
     const next = createButton(nav, "\u4E0B\u4E00\u671F");
     next.disabled = p.mode === "custom" ? addDays(p.customRange.start, reportDays(p.customRange)) > isoFromDate(/* @__PURE__ */ new Date()) : p.offset === 0;
     next.addEventListener("click", () => this.shift(1));
-    if (p.mode === "custom") for (const [key, label] of [["start", "\u5F00\u59CB"], ["end", "\u7ED3\u675F"]]) {
+    if (p.mode === "custom") for (const [key, label2] of [["start", "\u5F00\u59CB"], ["end", "\u7ED3\u675F"]]) {
       const field = toolbar.createEl("label", { cls: "ledger-field" });
-      field.createSpan({ text: label });
-      const input2 = field.createEl("input", { type: "date", value: p.customRange[key] });
-      input2.addEventListener("change", () => {
-        const range = { ...p.customRange, [key]: input2.value };
+      field.createSpan({ text: label2 });
+      const input3 = field.createEl("input", { type: "date", value: p.customRange[key] });
+      input3.addEventListener("change", () => {
+        const range = { ...p.customRange, [key]: input3.value };
         if (!isValidIsoDate(range.start) || !isValidIsoDate(range.end) || range.start > range.end || /* @__PURE__ */ new Date(`${range.start}T12:00:00`) > /* @__PURE__ */ new Date() || reportDays(range) > 366) {
           new import_obsidian6.Notice("\u8BF7\u9009\u62E9\u6709\u6548\u65E5\u671F\uFF0C\u5F00\u59CB\u65E5\u671F\u4E0D\u665A\u4E8E\u4ECA\u5929\uFF0C\u8303\u56F4\u4E0D\u8D85\u8FC7\u4E00\u5E74");
-          input2.value = p.customRange[key];
+          input3.value = p.customRange[key];
           return;
         }
         this.change({ customRange: range });
       });
     }
-    select("\u53E3\u5F84", p.scope, [["consumption", "\u6D88\u8D39\u652F\u51FA"], ["all", "\u5168\u90E8\u652F\u51FA"]], (scope) => this.change({ scope }));
+    select2("\u53E3\u5F84", p.scope, [["consumption", "\u6D88\u8D39\u652F\u51FA"], ["all", "\u5168\u90E8\u652F\u51FA"]], (scope) => this.change({ scope }));
     const categories = [...new Set([...this.plugin.repository.files.values()].flatMap((f) => f.records.map((r) => r.category)))].sort();
-    select("\u5206\u7C7B", p.category, [["", "\u5168\u90E8\u5206\u7C7B"], ...categories.map((c) => [c, c])], (category) => this.change({ category }));
+    select2("\u5206\u7C7B", p.category, [["", "\u5168\u90E8\u5206\u7C7B"], ...categories.map((c) => [c, c])], (category) => this.change({ category }));
     const keyword = toolbar.createEl("label", { cls: "ledger-field" });
     keyword.createSpan({ text: "\u5173\u952E\u8BCD" });
-    const input = keyword.createEl("input", { type: "search", value: p.keyword, placeholder: "\u5206\u7C7B\u6216\u5907\u6CE8" });
-    input.addEventListener("change", () => this.change({ keyword: input.value }));
-    select("\u661F\u6807\u8BB0\u5F55", p.includeStarred ? "include" : "exclude", [["include", "\u5305\u542B\u661F\u6807"], ["exclude", "\u6392\u9664\u661F\u6807"]], (value) => this.change({ includeStarred: value === "include" }));
+    const input2 = keyword.createEl("input", { type: "search", value: p.keyword, placeholder: "\u5206\u7C7B\u6216\u5907\u6CE8" });
+    input2.addEventListener("change", () => this.change({ keyword: input2.value }));
+    select2("\u661F\u6807\u8BB0\u5F55", p.includeStarred ? "include" : "exclude", [["include", "\u5305\u542B\u661F\u6807"], ["exclude", "\u6392\u9664\u661F\u6807"]], (value) => this.change({ includeStarred: value === "include" }));
     shell.createEl("p", { cls: "ledger-report-period", text: `${snapshot.label} \xB7 ${snapshot.range.start} \u81F3 ${snapshot.range.end}${snapshot.range.end !== snapshot.fullRange.end ? "\uFF08\u8FDB\u884C\u4E2D\uFF09" : ""}` });
     shell.createEl("p", { cls: "ledger-report-muted", text: `\u5BF9\u6BD4 ${snapshot.previousRange.start} \u81F3 ${snapshot.previousRange.end} \xB7 \u53EF\u7528\u5B8C\u6574\u5386\u53F2 ${snapshot.historicalRanges.length} \u671F${p.category || p.keyword || !p.includeStarred ? " \xB7 \u5C40\u90E8\u62A5\u544A" : ""}` });
     const actions = shell.createDiv({ cls: "ledger-report-actions" });
@@ -5142,14 +7594,14 @@ var ReportPanel = class {
     var _a;
     if (this.loading || this.disposed) return;
     snapshot = JSON.parse(JSON.stringify(snapshot));
-    const config = this.config(), configuration = reportConfiguration(config), controller = new AbortController();
+    const config2 = this.config(), configuration = reportConfiguration(config2), controller = new AbortController();
     this.controller = controller;
     this.loading = true;
     this.error = "";
     this.requestFingerprint = `${snapshot.fingerprint}:${configuration}`;
     this.redraw();
     try {
-      const report = await requestSpendingReport(config, snapshot, controller.signal, sharedRequestGate(`ai:${this.plugin.app.vault.getName()}`));
+      const report = await requestSpendingReport(config2, snapshot, controller.signal, sharedRequestGate(`ai:${this.plugin.app.vault.getName()}`));
       if (this.disposed || controller.signal.aborted || this.snapshot().fingerprint !== snapshot.fingerprint || reportConfiguration(this.config()) !== configuration || !this.plugin.settings.financeAiEnabled) return;
       const previousCaches = (_a = this.plugin.settings.reportCaches) != null ? _a : [];
       const nextCaches = appendReportCache(previousCaches, { fingerprint: snapshot.fingerprint, configuration, generatedAt: (/* @__PURE__ */ new Date()).toISOString(), report, snapshot });
@@ -5178,12 +7630,12 @@ function renderReportArticle(parent, report, snapshot, evidence) {
   const prose = (parent2, text2, cls = "") => {
     const emphasis = { remaining: 2 };
     for (const paragraph of text2.split(/\n\s*\n/).filter((t) => t.trim())) {
-      const el2 = parent2.createEl("p", { cls });
+      const el3 = parent2.createEl("p", { cls });
       let strong;
       for (const part of reportTextParts(paragraph, emphasis)) {
         if (!part.bold) strong = void 0;
-        else if (!strong) strong = el2.createEl("strong");
-        (part.bold ? strong : el2).createSpan({ text: part.text, cls: part.tone ? `ledger-report-${part.tone}` : "" });
+        else if (!strong) strong = el3.createEl("strong");
+        (part.bold ? strong : el3).createSpan({ text: part.text, cls: part.tone ? `ledger-report-${part.tone}` : "" });
       }
     }
   };
@@ -5239,7 +7691,7 @@ function categoryPreviousRange(range, preset) {
   else return { start: addDays(range.start, -days), end: addDays(range.start, -1) };
   return { start: full.start, end: [addDays(full.start, days - 1), full.end].sort()[0] };
 }
-var total2 = (records) => records.reduce((sum2, record) => sum2 + record.cents, 0);
+var total2 = (records) => records.reduce((sum3, record) => sum3 + record.cents, 0);
 var ranked = (records) => [...records].sort((a, b) => b.cents - a.cents || b.date.localeCompare(a.date) || b.time.localeCompare(a.time) || a.id.localeCompare(b.id));
 function categoryNoteLabel(record) {
   var _a;
@@ -5257,15 +7709,15 @@ function categoryBoxStats(records) {
   const regular = amounts.filter((v) => v >= q1 - 1.5 * iqr && v <= q3 + 1.5 * iqr);
   return { q1, median: median3, q3, min: regular[0], max: regular[regular.length - 1], outliers: records.filter((r) => r.cents < q1 - 1.5 * iqr || r.cents > q3 + 1.5 * iqr) };
 }
-function groupRecords(records, label) {
+function groupRecords(records, label2) {
   var _a;
   const groups = /* @__PURE__ */ new Map();
   for (const record of records) {
-    const name = label(record), entries = (_a = groups.get(name)) != null ? _a : [];
+    const name = label2(record), entries = (_a = groups.get(name)) != null ? _a : [];
     entries.push(record);
     groups.set(name, entries);
   }
-  return [...groups].map(([label2, records2]) => ({ label: label2, records: records2, cents: total2(records2), days: new Set(records2.map((r) => r.date)).size })).sort((a, b) => b.cents - a.cents || b.records.length - a.records.length || a.label.localeCompare(b.label, "zh-CN"));
+  return [...groups].map(([label3, records2]) => ({ label: label3, records: records2, cents: total2(records2), days: new Set(records2.map((r) => r.date)).size })).sort((a, b) => b.cents - a.cents || b.records.length - a.records.length || a.label.localeCompare(b.label, "zh-CN"));
 }
 function buildCategoryAnalysis(files, filter, previousRange, objectRules) {
   const records = filteredRecords(files, filter), previous = filteredRecords(files, { ...filter, range: previousRange });
@@ -5335,8 +7787,8 @@ var import_obsidian7 = require("obsidian");
 // src/category-charts.ts
 var NS = "http://www.w3.org/2000/svg";
 var observers = /* @__PURE__ */ new WeakMap();
-function el(parent, tag, attrs) {
-  const node = document.createElementNS(NS, tag);
+function el(parent, tag2, attrs) {
+  const node = document.createElementNS(NS, tag2);
   Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, String(value)));
   parent.append(node);
   return node;
@@ -5346,12 +7798,12 @@ function text(parent, attrs, value) {
   node.textContent = value;
   return node;
 }
-function target(node, label, activate) {
+function target(node, label2, activate) {
   node.setAttribute("tabindex", "0");
   node.setAttribute("role", "button");
-  node.setAttribute("aria-label", label);
+  node.setAttribute("aria-label", label2);
   const title = el(node, "title", {});
-  title.textContent = label;
+  title.textContent = label2;
   node.addEventListener("click", activate);
   node.addEventListener("keydown", (event) => {
     const key = event.key;
@@ -5361,11 +7813,11 @@ function target(node, label, activate) {
     }
   });
 }
-function plot(parent, label, width = 400, height = 320) {
+function plot(parent, label2, width = 400, height = 320) {
   const svg = document.createElementNS(NS, "svg");
   svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
   svg.setAttribute("role", "img");
-  svg.setAttribute("aria-label", label);
+  svg.setAttribute("aria-label", label2);
   svg.classList.add("ledger-svg", "ledger-category-plot", "is-pending");
   parent.append(svg);
   const observer = new IntersectionObserver((entries) => {
@@ -5400,10 +7852,10 @@ function renderSelectedBox(parent, current, previous, open, show) {
     return;
   }
   const svg = plot(parent, "\u672C\u671F\u4E0E\u4E0A\u671F\u5355\u7B14\u91D1\u989D\u7BB1\u7EBF\u56FE", 480, 320);
-  const max = Math.max(100, ...groups.flatMap((group2) => group2.records.map((record) => record.cents))) * 1.12;
-  const top = 34, base = 258, y = (v) => base - v / max * (base - top);
+  const max2 = Math.max(100, ...groups.flatMap((group2) => group2.records.map((record) => record.cents))) * 1.12;
+  const top = 34, base = 258, y = (v) => base - v / max2 * (base - top);
   for (let tick = 0; tick <= 4; tick++) {
-    const value = max * tick / 4;
+    const value = max2 * tick / 4;
     el(svg, "line", { x1: 68, y1: y(value), x2: 458, y2: y(value), stroke: GRID2, "stroke-width": 0.8 });
     text(svg, { x: 62, y: y(value) + 3, "font-size": 12, "font-weight": 600, fill: MUTED2, "text-anchor": "end" }, money(value));
   }
@@ -5427,10 +7879,10 @@ function renderSelectedBox(parent, current, previous, open, show) {
 }
 function renderWeekdayRungs(parent, days, show) {
   const svg = plot(parent, "\u5404\u661F\u671F\u6309\u8D26\u672C\u65E5\u671F\u8BA1\u7B97\u7684\u65E5\u5747\u91D1\u989D", 460, 320);
-  const max = Math.max(100, ...days.map((day) => day.mean));
-  const raw = max / 28, magnitude = 10 ** Math.floor(Math.log10(raw)), normalized = raw / magnitude;
+  const max2 = Math.max(100, ...days.map((day) => day.mean));
+  const raw = max2 / 28, magnitude = 10 ** Math.floor(Math.log10(raw)), normalized = raw / magnitude;
   const unit = Math.max(1, magnitude * (normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10));
-  const step = 194 / Math.max(1, max / unit), base = 256, leading = days.findIndex((day) => day.mean === max);
+  const step = 194 / Math.max(1, max2 / unit), base = 256, leading = days.findIndex((day) => day.mean === max2);
   days.forEach((day, index) => {
     const x = 46 + index * 61, group2 = el(svg, "g", {}), units = day.mean / unit;
     target(group2, `${day.label}\u65E5\u5747 ${money(day.mean)}`, () => show(day.label, day.records));
@@ -5459,17 +7911,17 @@ function card(parent, title, subtitle, cls = "") {
   return shell;
 }
 function metric(parent, title, value, detail, click) {
-  const el2 = parent.createEl(click ? "button" : "div", { cls: "ledger-metric" });
+  const el3 = parent.createEl(click ? "button" : "div", { cls: "ledger-metric" });
   if (click) {
-    el2.setAttribute("type", "button");
-    el2.addEventListener("click", click);
+    el3.setAttribute("type", "button");
+    el3.addEventListener("click", click);
   }
-  el2.createDiv({ cls: "ledger-metric-label", text: title });
-  el2.createDiv({ cls: "ledger-metric-value", text: value });
-  el2.createDiv({ cls: "ledger-metric-detail", text: detail });
+  el3.createDiv({ cls: "ledger-metric-label", text: title });
+  el3.createDiv({ cls: "ledger-metric-value", text: value });
+  el3.createDiv({ cls: "ledger-metric-detail", text: detail });
 }
 function recordList(parent, records, open) {
-  const max = Math.max(1, ...records.map((record) => record.cents));
+  const max2 = Math.max(1, ...records.map((record) => record.cents));
   records.forEach((record, index) => {
     const row = parent.createEl("button", { cls: `ledger-category-ranked-row${index === 0 ? " is-leading" : ""}`, attr: { type: "button" } });
     row.dataset.ledgerRecordId = record.id;
@@ -5479,15 +7931,15 @@ function recordList(parent, records, open) {
     copy.createEl("strong", { text: record.note || "\u65E0\u5907\u6CE8" });
     copy.createEl("small", { text: `${record.date} \xB7 ${record.time} \xB7 ${record.category}` });
     const bar = copy.createDiv({ cls: "ledger-category-row-track" });
-    bar.createDiv({ cls: "ledger-category-row-fill", attr: { style: `width:${record.cents / max * 100}%` } });
+    bar.createDiv({ cls: "ledger-category-row-fill", attr: { style: `width:${record.cents / max2 * 100}%` } });
     row.createEl("strong", { cls: "ledger-category-row-amount", text: money2(record.cents) });
     row.addEventListener("click", () => open(record));
   });
 }
-function showCategoryRecords(app, label, records, open) {
+function showCategoryRecords(app, label2, records, open) {
   const modal = new import_obsidian7.Modal(app);
   modal.contentEl.addClass("ledger-category-evidence");
-  modal.contentEl.createEl("h2", { text: label });
+  modal.contentEl.createEl("h2", { text: label2 });
   modal.contentEl.createDiv({ cls: "ledger-note", text: `${records.length} \u7B14 \xB7 \u70B9\u51FB\u6253\u5F00\u539F\u59CB\u8D26\u76EE` });
   if (!records.length) modal.contentEl.createDiv({ cls: "ledger-empty", text: "\u6CA1\u6709\u5339\u914D\u8BB0\u5F55" });
   recordList(modal.contentEl, [...records].sort((a, b) => b.cents - a.cents || b.date.localeCompare(a.date) || a.id.localeCompare(b.id)), (record) => {
@@ -5563,9 +8015,9 @@ function renderCategoryAnalysis(parent, category, analysis, trendUnit, open, sho
   renderDonut(
     purposesWrap,
     a.purposes.map((group2) => ({ category: group2.label, cents: group2.cents, count: group2.records.length, share: a.summary.cents ? group2.cents / a.summary.cents : 0 })),
-    (label) => {
-      const group2 = a.purposes.find((group3) => group3.label === label);
-      if (group2) show(label, group2.records);
+    (label2) => {
+      const group2 = a.purposes.find((group3) => group3.label === label2);
+      if (group2) show(label2, group2.records);
     }
   );
   const purposeCard = purposesWrap.querySelector(".ledger-mono-card");
@@ -5576,9 +8028,9 @@ function renderCategoryAnalysis(parent, category, analysis, trendUnit, open, sho
     renderDumbbell(repeatsWrap, repeatGroups.map((group2) => {
       var _a2, _b2;
       return { category: group2.label, currentCents: group2.cents, previousCents: Math.round(((_b2 = (_a2 = a.previousGroups.find((previous) => previous.label === group2.label)) == null ? void 0 : _a2.cents) != null ? _b2 : 0) * a.scale) };
-    }), "\u672C\u671F", a.scale === 1 ? "\u4E0A\u671F" : "\u4E0A\u671F\u6298\u7B97", (label) => {
+    }), "\u672C\u671F", a.scale === 1 ? "\u4E0A\u671F" : "\u4E0A\u671F\u6298\u7B97", (label2) => {
       var _a2, _b2, _c2, _d;
-      show(`\u91CD\u590D\u9879\u76EE \xB7 ${label}`, [...(_b2 = (_a2 = repeatGroups.find((group2) => group2.label === label)) == null ? void 0 : _a2.records) != null ? _b2 : [], ...(_d = (_c2 = a.previousGroups.find((group2) => group2.label === label)) == null ? void 0 : _c2.records) != null ? _d : []]);
+      show(`\u91CD\u590D\u9879\u76EE \xB7 ${label2}`, [...(_b2 = (_a2 = repeatGroups.find((group2) => group2.label === label2)) == null ? void 0 : _a2.records) != null ? _b2 : [], ...(_d = (_c2 = a.previousGroups.find((group2) => group2.label === label2)) == null ? void 0 : _c2.records) != null ? _d : []]);
     });
     repeatsWrap.querySelector("h3").textContent = `${repeatGroups[0].label}\u662F\u82B1\u8D39\u6700\u591A\u7684\u91CD\u590D\u9879\u76EE`;
     repeatsWrap.querySelector(".ledger-mono-sub").textContent = "\u672C\u671F\u81F3\u5C11\u51FA\u73B0\u4E24\u7B14\u7684\u5907\u6CE8\u9879\u76EE \xB7 \u6700\u591A\u516D\u7EC4 \xB7 \u4EC5\u5408\u5E76\u660E\u786E\u9910\u6B21\u540C\u4E49\u8BCD";
@@ -5600,8 +8052,8 @@ function renderCategoryAnalysis(parent, category, analysis, trendUnit, open, sho
   renderHorizontalBars(
     top,
     topRows,
-    (label) => {
-      const index = topRows.findIndex((row) => row.category === label);
+    (label2) => {
+      const index = topRows.findIndex((row) => row.category === label2);
       if (index >= 0) open(a.topTen[index]);
     },
     { title: "\u6700\u9AD8\u652F\u51FA\u524D\u5341\u7B14", subtitle: "\u6240\u9009\u5206\u7C7B\u4E0E\u671F\u95F4 \xB7 \u6309\u5355\u7B14\u91D1\u989D\u4ECE\u9AD8\u5230\u4F4E \xB7 \u70B9\u51FB\u6253\u5F00\u539F\u59CB\u8D26\u76EE", details: Object.fromEntries(topRows.map((row, index) => [row.category, `${a.topTen[index].date} \xB7 ${a.topTen[index].time}`])) }
@@ -5610,6 +8062,576 @@ function renderCategoryAnalysis(parent, category, analysis, trendUnit, open, sho
   const footer = section.createDiv({ cls: "ledger-category-footer" });
   createButton(footer, `\u67E5\u770B\u5168\u90E8 ${a.records.length} \u7B14\u660E\u7EC6`).addEventListener("click", details);
 }
+
+// src/asset-ui.ts
+var import_obsidian8 = require("obsidian");
+
+// src/asset-charts.ts
+var NS2 = "http://www.w3.org/2000/svg";
+var COLORS = { cash: "#bb8967", investment: "#8678b0", fixed: "#a6acb6", receivable: "#8a93a4", liability: "#cb8f96" };
+function el2(type, attrs, parent) {
+  const node = document.createElementNS(NS2, type);
+  for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, String(value));
+  parent.appendChild(node);
+  return node;
+}
+function label(parent, x, y, text2, size = 16, anchor = "start") {
+  el2("text", { x, y, "font-size": size, "text-anchor": anchor, "dominant-baseline": "middle", fill: "currentColor" }, parent).textContent = text2;
+}
+function band(svg, x1, y1, x2, y2, height, color) {
+  if (height <= 0) return;
+  const middle = (x1 + x2) / 2;
+  el2("path", { d: `M${x1},${y1} C${middle},${y1} ${middle},${y2} ${x2},${y2} L${x2},${y2 + height} C${middle},${y2 + height} ${middle},${y1 + height} ${x1},${y1 + height} Z`, fill: color, "fill-opacity": 0.35 }, svg);
+}
+function interactive(node, text2, action) {
+  node.setAttribute("role", "button");
+  node.setAttribute("tabindex", "0");
+  node.setAttribute("aria-label", text2);
+  node.addEventListener("click", action);
+  node.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      action();
+    }
+  });
+}
+function renderAssetSankey(parent, snapshot, excludeFixed, hide, expanded, onExpand, onAccount) {
+  const amounts = (cents) => hide ? "\u2022\u2022\u2022\u2022" : formatCents(cents);
+  const visible = snapshot.accounts.filter((a) => a.kind !== "liability" && !(excludeFixed && a.kind === "fixed") && a.cents > 0);
+  const kinds = ["cash", "fixed", "investment", "receivable"];
+  const groups = kinds.map((kind) => ({ kind, accounts: visible.filter((a) => a.kind === kind) })).filter((g) => g.accounts.length);
+  const rows = groups.flatMap((g) => g.accounts.flatMap((a) => expanded.has(a.id) && a.kind === "investment" ? a.holdings.filter((h) => {
+    var _a;
+    return ((_a = h.valueCents) != null ? _a : 0) > 0;
+  }).map((h) => ({ account: a, id: h.id, name: h.name, cents: h.valueCents, holding: true })) : [{ account: a, id: a.id, name: a.name, cents: a.cents, holding: false }]));
+  if (!rows.length) {
+    parent.createEl("p", { cls: "ledger-assets-empty", text: snapshot.accounts.length ? "\u5F53\u524D\u6CA1\u6709\u53EF\u7ED8\u5236\u7684\u6B63\u8D44\u4EA7\uFF1B\u672A\u4F30\u503C\u6301\u4ED3\u3001\u8D1F\u4F59\u989D\u4E0E\u51C0\u8D44\u4EA7\u7F3A\u53E3\u8BF7\u67E5\u770B\u603B\u89C8\u548C\u8D26\u6237\u3002" : "\u6DFB\u52A0\u8D26\u6237\u548C\u6301\u4ED3\u540E\uFF0C\u8FD9\u91CC\u663E\u793A\u8D44\u4EA7\u7EC4\u6210\u6851\u57FA\u56FE\u3002" });
+    return;
+  }
+  const rowGap = 44;
+  const total3 = visible.reduce((sum3, a) => sum3 + a.cents, 0), height = Math.max(360, rows.length * 64 + groups.length * 24 + 100);
+  const plotHeight = height - 130 - Math.max(0, rows.length - 1) * rowGap - Math.max(0, groups.length - 1) * 20;
+  const scale = plotHeight / total3;
+  const scroll = parent.createDiv({ cls: "ledger-assets-sankey-scroll" });
+  scroll.setAttribute("aria-label", "\u8D44\u4EA7\u7EC4\u6210\u6851\u57FA\u56FE\uFF0C\u53EF\u6A2A\u5411\u6ED1\u52A8\u5E76\u70B9\u51FB\u8D26\u6237\u5C55\u5F00");
+  const svg = document.createElementNS(NS2, "svg");
+  svg.setAttribute("viewBox", `0 0 1240 ${height}`);
+  svg.setAttribute("class", "ledger-assets-sankey");
+  svg.setAttribute("role", "group");
+  svg.setAttribute("aria-label", "\u8D44\u4EA7\u603B\u91CF\u3001\u8D44\u4EA7\u7C7B\u522B\u3001\u8D26\u6237\u7EC4\u6210");
+  scroll.appendChild(svg);
+  const totals = assetTotals(snapshot, excludeFixed), sources = totals.netCents >= 0 && !snapshot.accounts.some((a) => a.cents < 0);
+  let cursor = 95, rootCursor = 100;
+  const groupLayout = [];
+  for (const group2 of groups) {
+    const groupRows = rows.filter((r) => r.account.kind === group2.kind), rowYs = [], start = cursor;
+    for (const row of groupRows) {
+      rowYs.push(cursor);
+      cursor += row.cents * scale + rowGap;
+    }
+    groupLayout.push({ kind: group2.kind, y: start, cents: groupRows.reduce((s, r) => s + r.cents, 0), rowYs });
+    cursor += 20;
+  }
+  if (sources) {
+    const debt = totals.liabilitiesCents, net = totals.netCents, netHeight = net * scale, debtHeight = debt * scale;
+    el2("rect", { x: 80, y: 100, width: 12, height: netHeight, fill: "#78bf9f" }, svg);
+    band(svg, 92, 100, 310, 100, netHeight, "#78bf9f");
+    label(svg, 75, 82, `\u51C0\u8D44\u4EA7 ${amounts(net)}`, 16);
+    if (debt > 0) {
+      const y = 100 + netHeight + 28;
+      el2("rect", { x: 80, y, width: 12, height: debtHeight, fill: COLORS.liability }, svg);
+      band(svg, 92, y, 310, 100 + netHeight, debtHeight, COLORS.liability);
+      label(svg, 75, y + debtHeight + 22, `\u8D1F\u503A ${amounts(debt)}`, 15);
+    }
+  } else {
+    label(svg, 75, 82, `\u51C0\u8D44\u4EA7 ${amounts(totals.netCents)}`, 16);
+    label(svg, 75, 112, "\u7F3A\u53E3\u5355\u72EC\u5217\u793A", 14);
+  }
+  el2("rect", { x: 310, y: 100, width: 13, height: total3 * scale, fill: "#9b94bd" }, svg);
+  label(svg, 310, 62, `${totals.missing || !sources ? "\u5DF2\u4F30\u503C\u6B63\u8D44\u4EA7" : "\u603B\u8D44\u4EA7"} ${amounts(total3)}`, 19);
+  for (const group2 of groupLayout) {
+    const color = COLORS[group2.kind], groupHeight = group2.cents * scale, groupRows = rows.filter((r) => r.account.kind === group2.kind);
+    band(svg, 323, rootCursor, 675, group2.y, groupHeight, "#9b94bd");
+    el2("rect", { x: 675, y: group2.y, width: 12, height: groupHeight, fill: color }, svg);
+    label(svg, 660, group2.y + groupHeight / 2, `${ASSET_NAMES[group2.kind]} ${amounts(group2.cents)}`, 17, "end");
+    let source = group2.y;
+    groupRows.forEach((row, index) => {
+      const y = group2.rowYs[index], h = row.cents * scale;
+      band(svg, 687, source, 945, y, h, color);
+      el2("rect", { x: 945, y, width: 8, height: h, fill: color }, svg);
+      const node = el2("g", {}, svg), middle = y + h / 2;
+      el2("rect", { x: 955, y: middle - 22, width: 282, height: 44, fill: "transparent" }, node);
+      const name = row.name.length > 17 ? `${row.name.slice(0, 16)}\u2026` : row.name;
+      label(node, 967, middle - 8, `${name}${row.account.kind === "investment" && !row.holding ? " \u203A" : ""}`, 16);
+      label(node, 967, middle + 12, amounts(row.cents), 14);
+      el2("title", {}, node).textContent = `${row.name} ${amounts(row.cents)}`;
+      interactive(node, `${row.name}\uFF0C${amounts(row.cents)}\uFF0C\u67E5\u770B\u8BE6\u60C5`, () => row.account.kind === "investment" && !row.holding ? onExpand(row.account.id) : onAccount(row.account.id));
+      source += h;
+    });
+    rootCursor += groupHeight;
+  }
+  if (snapshot.accounts.some((a) => a.cents < 0) || totals.netCents < 0) parent.createEl("p", { cls: "ledger-assets-hint", text: `\u6851\u57FA\u56FE\u5C55\u793A\u6B63\u8D44\u4EA7\uFF1B\u8D1F\u4F59\u989D\u4E0E\u51C0\u8D44\u4EA7\u7F3A\u53E3\u4FDD\u7559\u5728\u603B\u89C8\u53CA\u8D26\u6237\u5217\u8868\u4E2D${hide ? "\u3002" : `\uFF1A${snapshot.accounts.filter((a) => a.cents < 0).map((a) => `${a.name} ${formatCents(a.cents)}`).join("\uFF1B") || formatCents(totals.netCents)}`}` });
+}
+
+// src/asset-ui.ts
+function button(parent, text2, action, primary = false) {
+  const node = parent.createEl("button", { cls: `ledger-button${primary ? " ledger-assets-primary" : ""}`, text: text2 });
+  node.type = "button";
+  node.addEventListener("click", action);
+  return node;
+}
+function input(parent, name, value = "", type = "text", hint = "") {
+  const label2 = parent.createEl("label", { cls: "ledger-assets-field" });
+  label2.createSpan({ text: name });
+  const node = label2.createEl("input", { type, value });
+  node.setAttribute("aria-label", name);
+  if (hint) label2.createEl("small", { text: hint });
+  return node;
+}
+function select(parent, name, choices, value = "") {
+  const label2 = parent.createEl("label", { cls: "ledger-assets-field" });
+  label2.createSpan({ text: name });
+  const node = label2.createEl("select");
+  node.setAttribute("aria-label", name);
+  for (const [key, text2] of choices) node.createEl("option", { value: key, text: text2 });
+  if (value) node.value = value;
+  return node;
+}
+function localDateTime(now = /* @__PURE__ */ new Date()) {
+  return `${isoFromDate(now)}T${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+}
+function parseBaseline(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime()) || date.getTime() > Date.now()) throw new Error("\u4F59\u989D\u65F6\u70B9\u65E0\u6548\uFF0C\u4E0D\u80FD\u4F7F\u7528\u672A\u6765\u65F6\u95F4");
+  return date;
+}
+var AssetFormModal = class extends import_obsidian8.Modal {
+  constructor(plugin, title, build) {
+    super(plugin.app);
+    this.title = title;
+    this.build = build;
+  }
+  onOpen() {
+    this.modalEl.addClass("ledger-assets-modal");
+    this.setTitle(this.title);
+    const body = this.contentEl.createEl("form", { cls: "ledger-assets-form" });
+    const submit = this.build(body), error = body.createDiv({ cls: "ledger-assets-form-error", attr: { role: "alert" } });
+    const controls = body.createDiv({ cls: "ledger-assets-actions" });
+    const save = controls.createEl("button", { cls: "ledger-button ledger-assets-primary", text: "\u4FDD\u5B58" });
+    save.type = "submit";
+    button(controls, "\u53D6\u6D88", () => this.close());
+    body.addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (save.disabled) return;
+      save.disabled = true;
+      error.setText("");
+      void submit().then(() => {
+        this.close();
+        new import_obsidian8.Notice("\u8D44\u4EA7\u5DF2\u4FDD\u5B58");
+      }).catch((reason) => {
+        error.setText(reason instanceof Error ? reason.message : "\u4FDD\u5B58\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5");
+        save.disabled = false;
+      });
+    });
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
+var AssetPanel = class {
+  constructor(plugin) {
+    this.plugin = plugin;
+    this.expanded = /* @__PURE__ */ new Set();
+  }
+  records() {
+    return flattenRecords(this.plugin.repository.files.values());
+  }
+  render(parent) {
+    var _a;
+    const state = this.plugin.settings.assets, snapshot = this.plugin.assetSnapshot(), totals = assetTotals(snapshot, state.excludeFixed);
+    const money3 = (cents) => state.hideAmounts ? "\u2022\u2022\u2022\u2022" : formatCents(cents);
+    const root = parent.createDiv({ cls: "ledger-assets" }), top = root.createDiv({ cls: "ledger-assets-title-row" });
+    top.createEl("h2", { text: "\u6211\u7684\u8D44\u4EA7" });
+    const actions = top.createDiv({ cls: "ledger-assets-actions" });
+    button(actions, "\u6DFB\u52A0\u8D26\u6237", () => this.accountForm(), true);
+    button(actions, "\u6DFB\u52A0\u6301\u4ED3", () => this.holdingForm());
+    button(actions, "\u8BB0\u5F55\u4EA4\u6613", () => this.eventForm());
+    const refresh = button(actions, "\u5237\u65B0\u884C\u60C5", () => {
+      refresh.disabled = true;
+      void this.plugin.refreshAssetQuotes(true).catch((e) => new import_obsidian8.Notice(e instanceof Error ? e.message : "\u884C\u60C5\u5237\u65B0\u5931\u8D25")).finally(() => {
+        refresh.disabled = false;
+      });
+    });
+    const hero = root.createDiv({ cls: "ledger-assets-hero" }), caption = hero.createDiv({ cls: "ledger-assets-caption" });
+    caption.createSpan({ text: totals.missing ? "\u5DF2\u4F30\u503C\u8D44\u4EA7\uFF08\u5143\uFF09\xB7 \u4F30\u503C\u4E0D\u5B8C\u6574" : "\u603B\u8D44\u4EA7\uFF08\u5143\uFF09" });
+    button(caption, state.hideAmounts ? "\u663E\u793A\u91D1\u989D" : "\u9690\u85CF\u91D1\u989D", () => void this.save((s) => {
+      s.hideAmounts = !s.hideAmounts;
+    }).catch((e) => new import_obsidian8.Notice(String(e))));
+    const toggle = caption.createEl("label", { cls: "ledger-assets-toggle" });
+    toggle.createSpan({ text: "\u6392\u9664\u56FA\u5B9A\u8D44\u4EA7" });
+    const check = toggle.createEl("input", { type: "checkbox" });
+    check.checked = state.excludeFixed;
+    check.addEventListener("change", () => void this.save((s) => {
+      s.excludeFixed = check.checked;
+    }).catch((e) => new import_obsidian8.Notice(String(e))));
+    hero.createDiv({ cls: "ledger-assets-total", text: state.hideAmounts ? "\u2022\u2022\u2022\u2022" : formatCents(totals.assetsCents).replace("\xA5", "") });
+    const latest = [...snapshot.accounts.flatMap((a) => a.holdings.filter((h) => h.valueCents !== null && h.quote && decimal2(h.quote.price).gt(0)).map((h) => {
+      var _a2;
+      return (_a2 = h.quote) == null ? void 0 : _a2.asOf;
+    }).filter((v) => !!v))].sort().reverse()[0];
+    hero.createDiv({ cls: "ledger-assets-updated", text: latest ? `\u6700\u65B0\u884C\u60C5 ${latest.replace("T", " ").slice(0, 19)} \xB7 \u5404\u6301\u4ED3\u65E5\u671F\u89C1\u4E0B\u65B9` : "\u4F59\u989D\u6765\u81EA\u4F60\u786E\u8BA4\u7684\u65F6\u70B9\u4E0E\u5DF2\u8BB0\u5F55\u6536\u652F" });
+    const metrics = hero.createDiv({ cls: "ledger-assets-metrics" });
+    metrics.createSpan({ text: `\u51C0\u8D44\u4EA7 ${money3(totals.netCents)}` });
+    metrics.createSpan({ text: `\u603B\u8D1F\u503A ${money3(totals.liabilitiesCents)}` });
+    metrics.createSpan({ text: `\u8D1F\u503A\u7387 ${state.hideAmounts ? "\u2022\u2022\u2022\u2022" : totals.assetsCents > 0 ? `${(totals.liabilitiesCents / totals.assetsCents * 100).toFixed(2)}%` : "\u2014"}` });
+    this.renderComparison(hero, snapshot);
+    if (snapshot.pending.length) {
+      const warning = root.createDiv({ cls: "ledger-assets-warning" });
+      warning.createEl("strong", { text: "\u6709\u8D44\u91D1\u53D8\u52A8\u5F85\u6838\u5BF9" });
+      for (const text2 of snapshot.pending) warning.createEl("p", { text: state.hideAmounts ? "\u6709\u6D41\u6C34\u65F6\u95F4\u6216\u5173\u8054\u9700\u8981\u6838\u5BF9" : text2 });
+      button(warning, "\u6838\u5BF9\u6D41\u6C34", () => this.reviewForm());
+      button(warning, "\u6838\u5BF9\u4EA4\u6613\u5173\u8054", () => this.linkForm());
+    }
+    const card2 = root.createDiv({ cls: "ledger-assets-card" }), heading = card2.createDiv({ cls: "ledger-assets-title-row" });
+    heading.createEl("h3", { text: "\u8D44\u4EA7\u7EC4\u6210" });
+    button(heading, "\u653E\u5927\u67E5\u770B", () => this.sankeyModal(snapshot));
+    renderAssetSankey(card2, snapshot, state.excludeFixed, state.hideAmounts, this.expanded, (id) => {
+      this.expanded.has(id) ? this.expanded.delete(id) : this.expanded.add(id);
+      this.plugin.refreshAssetViews();
+    }, (id) => this.accountDetails(id));
+    card2.createEl("p", { cls: "ledger-assets-hint", text: "\u66F2\u7EBF\u8868\u793A\u5F53\u524D\u8D44\u4EA7\u7EC4\u6210 \xB7 \u70B9\u51FB\u6295\u8D44\u8D26\u6237\u5C55\u5F00\u6301\u4ED3 \xB7 \u624B\u673A\u53EF\u6A2A\u5411\u6ED1\u52A8" });
+    const list = root.createDiv({ cls: "ledger-assets-card" });
+    const listHeader = list.createDiv({ cls: "ledger-assets-title-row" });
+    listHeader.createEl("h3", { text: "\u8D26\u6237\u4E0E\u6301\u4ED3" });
+    button(listHeader, "\u9ED8\u8BA4\u6263\u6B3E\u8D26\u6237", () => this.defaultForm());
+    button(listHeader, "\u6838\u5BF9\u6D41\u6C34", () => this.reviewForm());
+    button(listHeader, "\u4EA4\u6613\u5173\u8054", () => this.linkForm());
+    if (!state.accounts.length) list.createEl("p", { text: "\u5148\u6DFB\u52A0\u73B0\u91D1\u8D26\u6237\u548C\u6295\u8D44\u8D26\u6237\uFF0C\u518D\u6DFB\u52A0\u6301\u4ED3\u3002\u521D\u59CB\u8D44\u4EA7\u53EA\u767B\u8BB0\u4E00\u6B21\uFF0C\u4E4B\u540E\u884C\u60C5\u4E0E\u65B0\u6D88\u8D39\u4F1A\u81EA\u52A8\u66F4\u65B0\u3002" });
+    for (const account of snapshot.accounts) {
+      const row = list.createDiv({ cls: "ledger-assets-account" });
+      const info = row.createDiv();
+      info.createEl("strong", { text: account.name });
+      info.createEl("small", { text: `${ASSET_NAMES[account.kind]}${account.id === state.defaultCashId ? " \xB7 \u9ED8\u8BA4\u6D88\u8D39\u6263\u6B3E" : ""}${account.missing ? " \xB7 \u542B\u672A\u4F30\u503C\u6301\u4ED3" : ""}` });
+      row.createEl("strong", { text: money3(account.cents) });
+      button(row, "\u7BA1\u7406", () => this.accountDetails(account.id));
+      for (const holding of account.holdings) {
+        const detail = list.createDiv({ cls: "ledger-assets-holding" });
+        detail.createEl("strong", { text: holding.name });
+        detail.createSpan({ text: `${holding.code} \xB7 ${state.hideAmounts ? "\u2022\u2022\u2022\u2022" : holding.quantity} ${holding.kind === "stock" ? "\u80A1" : "\u4EFD"}` });
+        detail.createSpan({ text: holding.valueCents === null ? "\u672A\u4F30\u503C" : money3(holding.valueCents) });
+        if (holding.valueCents !== null) detail.createEl("small", { text: `\u6301\u4ED3\u76C8\u4E8F ${money3(holding.valueCents - holding.costCents)}` });
+        detail.createEl("small", { text: holding.quote && decimal2(holding.quote.price).gt(0) ? `\u884C\u60C5 ${holding.quote.asOf.replace("T", " ").slice(0, 19)}${holding.quote.error ? " \xB7 \u66F4\u65B0\u5931\u8D25\uFF0C\u4FDD\u7559\u4E0A\u6B21\u503C" : ""}` : ((_a = holding.quote) == null ? void 0 : _a.error) || "\u7B49\u5F85\u67E5\u8BE2\u51C0\u503C\u6216\u4EF7\u683C" });
+        button(detail, "\u6838\u5BF9\u6301\u4ED3", () => this.holdingCorrection(holding));
+      }
+    }
+    const events = root.createEl("details", { cls: "ledger-assets-card" });
+    events.createEl("summary", { text: `\u8D44\u4EA7\u4EA4\u6613\u8BB0\u5F55\uFF08${state.events.length}\u7B14\uFF09` });
+    for (const event of [...state.events].reverse().slice(0, 100)) events.createDiv({ cls: "ledger-assets-event-row", text: `${event.date} \xB7 ${event.note || EVENT_NAMES[event.kind]} \xB7 ${money3(event.amountCents)}${event.link ? " \xB7 \u5DF2\u5173\u8054\u8D26\u672C" : ""}` });
+    root.createEl("p", { cls: "ledger-assets-hint", text: "\u8D44\u4EA7\u4E0E\u6D88\u8D39\u7EDF\u8BA1\u4F7F\u7528\u72EC\u7ACB\u53E3\u5F84\u3002\u57FA\u91D1\u6309\u6700\u65B0\u516C\u5E03\u51C0\u503C\u4F30\u503C\uFF1B\u884C\u60C5\u81EA\u52A8\u66F4\u65B0\u4E0D\u4F1A\u8C03\u7528AI\u3002\u516C\u5F00\u884C\u60C5\u53EF\u80FD\u5EF6\u8FDF\u6216\u6682\u65F6\u4E0D\u53EF\u7528\u3002" });
+  }
+  save(change) {
+    return this.plugin.updateAssets(change);
+  }
+  renderComparison(parent, current) {
+    const state = this.plugin.settings.assets, previous = previousMonthSnapshot(state, current.date), card2 = parent.createDiv({ cls: "ledger-assets-comparison" });
+    const title = card2.createDiv({ cls: "ledger-assets-title-row" });
+    title.createSpan({ text: previous ? `\u76F8\u6BD4 ${previous.date}` : "\u6682\u65E0\u53EF\u6BD4\u8BB0\u5F55" });
+    button(title, "\u8D44\u4EA7\u6708\u5386 \u203A", () => this.calendarModal());
+    if (!previous) {
+      card2.createEl("p", { cls: "ledger-assets-hint", text: "\u6BCF\u65E5\u81EA\u52A8\u4FDD\u5B58\u5B9E\u9645\u8D44\u4EA7\u5FEB\u7167\uFF0C\u6709\u4E0A\u6708\u8BB0\u5F55\u540E\u663E\u793A\u589E\u51CF\u3002" });
+      return;
+    }
+    const before = assetTotals(previous, state.excludeFixed), after = assetTotals(current, state.excludeFixed);
+    if (before.missing || after.missing) {
+      card2.createEl("p", { text: "\u672C\u6B21\u6216\u5386\u53F2\u4F30\u503C\u4E0D\u5B8C\u6574\uFF0C\u6682\u4E0D\u5224\u65AD\u8D44\u4EA7\u589E\u51CF\u3002" });
+      return;
+    }
+    const delta = after.assetsCents - before.assetsCents, debt = after.liabilitiesCents - before.liabilitiesCents;
+    const summary = card2.createDiv({ cls: "ledger-assets-change-summary" });
+    summary.createSpan({ text: `\u603B\u8D44\u4EA7 ${state.hideAmounts ? "\u2022\u2022\u2022\u2022" : `${delta >= 0 ? "+" : "\u2212"}${formatCents(Math.abs(delta))}`}` });
+    summary.createSpan({ text: `\u603B\u8D1F\u503A ${state.hideAmounts ? "\u2022\u2022\u2022\u2022" : debt === 0 ? "\u6CA1\u6709\u53D8\u5316" : `${debt > 0 ? "+" : "\u2212"}${formatCents(Math.abs(debt))}`}` });
+    const values = ["cash", "fixed", "investment", "receivable", "liability"].filter((k) => !(state.excludeFixed && k === "fixed")).map((k) => ({ kind: k, cents: after.groups[k] - before.groups[k] }));
+    const maximum = Math.max(1, ...values.map((v) => Math.abs(v.cents))), bars = card2.createDiv({ cls: "ledger-assets-change-bars" });
+    for (const v of values) {
+      const column = bars.createDiv({ cls: "ledger-assets-change-column" });
+      const compact = Math.abs(v.cents) >= 1e6 ? `${(Math.abs(v.cents) / 1e6).toFixed(2)}\u4E07` : formatCents(Math.abs(v.cents)).replace("\xA5", "");
+      column.createEl("small", { cls: v.cents > 0 ? "is-up" : "is-down", text: state.hideAmounts ? "\u2022\u2022\u2022\u2022" : v.cents === 0 ? "\u6CA1\u6709\u53D8\u5316" : `${v.cents > 0 ? "\u2191" : "\u2193"}${compact}` });
+      const track = column.createDiv({ cls: "ledger-assets-change-track" });
+      const fill = track.createDiv({ cls: `ledger-assets-change-fill${v.cents < 0 ? " is-negative" : ""}` });
+      fill.style.height = `${state.hideAmounts ? 0 : Math.abs(v.cents) / maximum * 100}%`;
+      column.createEl("small", { text: ASSET_NAMES[v.kind] });
+    }
+  }
+  accountForm(existing) {
+    new AssetFormModal(this.plugin, existing ? "\u7BA1\u7406\u8D26\u6237\u4E0E\u4F59\u989D\u6838\u5BF9" : "\u6DFB\u52A0\u8D44\u4EA7\u8D26\u6237", (body) => {
+      var _a, _b;
+      const name = input(body, "\u8D26\u6237\u540D\u79F0", (_a = existing == null ? void 0 : existing.name) != null ? _a : "");
+      const kind = select(body, "\u8D26\u6237\u7C7B\u522B", Object.entries(ASSET_NAMES), (_b = existing == null ? void 0 : existing.kind) != null ? _b : "cash");
+      kind.disabled = !!existing;
+      const balance = input(body, "\u5B9E\u9645\u4F59\u989D\uFF0F\u8D44\u4EA7\u4EF7\u503C\uFF08\u5143\uFF09", existing ? (this.plugin.assetSnapshot().accounts.find((a) => a.id === existing.id).cents / 100).toFixed(2) : "0", "text", "\u6295\u8D44\u8D26\u6237\u6309\u6301\u4ED3\u4F30\u503C\uFF0C\u6B64\u9879\u4E0D\u53C2\u4E0E\u8BA1\u7B97\uFF1B\u8D1F\u503A\u586B\u5199\u5C1A\u6B20\u91D1\u989D\u3002");
+      const at = input(body, "\u4F59\u989D\u5BF9\u5E94\u65F6\u70B9", localDateTime(), "datetime-local", "\u6B64\u65F6\u70B9\u524D\u5DF2\u5B58\u5728\u7684\u6D88\u8D39\u89C6\u4E3A\u5DF2\u5305\u542B\u5728\u4F59\u989D\u4E2D\uFF1B\u672A\u77E5\u65F6\u95F4\u7684\u540C\u65E5\u8865\u8BB0\u9700\u6838\u5BF9\u3002");
+      const recalibrate = existing && existing.kind !== "investment" ? input(body, "\u6309\u6B64\u4F59\u989D\u91CD\u65B0\u6821\u51C6\uFF08\u5426\u5219\u4EC5\u4FEE\u6539\u540D\u79F0\uFF09", "", "checkbox") : null;
+      if (existing) {
+        balance.disabled = true;
+        at.disabled = true;
+        recalibrate == null ? void 0 : recalibrate.addEventListener("change", () => {
+          balance.disabled = !recalibrate.checked;
+          at.disabled = !recalibrate.checked;
+        });
+      }
+      const useDefault = input(body, "\u8BBE\u4E3A\u9ED8\u8BA4\u6D88\u8D39\u6263\u6B3E\u8D26\u6237", "", "checkbox");
+      useDefault.checked = !this.plugin.settings.assets.defaultCashId;
+      return async () => {
+        if (!name.value.trim()) throw new Error("\u8BF7\u586B\u5199\u8D26\u6237\u540D\u79F0");
+        const now = parseBaseline(at.value), category = kind.value, cents = category === "investment" ? 0 : moneyCents(balance.value, category !== "liability");
+        await this.save((state) => {
+          let account = existing && state.accounts.find((a) => a.id === existing.id);
+          if (account) {
+            account.name = name.value.trim();
+            if (recalibrate == null ? void 0 : recalibrate.checked) calibrateAccount(state, account.id, cents, this.records(), now);
+          } else {
+            account = { id: assetId(), name: name.value.trim(), kind: category, balanceCents: cents, baselineAt: now.toISOString(), includedRecordIds: baselineRecordIds(this.records(), now), includedEventIds: [] };
+            state.accounts.push(account);
+          }
+          if (category === "cash" && useDefault.checked) setDefaultCash(state, account.id, this.records(), existing ? /* @__PURE__ */ new Date() : now);
+        });
+      };
+    }).open();
+  }
+  holdingForm() {
+    const choices = this.plugin.settings.assets.accounts.filter((a) => a.kind === "investment").map((a) => [a.id, a.name]);
+    if (!choices.length) {
+      new import_obsidian8.Notice("\u8BF7\u5148\u6DFB\u52A0\u4E00\u4E2A\u6295\u8D44\u7406\u8D22\u8D26\u6237");
+      this.accountForm();
+      return;
+    }
+    new AssetFormModal(this.plugin, "\u6DFB\u52A0\u521D\u59CB\u6301\u4ED3", (body) => {
+      const account = select(body, "\u6295\u8D44\u8D26\u6237", choices), kind = select(body, "\u8BC1\u5238\u7C7B\u578B", [["fund", "\u666E\u901A\u51C0\u503C\u578B\u516C\u52DF\u57FA\u91D1"], ["stock", "A\u80A1"], ["etf", "\u573A\u5185ETF"]]);
+      const code = input(body, "\u8BC1\u5238\u4EE3\u7801"), name = input(body, "\u540D\u79F0\uFF08\u53EF\u7559\u7A7A\uFF0C\u67E5\u8BE2\u540E\u8865\u5145\uFF09");
+      const amount = input(body, "\u4E70\u5165\u5B9E\u9645\u652F\u4ED8\u91D1\u989D\uFF08\u5143\uFF0C\u542B\u8D39\u7528\uFF09", "", "text"), fee = input(body, "\u5176\u4E2D\u624B\u7EED\u8D39\uFF08\u5143\uFF09", "0"), price = input(body, "\u5B9E\u9645\u6210\u4EA4\u51C0\u503C\uFF0F\u4EF7\u683C");
+      const date = input(body, "\u6301\u4ED3\u786E\u8BA4\u65E5\u671F", isoFromDate(/* @__PURE__ */ new Date()), "date"), quantity = input(body, "\u786E\u8BA4\u6301\u6709\u4EFD\u989D\uFF0F\u80A1\u6570", "", "text", "\u70B9\u51FB\u6362\u7B97\u540E\uFF0C\u8BF7\u4E0E\u5E73\u53F0\u6838\u5BF9\uFF1B\u57FA\u91D1\u9ED8\u8BA4\u56DB\u820D\u4E94\u5165\u81F3\u4E24\u4F4D\uFF0C\u5B9E\u9645\u4EFD\u989D\u53EF\u4FEE\u6B63\u3002");
+      button(body, "\u6309\u91D1\u989D\u4E0E\u4EF7\u683C\u6362\u7B97", () => {
+        try {
+          quantity.value = quantityFromAmount(moneyCents(amount.value), moneyCents(fee.value), price.value, kind.value);
+        } catch (e) {
+          new import_obsidian8.Notice(e instanceof Error ? e.message : "\u6362\u7B97\u5931\u8D25");
+        }
+      });
+      const confirmed = input(body, "\u5DF2\u6838\u5BF9\u5E73\u53F0\u5B9E\u9645\u6301\u4ED3\u6570\u91CF", "", "checkbox");
+      body.createEl("p", { cls: "ledger-assets-hint", text: "\u8FD9\u662F\u5DF2\u6709\u6301\u4ED3\uFF0C\u4E0D\u91CD\u590D\u6263\u51CF\u73B0\u91D1\u3002\u8D27\u5E01\u57FA\u91D1\u6682\u4E0D\u652F\u6301\u81EA\u52A8\u6536\u76CA\u7D2F\u8BA1\uFF1B\u6295\u5165\u91D1\u989D\u4E0E\u51C0\u503C\u4E0D\u8DB3\u4EE5\u786E\u8BA4\u5206\u7EA2\u540E\u7684\u4EFD\u989D\uFF0C\u8BF7\u6838\u5BF9\u5E73\u53F0\u5B9E\u9645\u6570\u91CF\u3002" });
+      return async () => {
+        const security = kind.value, securityCode = normalizeCode(security, code.value), q = validateQuantity(quantity.value, security), cost = moneyCents(amount.value), fees = moneyCents(fee.value);
+        if (!confirmed.checked || fees >= cost || decimal2(price.value).lte(0)) throw new Error("\u8BF7\u6838\u5BF9\u5E76\u786E\u8BA4\u6301\u4ED3\u6570\u91CF\u3001\u6210\u4EA4\u4EF7\u683C\u53CA\u8D39\u7528");
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date.value) || date.value > isoFromDate(/* @__PURE__ */ new Date())) throw new Error("\u786E\u8BA4\u65E5\u671F\u65E0\u6548");
+        if (/货币|现金管理|现金增利|活期/.test(name.value)) throw new Error("\u8D27\u5E01\u57FA\u91D1\u6682\u4E0D\u652F\u6301\u81EA\u52A8\u6536\u76CA\u7D2F\u8BA1");
+        await this.save((state) => {
+          state.holdings.push({ id: assetId(), accountId: account.value, kind: security, code: securityCode, name: name.value.trim() || securityCode, quantity: q, costCents: cost, acquiredOn: date.value });
+        });
+        void this.plugin.refreshAssetQuotes().catch(() => {
+        });
+      };
+    }).open();
+  }
+  holdingCorrection(holding) {
+    new AssetFormModal(this.plugin, "\u6838\u5BF9\u6301\u4ED3\u4FE1\u606F", (body) => {
+      const name = input(body, "\u6301\u4ED3\u540D\u79F0", holding.name), code = input(body, "\u8BC1\u5238\u4EE3\u7801", holding.code), quantity = input(body, "\u5F53\u524D\u5B9E\u9645\u603B\u6570\u91CF\uFF0F\u4EFD\u989D", holding.quantity), cost = input(body, "\u5269\u4F59\u6301\u4ED3\u603B\u6210\u672C\uFF08\u5143\uFF09", (holding.costCents / 100).toFixed(2));
+      body.createEl("p", { text: "\u7528\u4E8E\u7EA0\u6B63\u521D\u59CB\u5F55\u5165\u3001\u5206\u7EA2\u6216\u62C6\u5206\u540E\u7684\u6301\u4ED3\u3002\u6B64\u64CD\u4F5C\u4E0D\u79FB\u52A8\u73B0\u91D1\uFF1B\u5B9E\u9645\u4E70\u5356\u8BF7\u4F7F\u7528\u8BB0\u5F55\u4EA4\u6613\u3002\u5386\u53F2\u5FEB\u7167\u4FDD\u7559\u5F53\u65F6\u6570\u636E\u3002" });
+      return async () => {
+        const normalized = normalizeCode(holding.kind, code.value), number = decimal2(quantity.value);
+        if (number.lt(0) || holding.kind !== "fund" && !number.isInteger()) throw new Error("\u6570\u91CF\u987B\u4E3A\u975E\u8D1F\u6570\uFF0C\u80A1\u7968\u548CETF\u987B\u4E3A\u6574\u6570");
+        const cents = moneyCents(cost.value);
+        await this.save((s) => {
+          const h = s.holdings.find((h2) => h2.id === holding.id);
+          if (!h) throw new Error("\u6301\u4ED3\u4E0D\u5B58\u5728");
+          h.name = name.value.trim() || normalized;
+          h.code = normalized;
+          h.quantity = number.toFixed();
+          h.costCents = cents;
+        });
+        void this.plugin.refreshAssetQuotes().catch(() => {
+        });
+      };
+    }).open();
+  }
+  eventForm() {
+    const state = this.plugin.settings.assets;
+    if (!state.accounts.length) {
+      this.accountForm();
+      return;
+    }
+    new AssetFormModal(this.plugin, "\u8BB0\u5F55\u8D44\u4EA7\u4EA4\u6613", (body) => {
+      const type = select(body, "\u4EA4\u6613\u7C7B\u578B", Object.entries(EVENT_NAMES));
+      const account = select(body, "\u6295\u8D44\uFF0F\u8F6C\u51FA\uFF0F\u6536\u5165\uFF0F\u8D1F\u503A\u8D26\u6237", state.accounts.map((a) => [a.id, `${a.name} \xB7 ${ASSET_NAMES[a.kind]}`]));
+      const cash = select(body, "\u6263\u6B3E\uFF0F\u5230\u8D26\uFF0F\u8F6C\u5165\u73B0\u91D1\u8D26\u6237", [["", "\u8BF7\u9009\u62E9"], ...state.accounts.filter((a) => a.kind === "cash").map((a) => [a.id, a.name])], state.defaultCashId);
+      const holding = select(body, "\u6301\u4ED3\uFF08\u4E70\u5356\u3001\u5206\u7EA2\u6216\u4EFD\u989D\u8C03\u6574\u65F6\u5FC5\u9009\uFF09", [["", "\u8BF7\u9009\u62E9"], ...state.holdings.map((h) => {
+        var _a;
+        return [h.id, `${h.name} \xB7 ${(_a = state.accounts.find((a) => a.id === h.accountId)) == null ? void 0 : _a.name}`];
+      })]);
+      holding.addEventListener("change", () => {
+        const h = state.holdings.find((h2) => h2.id === holding.value);
+        if (h) account.value = h.accountId;
+      });
+      const amount = input(body, "\u5B9E\u9645\u652F\u4ED8\uFF0F\u5230\u8D26\u91D1\u989D\uFF08\u5143\uFF0C\u542B\u8D39\u7528\uFF1B\u4F59\u989D\u8C03\u6574\u53EF\u8D1F\u6570\uFF09", "0");
+      const fee = input(body, "\u624B\u7EED\u8D39\uFF08\u5143\uFF09", "0"), price = input(body, "\u6210\u4EA4\u4EF7\u683C\uFF0F\u51C0\u503C\uFF08\u4E70\u5356\u6362\u7B97\u65F6\u586B\u5199\uFF09"), quantity = input(body, "\u5B9E\u9645\u6210\u4EA4\u6570\u91CF\uFF0F\u4EFD\u989D\u8C03\u6574\u540E\u7684\u603B\u6570\u91CF");
+      button(body, "\u6362\u7B97\u6210\u4EA4\u6570\u91CF", () => {
+        try {
+          const h = state.holdings.find((h2) => h2.id === holding.value);
+          if (!h) throw new Error("\u8BF7\u9009\u62E9\u6301\u4ED3");
+          quantity.value = quantityFromAmount(moneyCents(amount.value), moneyCents(fee.value), price.value, h.kind, type.value === "sell");
+        } catch (e) {
+          new import_obsidian8.Notice(e instanceof Error ? e.message : "\u6362\u7B97\u5931\u8D25");
+        }
+      });
+      const date = input(body, "\u786E\u8BA4\u65E5\u671F", isoFromDate(/* @__PURE__ */ new Date()), "date"), note = input(body, "\u5907\u6CE8");
+      const links = this.records().slice().sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time));
+      const linked = select(body, "\u5173\u8054\u5DF2\u8BB0\u8D26\u6D41\u6C34\uFF08\u907F\u514D\u91CD\u590D\u6263\u6B3E\uFF09", [["", "\u4E0D\u5173\u8054"], ...links.map((r) => [r.id, `${r.date} ${r.time} ${formatCents(r.cents)} ${r.note || r.category}`])]);
+      body.createEl("p", { cls: "ledger-assets-hint", text: "\u4E70\u5356\u6309\u5B9E\u9645\u786E\u8BA4\u4EFD\u989D\u767B\u8BB0\u3002\u8F6C\u8D26\u91D1\u989D\u4E3A\u5230\u8D26\u91D1\u989D\uFF0C\u8F6C\u51FA\u53E6\u6263\u8D39\u7528\uFF1B\u5356\u51FA\u91D1\u989D\u4E3A\u5B9E\u9645\u5230\u8D26\u91D1\u989D\u3002\u8FD8\u6B3E\u91D1\u989D\u4E3A\u51CF\u5C11\u7684\u8D1F\u503A\u672C\u91D1\uFF0C\u8D39\u7528\u53E6\u6263\u73B0\u91D1\u3002\u7EA2\u5229\u518D\u6295\u8D44\u53EA\u589E\u52A0\u786E\u8BA4\u4EFD\u989D\uFF1B\u4EFD\u989D\u8C03\u6574\u7528\u4E8E\u62C6\u5206\u6216\u6838\u5BF9\uFF0C\u4E0D\u6539\u73B0\u91D1\u53CA\u6301\u4ED3\u6210\u672C\u3002\u5173\u8054\u540E\u8BE5\u7B14\u6D88\u8D39\u7531\u8D44\u4EA7\u4EA4\u6613\u6263\u6B3E\u3002" });
+      const confirmed = input(body, "\u5DF2\u786E\u8BA4\u6210\u4EA4\u6570\u91CF\u4E0E\u5B9E\u9645\u91D1\u989D", "", "checkbox");
+      return async () => {
+        if (!confirmed.checked) throw new Error("\u8BF7\u786E\u8BA4\u8FD9\u7B14\u8D44\u91D1\u53D8\u52A8\u5DF2\u53D1\u751F");
+        const kind = type.value;
+        const event = { id: assetId(), kind, date: date.value, createdAt: (/* @__PURE__ */ new Date()).toISOString(), accountId: account.value, cashAccountId: cash.value || void 0, holdingId: holding.value || void 0, amountCents: moneyCents(amount.value, kind === "adjust"), feeCents: moneyCents(fee.value), quantity: quantity.value || void 0, price: price.value || void 0, note: note.value.trim(), link: linked.value ? linkRecord(links.find((r) => r.id === linked.value)) : void 0 };
+        if (event.link && !["buy", "transfer", "repay"].includes(kind)) throw new Error("\u8D26\u672C\u662F\u652F\u51FA\u6D41\u6C34\uFF0C\u53EA\u6709\u4E70\u5165\u3001\u8F6C\u8D26\u6216\u8FD8\u6B3E\u53EF\u5173\u8054\uFF1B\u5176\u4ED6\u7C7B\u578B\u8BF7\u53D6\u6D88\u5173\u8054");
+        if (["quantity", "reinvest"].includes(kind) && (event.amountCents !== 0 || event.feeCents !== 0)) throw new Error("\u4EFD\u989D\u8C03\u6574\u4E0E\u7EA2\u5229\u518D\u6295\u8D44\u4E0D\u79FB\u52A8\u73B0\u91D1\uFF0C\u8BF7\u5C06\u91D1\u989D\u548C\u8D39\u7528\u586B\u4E3A0");
+        await this.save((s) => {
+          addAssetEvent(s, event);
+        });
+        void this.plugin.refreshAssetQuotes().catch(() => {
+        });
+      };
+    }).open();
+  }
+  defaultForm() {
+    const accounts = this.plugin.settings.assets.accounts.filter((a) => a.kind === "cash");
+    if (!accounts.length) {
+      this.accountForm();
+      return;
+    }
+    new AssetFormModal(this.plugin, "\u9ED8\u8BA4\u6D88\u8D39\u6263\u6B3E\u8D26\u6237", (body) => {
+      const account = select(body, "\u73B0\u91D1\u8D26\u6237", accounts.map((a) => [a.id, a.name]), this.plugin.settings.assets.defaultCashId);
+      body.createEl("p", { text: "\u5207\u6362\u4ECE\u5F53\u524D\u65F6\u70B9\u751F\u6548\uFF0C\u5DF2\u53D1\u751F\u7684\u5386\u53F2\u6D88\u8D39\u7559\u5728\u539F\u8D26\u6237\u3002\u4E4B\u540E\u6240\u6709\u5DF2\u8BB0\u8D26\u652F\u51FA\u9ED8\u8BA4\u6263\u6B64\u8D26\u6237\uFF0C\u4E0E\u6D88\u8D39\u9875\u9762\u7684\u7B5B\u9009\u65E0\u5173\u3002" });
+      return () => this.save((s) => setDefaultCash(s, account.value, this.records(), /* @__PURE__ */ new Date()));
+    }).open();
+  }
+  reviewForm() {
+    const records = this.records().slice().sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time));
+    if (!records.length) {
+      new import_obsidian8.Notice("\u6CA1\u6709\u53EF\u6838\u5BF9\u7684\u6D88\u8D39\u6D41\u6C34");
+      return;
+    }
+    new AssetFormModal(this.plugin, "\u6838\u5BF9\u4ED8\u6B3E\u8D26\u6237\u4E0E\u8865\u8BB0", (body) => {
+      const record = select(body, "\u6D88\u8D39\u6D41\u6C34", records.map((r) => [r.id, `${r.date} ${r.time} ${formatCents(r.cents)} ${r.note || r.category}`]));
+      const account = select(body, "\u6263\u6B3E\u5F52\u5C5E", [["exclude", "\u5DF2\u5305\u542B\u5728\u57FA\u7EBF\uFF0F\u65E0\u9700\u518D\u6B21\u6263\u6B3E"], ...this.plugin.settings.assets.accounts.filter((a) => a.kind === "cash").map((a) => [a.id, a.name])]);
+      body.createEl("p", { text: "\u660E\u786E\u6307\u5B9A\u540E\uFF0C\u8FD9\u7B14\u6D41\u6C34\u4E0D\u518D\u6309\u9ED8\u8BA4\u8D26\u6237\u63A8\u7B97\u3002\u4F59\u989D\u6838\u5BF9\u4F1A\u5C06\u5F53\u65F6\u5DF2\u5165\u8D26\u8BB0\u5F55\u7EB3\u5165\u65B0\u57FA\u7EBF\u3002" });
+      return () => this.save((s) => {
+        const selected = records.find((r) => r.id === record.value);
+        for (const id of Object.keys(s.recordAssignments)) {
+          if (knownRecord(records.map((r) => r.id), id)) continue;
+          if (!id.startsWith("ledger-v2:")) continue;
+          try {
+            const identity = JSON.parse(id.slice(10));
+            if (identity[0] === selected.path && identity[1] === selected.date && identity[2] === selected.time && (identity[5] === selected.note || identity[4] === selected.cents)) delete s.recordAssignments[id];
+          } catch (e) {
+          }
+        }
+        s.recordAssignments[record.value] = account.value;
+      });
+    }).open();
+  }
+  linkForm() {
+    const events = this.plugin.settings.assets.events.filter((e) => ["buy", "transfer", "repay"].includes(e.kind)), records = this.records();
+    if (!events.length) {
+      new import_obsidian8.Notice("\u6CA1\u6709\u9700\u8981\u5173\u8054\u7684\u4E70\u5165\u3001\u8F6C\u8D26\u6216\u8FD8\u6B3E\u4EA4\u6613");
+      return;
+    }
+    new AssetFormModal(this.plugin, "\u6838\u5BF9\u4EA4\u6613\u4E0E\u8D26\u672C\u5173\u8054", (body) => {
+      const event = select(body, "\u8D44\u4EA7\u4EA4\u6613", events.map((e) => [e.id, `${e.date} ${e.note || EVENT_NAMES[e.kind]} ${formatCents(e.amountCents)}`]));
+      const record = select(body, "\u8D26\u672C\u6D41\u6C34", [["", "\u89E3\u9664\u5173\u8054"], ...records.map((r) => [r.id, `${r.date} ${r.time} ${formatCents(r.cents)} ${r.note || r.category}`])]);
+      body.createEl("p", { text: "\u5173\u8054\u53EA\u6392\u9664\u8D26\u672C\u91CD\u590D\u6263\u6B3E\uFF0C\u4E0D\u6539\u53D8\u5DF2\u767B\u8BB0\u7684\u6210\u4EA4\u91D1\u989D\u6216\u6301\u4ED3\u3002\u8BF7\u786E\u8BA4\u8FD9\u4E24\u6761\u8BB0\u5F55\u63CF\u8FF0\u540C\u4E00\u7B14\u8D44\u91D1\u53D8\u52A8\u3002" });
+      return () => this.save((s) => {
+        if (record.value && s.events.some((e) => e.id !== event.value && e.link && knownRecord([e.link.id], record.value))) throw new Error("\u8BE5\u6D41\u6C34\u5DF2\u5173\u8054\u5176\u4ED6\u4EA4\u6613");
+        s.events.find((e) => e.id === event.value).link = record.value ? linkRecord(records.find((r) => r.id === record.value)) : void 0;
+      });
+    }).open();
+  }
+  accountDetails(id) {
+    const account = this.plugin.settings.assets.accounts.find((a) => a.id === id);
+    if (account) this.accountForm(account);
+  }
+  sankeyModal(snapshot) {
+    const modal = new import_obsidian8.Modal(this.plugin.app);
+    modal.setTitle(`\u8D44\u4EA7\u7EC4\u6210 \xB7 ${snapshot.date}`);
+    modal.modalEl.addClass("ledger-assets-sankey-modal");
+    const expanded = new Set(this.expanded), draw = () => {
+      modal.contentEl.empty();
+      renderAssetSankey(modal.contentEl, snapshot, this.plugin.settings.assets.excludeFixed, this.plugin.settings.assets.hideAmounts, expanded, (id) => {
+        expanded.has(id) ? expanded.delete(id) : expanded.add(id);
+        draw();
+      }, (id) => this.accountDetails(id));
+    };
+    modal.onOpen = draw;
+    modal.open();
+  }
+  calendarModal() {
+    const modal = new import_obsidian8.Modal(this.plugin.app);
+    modal.setTitle("\u8D44\u4EA7\u6708\u5386");
+    modal.modalEl.addClass("ledger-assets-sankey-modal");
+    modal.onOpen = () => {
+      const state = this.plugin.settings.assets, snapshots = [...state.snapshots].sort((a, b) => b.date.localeCompare(a.date));
+      if (!snapshots.length) {
+        modal.contentEl.createEl("p", { text: "\u5C1A\u65E0\u8D44\u4EA7\u5FEB\u7167\uFF0C\u6DFB\u52A0\u8D26\u6237\u540E\u81EA\u52A8\u4FDD\u5B58\u3002" });
+        return;
+      }
+      const months = [...new Set(snapshots.map((s) => s.date.slice(0, 7)))];
+      const month = select(modal.contentEl, "\u6708\u4EFD", months.map((m) => [m, m]));
+      const calendar = modal.contentEl.createDiv({ cls: "ledger-assets-calendar" }), detail = modal.contentEl.createDiv();
+      let selected = snapshots[0].date;
+      const draw = () => {
+        detail.empty();
+        const snapshot = snapshots.find((s) => s.date === selected), totals = assetTotals(snapshot, state.excludeFixed);
+        detail.createEl("h3", { text: `${snapshot.date} \xB7 ${state.hideAmounts ? "\u2022\u2022\u2022\u2022" : formatCents(totals.assetsCents)}${totals.missing ? " \xB7 \u4F30\u503C\u4E0D\u5B8C\u6574" : ""}` });
+        detail.createEl("p", { cls: "ledger-assets-hint", text: `\u4FDD\u5B58\u4E8E ${new Date(snapshot.savedAt).toLocaleString()}\uFF0C\u884C\u60C5\u65E5\u671F\u4FDD\u7559\u5F53\u65F6\u503C\u3002` });
+        const expanded = /* @__PURE__ */ new Set(), chart = detail.createDiv(), render = () => {
+          chart.empty();
+          renderAssetSankey(chart, snapshot, state.excludeFixed, state.hideAmounts, expanded, (id) => {
+            expanded.has(id) ? expanded.delete(id) : expanded.add(id);
+            render();
+          }, () => {
+          });
+        };
+        render();
+        for (const a of snapshot.accounts) detail.createEl("p", { text: `${a.name} \xB7 ${state.hideAmounts ? "\u2022\u2022\u2022\u2022" : formatCents(a.cents)}${a.missing ? " \xB7 \u672A\u5B8C\u6574\u4F30\u503C" : ""}` });
+      };
+      const drawMonth = () => {
+        calendar.empty();
+        for (const day of ["\u4E00", "\u4E8C", "\u4E09", "\u56DB", "\u4E94", "\u516D", "\u65E5"]) calendar.createEl("span", { text: day });
+        const [year, monthNumber] = month.value.split("-").map(Number);
+        const start = new Date(year, monthNumber - 1, 1), days = new Date(year, monthNumber, 0).getDate();
+        for (let index = 0; index < (start.getDay() + 6) % 7; index++) calendar.createSpan();
+        for (let day = 1; day <= days; day++) {
+          const date = `${month.value}-${String(day).padStart(2, "0")}`, available = snapshots.some((s) => s.date === date);
+          const cell = button(calendar, String(day), () => {
+            selected = date;
+            drawMonth();
+            draw();
+          });
+          cell.disabled = !available;
+          cell.classList.toggle("is-selected", date === selected);
+          cell.setAttribute("aria-label", `${date}${available ? "\uFF0C\u67E5\u770B\u8D44\u4EA7\u5FEB\u7167" : "\uFF0C\u65E0\u5FEB\u7167"}`);
+        }
+      };
+      month.addEventListener("change", () => {
+        selected = snapshots.find((s) => s.date.startsWith(month.value)).date;
+        drawMonth();
+        draw();
+      });
+      drawMonth();
+      draw();
+    };
+    modal.open();
+  }
+};
+var EVENT_NAMES = { buy: "\u4E70\u5165", sell: "\u5356\u51FA", income: "\u6536\u5165", transfer: "\u8D26\u6237\u8F6C\u8D26", repay: "\u507F\u8FD8\u8D1F\u503A", dividend: "\u73B0\u91D1\u5206\u7EA2", reinvest: "\u7EA2\u5229\u518D\u6295\u8D44", quantity: "\u4EFD\u989D\u6838\u5BF9\uFF0F\u62C6\u5206", adjust: "\u8D44\u4EA7\uFF0F\u8D1F\u503A\u589E\u51CF" };
 
 // src/chart-data.ts
 function salaryWaterfall(records, range, salaryCents, balanceStatus2) {
@@ -5621,9 +8643,9 @@ function salaryWaterfall(records, range, salaryCents, balanceStatus2) {
     amounts.set(record.category, ((_a = amounts.get(record.category)) != null ? _a : 0) + record.cents);
   }
   const ranked2 = [...amounts].filter(([, cents]) => cents > 0).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "zh-CN"));
-  const groups = ranked2.length <= 4 ? ranked2.map(([label, cents]) => ({ label, cents, categories: [label] })) : [
-    ...ranked2.slice(0, 3).map(([label, cents]) => ({ label, cents, categories: [label] })),
-    { label: `\u5176\u4F59 ${ranked2.length - 3} \u7C7B`, cents: ranked2.slice(3).reduce((sum2, [, cents]) => sum2 + cents, 0), categories: ranked2.slice(3).map(([name]) => name) }
+  const groups = ranked2.length <= 4 ? ranked2.map(([label2, cents]) => ({ label: label2, cents, categories: [label2] })) : [
+    ...ranked2.slice(0, 3).map(([label2, cents]) => ({ label: label2, cents, categories: [label2] })),
+    { label: `\u5176\u4F59 ${ranked2.length - 3} \u7C7B`, cents: ranked2.slice(3).reduce((sum3, [, cents]) => sum3 + cents, 0), categories: ranked2.slice(3).map(([name]) => name) }
   ];
   const steps = [{ label: "\u5468\u671F\u5DE5\u8D44", deltaCents: salaryCents, fromCents: 0, toCents: salaryCents, categories: [], kind: "salary" }];
   let balance = salaryCents;
@@ -5686,7 +8708,8 @@ var VIEW_NAMES2 = [
   ["calendar", "\u65E5\u5386"],
   ["details", "\u660E\u7EC6"],
   ["compare", "\u5BF9\u6BD4"],
-  ["report", "\u652F\u51FA\u62A5\u544A"]
+  ["report", "\u652F\u51FA\u62A5\u544A"],
+  ["assets", "\u8D44\u4EA7"]
 ];
 var AUTO_ADVANCE_SWIPE_DISTANCE = 100;
 function todayIso() {
@@ -5716,26 +8739,26 @@ function pct(value) {
 function ratioLabel(value) {
   if (value === "new") return "\u65B0\u589E\uFF08\u57FA\u671F\u4E3A\u96F6\uFF09";
   if (value === "none") return "\u2014\uFF08\u4E24\u671F\u5747\u4E3A\u96F6\uFF09";
-  const sign = value > 0 ? "+" : "";
-  return `${sign}${(value * 100).toFixed(1)}%`;
+  const sign2 = value > 0 ? "+" : "";
+  return `${sign2}${(value * 100).toFixed(1)}%`;
 }
-function addSelect(parent, label, value, options, onChange) {
+function addSelect(parent, label2, value, options, onChange) {
   const wrapper = parent.createEl("label", { cls: "ledger-field" });
-  wrapper.createSpan({ text: label });
-  const select = wrapper.createEl("select");
-  for (const [optionValue, optionLabel] of options) select.createEl("option", { value: optionValue, text: optionLabel });
-  select.value = value;
-  select.addEventListener("change", () => onChange(select.value));
+  wrapper.createSpan({ text: label2 });
+  const select2 = wrapper.createEl("select");
+  for (const [optionValue, optionLabel] of options) select2.createEl("option", { value: optionValue, text: optionLabel });
+  select2.value = value;
+  select2.addEventListener("change", () => onChange(select2.value));
   return wrapper;
 }
-function addDateInput(parent, label, value, onChange) {
+function addDateInput(parent, label2, value, onChange) {
   const wrapper = parent.createEl("label", { cls: "ledger-field" });
-  wrapper.createSpan({ text: label });
-  const input = wrapper.createEl("input", { type: "date", value });
-  input.addEventListener("change", () => onChange(input.value));
+  wrapper.createSpan({ text: label2 });
+  const input2 = wrapper.createEl("input", { type: "date", value });
+  input2.addEventListener("change", () => onChange(input2.value));
   return wrapper;
 }
-var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.ItemView {
+var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -5753,7 +8776,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
     this.financeAdviceLoading = false;
     this.financeAdviceError = "";
     this.advisorDetailsExpanded = false;
-    this.filtersExpanded = !import_obsidian8.Platform.isMobile;
+    this.filtersExpanded = !import_obsidian9.Platform.isMobile;
     this.drillContext = null;
     this.pullEligible = false;
     this.pullDistance = 0;
@@ -5764,6 +8787,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
     this.settleTimer = null;
     this.filterResizeObserver = null;
     this.reportPanel = null;
+    this.assetPanel = null;
     this.activeView = plugin.settings.defaultView;
     this.preset = plugin.settings.defaultDatePreset;
     const range = this.rangeForPreset(this.preset, /* @__PURE__ */ new Date(), 0);
@@ -5787,6 +8811,13 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
   getIcon() {
     return "chart-pie";
   }
+  showAssets() {
+    this.activeView = "assets";
+    this.cancelFinanceRequest();
+    this.render();
+    void this.plugin.refreshAssetQuotes().catch(() => {
+    });
+  }
   async onOpen() {
     this.closed = false;
     this.containerEl.addClass("ledger-statistics-view");
@@ -5806,6 +8837,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
     disposeCategoryCharts(this.contentEl);
     (_a = this.reportPanel) == null ? void 0 : _a.dispose();
     this.reportPanel = null;
+    this.assetPanel = null;
     this.cancelFinanceRequest();
     (_b = this.filterResizeObserver) == null ? void 0 : _b.disconnect();
     this.filterResizeObserver = null;
@@ -5835,7 +8867,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
     this.render();
   }
   render() {
-    var _a, _b;
+    var _a, _b, _c;
     const root = this.contentEl;
     this.resetAutoAdvanceArm();
     this.pullHint = null;
@@ -5850,17 +8882,20 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
     this.renderHeader(root);
     if (this.activeView === "overview" && files.length > 0 && !this.filter.categories.length) this.renderCoreCards(root);
     if (this.activeView !== "report" && this.filter.categories.length) this.cancelFinanceRequest();
-    if (this.activeView !== "report") this.renderToolbar(root);
+    if (this.activeView !== "report" && this.activeView !== "assets") this.renderToolbar(root);
     this.renderTabs(root);
-    if (this.activeView !== "report") this.renderDrillBack(root);
+    if (this.activeView !== "report" && this.activeView !== "assets") this.renderDrillBack(root);
     const content = root.createDiv({ cls: "ledger-content" });
     const orphanCount = unmatchedStarIds(this.plugin.settings.starredRecordIds, flattenRecords(files)).length;
-    if (orphanCount) {
+    if (orphanCount && this.activeView !== "assets") {
       const warning = content.createDiv({ cls: "ledger-star-warning" });
       warning.createSpan({ text: `${orphanCount} \u4E2A\u661F\u6807\u65E0\u6CD5\u5339\u914D\uFF0C\u53EF\u80FD\u5F71\u54CD\u661F\u6807\u7B5B\u9009\u4E0E\u9884\u7B97\u53E3\u5F84\u3002` });
       createButton(warning, "\u6838\u5BF9\u661F\u6807").addEventListener("click", () => new StarRepairModal(this.plugin).open());
     }
-    if (files.length === 0) {
+    if (this.activeView === "assets") {
+      (_b = this.assetPanel) != null ? _b : this.assetPanel = new AssetPanel(this.plugin);
+      this.assetPanel.render(content);
+    } else if (files.length === 0) {
       renderEmpty(content, `\u201C${this.plugin.settings.ledgerFolder}\u201D\u4E2D\u6CA1\u6709\u627E\u5230 Markdown \u8BB0\u8D26\u6587\u4EF6`);
     } else {
       if (this.activeView === "overview") this.renderOverview(content);
@@ -5870,13 +8905,13 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
       if (this.activeView === "details") this.renderDetails(content);
       if (this.activeView === "compare") this.renderCompare(content);
       if (this.activeView === "report") {
-        (_b = this.reportPanel) != null ? _b : this.reportPanel = new ReportPanel(this.plugin, () => this.render(), (record) => this.openRecord(record));
+        (_c = this.reportPanel) != null ? _c : this.reportPanel = new ReportPanel(this.plugin, () => this.render(), (record) => this.openRecord(record));
         this.reportPanel.render(content);
       }
     }
-    this.renderDiagnostics(root);
+    if (this.activeView !== "assets") this.renderDiagnostics(root);
     const next = VIEW_NAMES2[VIEW_NAMES2.findIndex(([id]) => id === this.activeView) + 1];
-    if (import_obsidian8.Platform.isMobile && next) {
+    if (import_obsidian9.Platform.isMobile && next) {
       this.pullHint = root.createDiv({ cls: "ledger-pull-hint" });
       this.pullHint.setText(`\u7EE7\u7EED\u4E0A\u62C9\uFF0C\u67E5\u770B${next[1]}`);
     }
@@ -5886,7 +8921,8 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
     const header = root.createDiv({ cls: "ledger-header" });
     const title = header.createDiv();
     title.createEl("h2", { text: "\u8BB0\u8D26\u7EDF\u8BA1" });
-    title.createDiv({ cls: "ledger-subtitle", text: "\u672C\u5730\u53EA\u8BFB \xB7 \u6B63\u6587\u9010\u7B14\u8BB0\u5F55\u4E3A\u7EDF\u8BA1\u6765\u6E90" });
+    title.createDiv({ cls: "ledger-subtitle", text: this.activeView === "assets" ? "\u8D44\u4EA7\u603B\u89C8 \xB7 \u6301\u4ED3\u884C\u60C5\u81EA\u52A8\u66F4\u65B0" : "\u672C\u5730\u53EA\u8BFB \xB7 \u6B63\u6587\u9010\u7B14\u8BB0\u5F55\u4E3A\u7EDF\u8BA1\u6765\u6E90" });
+    if (this.activeView === "assets") return;
     const selectedScope = this.activeView === "report" ? (_b = (_a = this.plugin.settings.reportPreferences) == null ? void 0 : _a.scope) != null ? _b : "consumption" : this.filter.scope;
     const scope = header.createDiv({ cls: `ledger-scope-badge is-${selectedScope}` });
     scope.setText(selectedScope === "consumption" ? "\u7B5B\u9009\u53E3\u5F84\uFF1A\u6D88\u8D39\u652F\u51FA" : "\u7B5B\u9009\u53E3\u5F84\uFF1A\u5168\u90E8\u652F\u51FA");
@@ -5900,7 +8936,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
       attr: { type: "button", "aria-expanded": String(this.filtersExpanded) }
     });
     const summaryIcon = summary.createSpan({ cls: "ledger-filter-summary-icon" });
-    (0, import_obsidian8.setIcon)(summaryIcon, "sliders-horizontal");
+    (0, import_obsidian9.setIcon)(summaryIcon, "sliders-horizontal");
     const summaryCopy = summary.createSpan({ cls: "ledger-filter-summary-copy" });
     summaryCopy.createEl("strong", { text: "\u7B5B\u9009\u6761\u4EF6" });
     const categoryLabel = (_b = this.filter.categories[0]) != null ? _b : "\u5168\u90E8\u5206\u7C7B";
@@ -5908,7 +8944,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
     const dateLabel = this.filter.range.start === this.filter.range.end ? this.filter.range.start.slice(5).replace("-", ".") : `${this.filter.range.start.slice(5).replace("-", ".")}\u2013${this.filter.range.end.slice(5).replace("-", ".")}`;
     summaryCopy.createSpan({ text: `${dateLabel} \xB7 ${scopeLabel} \xB7 ${categoryLabel}` });
     const summaryChevron = summary.createSpan({ cls: "ledger-filter-summary-chevron" });
-    (0, import_obsidian8.setIcon)(summaryChevron, "chevron-down");
+    (0, import_obsidian9.setIcon)(summaryChevron, "chevron-down");
     const filterContent = panel.createDiv({ cls: "ledger-filter-content" });
     filterContent.toggleAttribute("inert", !this.filtersExpanded);
     const toolbar = filterContent.createDiv({ cls: "ledger-toolbar" });
@@ -5923,7 +8959,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
       attr: { type: "button", title: `\u5207\u6362\u5230\u4E0A\u4E00\u4E2A${periodName}`, "aria-label": `\u5207\u6362\u5230\u4E0A\u4E00\u4E2A${periodName}` }
     });
     const previousPeriodIcon = previousPeriod.createSpan({ cls: "ledger-period-icon" });
-    (0, import_obsidian8.setIcon)(previousPeriodIcon, "chevron-left");
+    (0, import_obsidian9.setIcon)(previousPeriodIcon, "chevron-left");
     previousPeriod.disabled = this.preset === "custom";
     previousPeriod.addEventListener("click", () => this.shiftPeriod(1));
     const nextPeriod = timeControls.createEl("button", {
@@ -5931,7 +8967,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
       attr: { type: "button", title: `\u8FD4\u56DE\u4E0B\u4E00\u4E2A${periodName}`, "aria-label": `\u8FD4\u56DE\u4E0B\u4E00\u4E2A${periodName}` }
     });
     const nextPeriodIcon = nextPeriod.createSpan({ cls: "ledger-period-icon" });
-    (0, import_obsidian8.setIcon)(nextPeriodIcon, "chevron-right");
+    (0, import_obsidian9.setIcon)(nextPeriodIcon, "chevron-right");
     nextPeriod.disabled = this.preset === "custom";
     nextPeriod.addEventListener("click", () => this.shiftPeriod(-1));
     const dates2 = toolbar.createDiv({ cls: "ledger-date-range", attr: { "aria-label": "\u65E5\u671F\u8303\u56F4" } });
@@ -5966,14 +9002,14 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
     });
     const refresh = toolbar.createEl("button", { cls: "ledger-button ledger-refresh-button" });
     const refreshIcon = refresh.createSpan({ cls: "ledger-refresh-icon" });
-    (0, import_obsidian8.setIcon)(refreshIcon, "refresh-cw");
+    (0, import_obsidian9.setIcon)(refreshIcon, "refresh-cw");
     refresh.createSpan({ cls: "ledger-refresh-text", text: "\u5237\u65B0\u6570\u636E" });
     refresh.addEventListener("click", async () => {
       refresh.disabled = true;
       refresh.addClass("is-refreshing");
       try {
         await this.plugin.repository.rescan();
-        new import_obsidian8.Notice("\u8BB0\u8D26\u7EDF\u8BA1\u5DF2\u5237\u65B0");
+        new import_obsidian9.Notice("\u8BB0\u8D26\u7EDF\u8BA1\u5DF2\u5237\u65B0");
       } finally {
         refresh.disabled = false;
         refresh.removeClass("is-refreshing");
@@ -5998,12 +9034,23 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
   renderTabs(root) {
     const nav = root.createDiv({ cls: "ledger-tabs", attr: { role: "tablist", "aria-label": "\u7EDF\u8BA1\u89C6\u56FE" } });
     for (const [id, name] of VIEW_NAMES2) {
-      const button = createButton(nav, name, id === this.activeView);
-      button.setAttribute("role", "tab");
-      button.setAttribute("aria-selected", String(id === this.activeView));
-      button.addEventListener("click", () => {
+      const button2 = createButton(nav, name, id === this.activeView);
+      if (id === "report") {
+        button2.empty();
+        const label2 = button2.createSpan({ cls: "ledger-report-tab-label" });
+        label2.createSpan({ text: "\u652F\u51FA" });
+        label2.createSpan({ text: "\u62A5\u544A" });
+      }
+      button2.setAttribute("role", "tab");
+      button2.setAttribute("aria-selected", String(id === this.activeView));
+      button2.addEventListener("click", () => {
         if (this.activeView === id) return;
         this.activeView = id;
+        if (id === "assets") {
+          this.cancelFinanceRequest();
+          void this.plugin.refreshAssetQuotes().catch(() => {
+          });
+        }
         this.resetAutoAdvanceArm();
         this.render();
         this.contentEl.scrollTop = 0;
@@ -6018,7 +9065,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
     copy.createDiv({ cls: "ledger-drill-back-range", text: `\u539F\u7B5B\u9009\uFF1A${rangeLabel(this.drillContext.filter.range)}` });
     const back = createButton(banner, "\u8FD4\u56DE\u4E0A\u4E00\u7EA7");
     back.addClass("ledger-drill-back-button");
-    (0, import_obsidian8.setIcon)(back.createSpan({ cls: "ledger-drill-back-icon" }), "arrow-left");
+    (0, import_obsidian9.setIcon)(back.createSpan({ cls: "ledger-drill-back-icon" }), "arrow-left");
     back.addEventListener("click", () => this.restoreDrillContext());
   }
   renderCoreCards(parent) {
@@ -6072,7 +9119,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
       analysis,
       this.rangeTrendUnit(),
       (record) => void this.openRecord(record),
-      (label, records) => showCategoryRecords(this.app, `${category} \xB7 ${label}`, records, (record) => void this.openRecord(record)),
+      (label2, records) => showCategoryRecords(this.app, `${category} \xB7 ${label2}`, records, (record) => void this.openRecord(record)),
       () => this.goDetails()
     );
     const starred = this.starredRecords();
@@ -6132,7 +9179,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
     }), includeStarred, (_d = this.plugin.settings.starredRecordIds) != null ? _d : []);
     financeState.todayBudget = {
       date: today,
-      spentCents: todayRecords.reduce((sum2, record) => sum2 + record.cents, 0),
+      spentCents: todayRecords.reduce((sum3, record) => sum3 + record.cents, 0),
       budgetCents: (_e = this.plugin.settings.dailyBudgetCents) != null ? _e : 0,
       category: budgetCategory,
       includeStarred
@@ -6161,7 +9208,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
       const next = markInsightSeen(history, financeSnapshot, (_h = (_g = financeState.advice) == null ? void 0 : _g.primaryEventId) != null ? _h : financeSnapshot.events[0].id);
       if (next !== history) {
         this.plugin.settings.insightHistory = next;
-        void this.plugin.saveSettings(false, false).catch(() => new import_obsidian8.Notice("\u63D0\u9192\u9605\u8BFB\u72B6\u6001\u4FDD\u5B58\u5931\u8D25"));
+        void this.plugin.saveSettings(false, false).catch(() => new import_obsidian9.Notice("\u63D0\u9192\u9605\u8BFB\u72B6\u6001\u4FDD\u5B58\u5931\u8D25"));
       }
     }
   }
@@ -6179,19 +9226,19 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
   async loadFinanceAdvice(snapshot, manual) {
     if (!manual || this.financeAdviceLoading || this.closed || !this.plugin.settings.financeAiEnabled) return;
     if (snapshot.salaryCents <= 0 && !snapshot.daily) {
-      if (manual) new import_obsidian8.Notice("\u8BF7\u5148\u5728\u63D2\u4EF6\u8BBE\u7F6E\u4E2D\u586B\u5199\u6BCF\u4E2A\u5DE5\u8D44\u5468\u671F\u5230\u8D26\u5DE5\u8D44");
+      if (manual) new import_obsidian9.Notice("\u8BF7\u5148\u5728\u63D2\u4EF6\u8BBE\u7F6E\u4E2D\u586B\u5199\u6BCF\u4E2A\u5DE5\u8D44\u5468\u671F\u5230\u8D26\u5DE5\u8D44");
       return;
     }
     this.financeAdviceLoading = true;
     const controller = new AbortController();
     this.financeController = controller;
-    const config = { endpoint: this.plugin.settings.financeAiEndpoint, apiKey: this.plugin.settings.financeAiApiKey, model: this.plugin.settings.financeAiModel };
+    const config2 = { endpoint: this.plugin.settings.financeAiEndpoint, apiKey: this.plugin.settings.financeAiApiKey, model: this.plugin.settings.financeAiModel };
     this.financeAdviceError = "";
     this.refreshFinanceSection();
     try {
-      const advice = await requestFinanceAdvice(config, snapshot, controller.signal, sharedRequestGate(`ai:${this.app.vault.getName()}`));
+      const advice = await requestFinanceAdvice(config2, snapshot, controller.signal, sharedRequestGate(`ai:${this.app.vault.getName()}`));
       if (controller.signal.aborted || this.closed || !this.plugin.settings.financeAiEnabled) return;
-      if (config.endpoint !== this.plugin.settings.financeAiEndpoint || config.model !== this.plugin.settings.financeAiModel || config.apiKey !== this.plugin.settings.financeAiApiKey) {
+      if (config2.endpoint !== this.plugin.settings.financeAiEndpoint || config2.model !== this.plugin.settings.financeAiModel || config2.apiKey !== this.plugin.settings.financeAiApiKey) {
         throw new Error("AI \u914D\u7F6E\u5DF2\u53D8\u5316\uFF0C\u672C\u6B21\u7ED3\u679C\u5DF2\u5E9F\u5F03\uFF0C\u8BF7\u91CD\u65B0\u5224\u65AD");
       }
       const nextCache = createFinanceAdviceCache(snapshot, advice);
@@ -6200,11 +9247,11 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
       }
       this.plugin.settings.financeAdviceCache = nextCache;
       await this.plugin.saveSettings(false, false);
-      if (manual) new import_obsidian8.Notice("\u8D22\u52A1\u5224\u65AD\u5DF2\u66F4\u65B0");
+      if (manual) new import_obsidian9.Notice("\u8D22\u52A1\u5224\u65AD\u5DF2\u66F4\u65B0");
     } catch (error) {
       if (!controller.signal.aborted && !this.closed) {
         this.financeAdviceError = error instanceof Error ? error.message : "AI \u8BF7\u6C42\u5931\u8D25";
-        if (manual) new import_obsidian8.Notice(this.financeAdviceError);
+        if (manual) new import_obsidian9.Notice(this.financeAdviceError);
       }
     } finally {
       if (this.financeController === controller) this.financeController = null;
@@ -6284,7 +9331,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
     const records = filteredRecords(allFiles, monthFilter);
     const amounts = /* @__PURE__ */ new Map();
     for (const record of records) amounts.set(record.date, ((_a = amounts.get(record.date)) != null ? _a : 0) + record.cents);
-    const max = Math.max(...amounts.values(), 1);
+    const max2 = Math.max(...amounts.values(), 1);
     const calendar = parent.createDiv({ cls: "ledger-calendar", attr: { role: "grid" } });
     ["\u4E00", "\u4E8C", "\u4E09", "\u56DB", "\u4E94", "\u516D", "\u65E5"].forEach((day) => calendar.createDiv({ cls: "ledger-calendar-weekday", text: day }));
     const first = new Date(year, month, 1, 12);
@@ -6295,7 +9342,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
       const iso = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
       const hasFile = fileDates.has(iso);
       const amount = (_b = amounts.get(iso)) != null ? _b : 0;
-      const level = hasFile ? Math.min(6, Math.ceil(amount / max * 6)) : 0;
+      const level = hasFile ? Math.min(6, Math.ceil(amount / max2 * 6)) : 0;
       const cell = calendar.createEl("button", { cls: `ledger-calendar-day ${hasFile ? `has-record is-level-${level}` : "is-missing"}` });
       cell.type = "button";
       cell.createSpan({ cls: "ledger-calendar-number", text: String(day) });
@@ -6346,7 +9393,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
         cls: `ledger-star-toggle${this.isStarred(record) ? " is-active" : ""}`,
         attr: { type: "button", "aria-label": this.isStarred(record) ? "\u53D6\u6D88\u661F\u6807" : "\u6807\u8BB0\u4E3A\u661F\u6807" }
       });
-      (0, import_obsidian8.setIcon)(starButton, "star");
+      (0, import_obsidian9.setIcon)(starButton, "star");
       starButton.addEventListener("click", (event) => {
         event.stopPropagation();
         void this.toggleStar(record);
@@ -6373,7 +9420,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
         cls: `ledger-star-toggle${this.isStarred(record) ? " is-active" : ""}`,
         attr: { type: "button", "aria-label": this.isStarred(record) ? "\u53D6\u6D88\u661F\u6807" : "\u6807\u8BB0\u4E3A\u661F\u6807" }
       });
-      (0, import_obsidian8.setIcon)(starButton, "star");
+      (0, import_obsidian9.setIcon)(starButton, "star");
       starButton.addEventListener("click", (event) => {
         event.stopPropagation();
         void this.toggleStar(record);
@@ -6432,7 +9479,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
     const files = [...this.plugin.repository.files.values()];
     const currentRecords = filteredRecords(files, { ...this.filter, range: current, keyword: "" });
     const previousRecords = filteredRecords(files, { ...this.filter, range: previous, keyword: "" });
-    const total3 = compareValue(currentRecords.reduce((sum2, record) => sum2 + record.cents, 0), previousRecords.reduce((sum2, record) => sum2 + record.cents, 0));
+    const total3 = compareValue(currentRecords.reduce((sum3, record) => sum3 + record.cents, 0), previousRecords.reduce((sum3, record) => sum3 + record.cents, 0));
     const cards = parent.createDiv({ cls: "ledger-compare-summary" });
     this.metric(cards, "\u672C\u671F", formatCents(total3.currentCents), `${currentRecords.length} \u7B14`);
     this.metric(cards, "\u57FA\u671F", formatCents(total3.previousCents), `${previousRecords.length} \u7B14`);
@@ -6501,13 +9548,13 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
       row.createDiv({ cls: "ledger-diagnostic-title", text: `${item.path}${item.line ? `:${item.line}` : ""}` });
       row.createDiv({ text: item.reason });
       if (item.source) row.createEl("code", { text: item.source });
-      const button = row.createEl("button", { cls: "ledger-link-button", text: "\u6253\u5F00\u6765\u6E90" });
-      button.addEventListener("click", () => void this.openPath(item.path, item.line));
+      const button2 = row.createEl("button", { cls: "ledger-link-button", text: "\u6253\u5F00\u6765\u6E90" });
+      button2.addEventListener("click", () => void this.openPath(item.path, item.line));
     }
   }
-  metric(parent, label, value, detail, onClick) {
+  metric(parent, label2, value, detail, onClick) {
     const card2 = parent.createEl(onClick ? "button" : "div", { cls: "ledger-metric" });
-    card2.createDiv({ cls: "ledger-metric-label", text: label });
+    card2.createDiv({ cls: "ledger-metric-label", text: label2 });
     card2.createDiv({ cls: "ledger-metric-value", text: value });
     card2.createDiv({ cls: "ledger-metric-detail", text: detail });
     if (onClick) card2.addEventListener("click", onClick);
@@ -6607,7 +9654,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
   }
   handleAutoAdvanceTouchStart(event) {
     this.resetAutoAdvanceArm();
-    if (!import_obsidian8.Platform.isMobile || event.touches.length !== 1 || !this.pullHint) return;
+    if (!import_obsidian9.Platform.isMobile || event.touches.length !== 1 || !this.pullHint) return;
     const target2 = event.target;
     if (target2 instanceof Element && target2.closest("button, input, select, textarea, a, svg, .ledger-mobile-trend-scroll, .ledger-tabs, .ledger-header, .ledger-toolbar, .ledger-filter-panel")) {
       this.pullEligible = false;
@@ -6699,16 +9746,16 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
     this.plugin.settings.starredRecordIds = [...starred];
     await this.plugin.saveSettings(false, false);
     this.updateStarState(record, !wasStarred);
-    new import_obsidian8.Notice(wasStarred ? "\u5DF2\u53D6\u6D88\u661F\u6807" : "\u5DF2\u6807\u8BB0\u4E3A\u661F\u6807");
+    new import_obsidian9.Notice(wasStarred ? "\u5DF2\u53D6\u6D88\u661F\u6807" : "\u5DF2\u6807\u8BB0\u4E3A\u661F\u6807");
   }
   updateStarState(record, starred) {
     const elements = Array.from(this.contentEl.querySelectorAll("[data-ledger-record-id]"));
     for (const element of elements) {
       if (element.dataset.ledgerRecordId !== record.id) continue;
       element.toggleClass("is-starred", starred);
-      const button = element.querySelector(".ledger-star-toggle");
-      button == null ? void 0 : button.toggleClass("is-active", starred);
-      button == null ? void 0 : button.setAttribute("aria-label", starred ? "\u53D6\u6D88\u661F\u6807" : "\u6807\u8BB0\u4E3A\u661F\u6807");
+      const button2 = element.querySelector(".ledger-star-toggle");
+      button2 == null ? void 0 : button2.toggleClass("is-active", starred);
+      button2 == null ? void 0 : button2.setAttribute("aria-label", starred ? "\u53D6\u6D88\u661F\u6807" : "\u6807\u8BB0\u4E3A\u661F\u6807");
     }
   }
   bindRecordInteractions(element, record) {
@@ -6742,7 +9789,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
   }
   showRecordMenu(record, event) {
     const starred = this.isStarred(record);
-    const menu = new import_obsidian8.Menu();
+    const menu = new import_obsidian9.Menu();
     menu.addItem((item) => item.setTitle(starred ? "\u53D6\u6D88\u661F\u6807" : "\u6807\u8BB0\u4E3A\u661F\u6807").setIcon("star").onClick(() => void this.toggleStar(record)));
     menu.addItem((item) => item.setTitle("\u6253\u5F00\u6765\u6E90").setIcon("file-text").onClick(() => void this.openRecord(record)));
     if (event instanceof MouseEvent) menu.showAtMouseEvent(event);
@@ -6774,14 +9821,14 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
   }
   async openPath(path, line) {
     const file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof import_obsidian8.TFile)) {
-      new import_obsidian8.Notice(`\u627E\u4E0D\u5230\u6765\u6E90\u6587\u4EF6\uFF1A${path}`);
+    if (!(file instanceof import_obsidian9.TFile)) {
+      new import_obsidian9.Notice(`\u627E\u4E0D\u5230\u6765\u6E90\u6587\u4EF6\uFF1A${path}`);
       return;
     }
     await this.app.workspace.getLeaf("tab").openFile(file);
     if (line) {
       window.requestAnimationFrame(() => {
-        const view = this.app.workspace.getActiveViewOfType(import_obsidian8.MarkdownView);
+        const view = this.app.workspace.getActiveViewOfType(import_obsidian9.MarkdownView);
         if (view) {
           view.editor.setCursor({ line: Math.max(0, line - 1), ch: 0 });
           view.editor.scrollIntoView({ from: { line: Math.max(0, line - 2), ch: 0 }, to: { line, ch: 0 } }, true);
@@ -6791,15 +9838,142 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian8.
   }
 };
 
+// src/asset-quotes.ts
+function parseFundQuote(code, source, now) {
+  var _a, _b, _c;
+  const name = (_a = /var\s+fS_name\s*=\s*"([^"\r\n]+)"/.exec(source)) == null ? void 0 : _a[1];
+  const returnedCode = (_b = /var\s+fS_code\s*=\s*"(\d{6})"/.exec(source)) == null ? void 0 : _b[1];
+  if (!name || returnedCode !== code) throw new Error("\u57FA\u91D1\u4EE3\u7801\u6216\u8FD4\u56DE\u683C\u5F0F\u4E0D\u5339\u914D");
+  if (/货币|现金管理|现金增利|活期/.test(name)) throw new Error("\u8D27\u5E01\u57FA\u91D1\u6682\u4E0D\u652F\u6301\u81EA\u52A8\u6536\u76CA\u7D2F\u8BA1\uFF0C\u8BF7\u4F7F\u7528\u666E\u901A\u51C0\u503C\u578B\u57FA\u91D1");
+  const literal = (_c = /var\s+Data_netWorthTrend\s*=\s*(\[[\s\S]*?\])\s*;/.exec(source)) == null ? void 0 : _c[1];
+  if (!literal) throw new Error("\u672A\u627E\u5230\u57FA\u91D1\u5355\u4F4D\u51C0\u503C\u6570\u636E");
+  const rows = JSON.parse(literal);
+  if (!Array.isArray(rows) || !rows.length) throw new Error("\u6682\u65E0\u516C\u5E03\u51C0\u503C");
+  const valid = rows.filter((r) => r && typeof r.x === "number" && Number.isFinite(r.x) && typeof r.y === "number" && Number.isFinite(r.y) && r.y > 0 && r.x <= now.getTime()).sort((a, b) => a.x - b.x);
+  const latest = valid[valid.length - 1];
+  if (!latest) throw new Error("\u6682\u65E0\u6709\u6548\u51C0\u503C");
+  const asOf = new Date(latest.x + 8 * 36e5).toISOString().slice(0, 10);
+  return { key: `fund:${code}`, name, price: String(latest.y), asOf, fetchedAt: now.toISOString() };
+}
+function parseStockQuote(holding, source, now) {
+  var _a;
+  const literal = (_a = new RegExp(`v_${holding.code}="([^"\\r\\n]*)"`).exec(source)) == null ? void 0 : _a[1];
+  if (!literal) throw new Error("\u884C\u60C5\u4EE3\u7801\u6216\u8FD4\u56DE\u683C\u5F0F\u4E0D\u5339\u914D");
+  const fields = literal.split("~"), price = fields[3], time = fields[30];
+  if (fields[2] !== holding.code.slice(2) || !price || decimal2(price).lte(0) || !/^\d{14}$/.test(time != null ? time : "")) throw new Error("\u6682\u65E0\u6709\u6548\u80A1\u7968\u62A5\u4EF7");
+  const day = `${time.slice(0, 4)}-${time.slice(4, 6)}-${time.slice(6, 8)}`;
+  if (!isValidIsoDate(day) || +time.slice(8, 10) > 23 || +time.slice(10, 12) > 59 || +time.slice(12, 14) > 59) throw new Error("\u62A5\u4EF7\u65F6\u95F4\u65E0\u6548");
+  const asOf = `${day}T${time.slice(8, 10)}:${time.slice(10, 12)}:${time.slice(12, 14)}+08:00`;
+  if (Date.parse(asOf) > now.getTime() + 6e4) throw new Error("\u62A5\u4EF7\u65F6\u95F4\u665A\u4E8E\u5F53\u524D\u65F6\u95F4");
+  return { key: quoteKey(holding.kind, holding.code), name: fields[1] || holding.code, price: decimal2(price).toFixed(), asOf, fetchedAt: now.toISOString() };
+}
+function quoteDue(holding, quote, now, force = false) {
+  if (decimal2(holding.quantity).eq(0)) return false;
+  if ((quote == null ? void 0 : quote.error) && quote.attemptedAt && now.getTime() - Date.parse(quote.attemptedAt) < 15 * 6e4) return false;
+  return force || !quote || now.getTime() - Date.parse(quote.fetchedAt) >= (holding.kind === "fund" ? 6 * 36e5 : 15 * 6e4);
+}
+var AssetQuoteMonitor = class {
+  constructor(state, fetch, commit, clock = () => /* @__PURE__ */ new Date(), timeoutMs = 3e4) {
+    this.state = state;
+    this.fetch = fetch;
+    this.commit = commit;
+    this.clock = clock;
+    this.timeoutMs = timeoutMs;
+    this.stopped = false;
+    this.running = null;
+    this.rerun = false;
+    this.connections = 0;
+  }
+  stop() {
+    this.stopped = true;
+  }
+  refresh(force = false) {
+    if (this.stopped) return Promise.resolve();
+    if (this.running) {
+      this.rerun = true;
+      return this.running;
+    }
+    this.running = this.run(force).finally(() => {
+      this.running = null;
+      if (this.rerun && !this.stopped) {
+        this.rerun = false;
+        void this.refresh().catch(() => {
+        });
+      }
+    });
+    return this.running;
+  }
+  async run(force) {
+    const state = this.state(), now = this.clock(), unique2 = /* @__PURE__ */ new Map();
+    for (const h of state.holdings) if (quoteDue(h, state.quotes[quoteKey(h.kind, h.code)], now, force)) unique2.set(quoteKey(h.kind, h.code), { ...h });
+    const jobs = [...unique2.values()], updates = [];
+    let index = 0;
+    await Promise.all(Array.from({ length: Math.min(2, jobs.length) }, async () => {
+      var _a, _b, _c, _d;
+      while (!this.stopped && this.connections < 2 && index < jobs.length) {
+        const h = jobs[index++], key = quoteKey(h.kind, h.code), old = this.state().quotes[key];
+        try {
+          const url = h.kind === "fund" ? `https://fund.eastmoney.com/pingzhongdata/${h.code}.js` : `https://qt.gtimg.cn/q=${h.code}`;
+          const response = await this.fetchBounded(url);
+          let text2 = response.text;
+          if (h.kind !== "fund" && response.arrayBuffer) {
+            try {
+              text2 = new TextDecoder("gb18030").decode(response.arrayBuffer);
+            } catch (e) {
+            }
+          }
+          const quote = h.kind === "fund" ? parseFundQuote(h.code, text2, this.clock()) : parseStockQuote(h, text2, this.clock());
+          if (old && Date.parse(quote.asOf) < Date.parse(old.asOf)) throw new Error("\u6570\u636E\u6E90\u8FD4\u56DE\u8F83\u65E7\u884C\u60C5\uFF0C\u5DF2\u4FDD\u7559\u4E0A\u6B21\u62A5\u4EF7");
+          updates.push(quote);
+        } catch (error) {
+          updates.push({ key, name: (_a = old == null ? void 0 : old.name) != null ? _a : h.name, price: (_b = old == null ? void 0 : old.price) != null ? _b : "0", asOf: (_c = old == null ? void 0 : old.asOf) != null ? _c : "", fetchedAt: (_d = old == null ? void 0 : old.fetchedAt) != null ? _d : now.toISOString(), attemptedAt: this.clock().toISOString(), error: error instanceof Error ? error.message : "\u884C\u60C5\u66F4\u65B0\u5931\u8D25" });
+        }
+      }
+    }));
+    if (!this.stopped && updates.length) await this.commit(updates);
+  }
+  async fetchBounded(url) {
+    this.connections++;
+    const connection = Promise.resolve().then(() => this.fetch(url)).finally(() => {
+      this.connections--;
+    });
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error("\u884C\u60C5\u8BF7\u6C42\u8D85\u65F6\uFF0C\u4FDD\u7559\u4E0A\u6B21\u503C")), this.timeoutMs);
+    });
+    try {
+      return await Promise.race([connection, timeout]);
+    } finally {
+      if (timer !== void 0) clearTimeout(timer);
+    }
+  }
+};
+
 // src/main.ts
-var LedgerStatisticsPlugin = class extends import_obsidian9.Plugin {
+var LedgerStatisticsPlugin = class extends import_obsidian10.Plugin {
   constructor() {
     super(...arguments);
     this.settings = DEFAULT_SETTINGS;
     this.saveQueue = Promise.resolve();
+    this.assetQueue = Promise.resolve();
+    this.assetsStopped = false;
   }
   async onload() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    this.settings.assets = normalizeAssets(this.settings.assets);
+    this.assetsStopped = false;
+    this.assetQuotes = new AssetQuoteMonitor(() => this.settings.assets, async (url) => {
+      const response = await (0, import_obsidian10.requestUrl)({ url, method: "GET", throw: true });
+      return { text: response.text, arrayBuffer: response.arrayBuffer };
+    }, (quotes) => this.updateAssets((state) => {
+      const held = new Set(state.holdings.map((h) => quoteKey(h.kind, h.code)));
+      for (const quote of quotes) if (held.has(quote.key)) {
+        state.quotes[quote.key] = quote;
+        if (!quote.error) {
+          for (const h of state.holdings) if (quoteKey(h.kind, h.code) === quote.key && h.name === h.code) h.name = quote.name;
+        }
+      }
+    }));
     this.settings.reportPreferences = normalizeReportPreferences(this.settings.reportPreferences);
     this.settings.reportCaches = normalizeReportCaches(this.settings.reportCaches);
     if (typeof this.settings.reportObjectRules !== "string") this.settings.reportObjectRules = DEFAULT_SETTINGS.reportObjectRules;
@@ -6809,9 +9983,9 @@ var LedgerStatisticsPlugin = class extends import_obsidian9.Plugin {
     if (typeof this.settings.balanceCalibrationNote !== "string") this.settings.balanceCalibrationNote = "";
     this.budgetMonitor = new BudgetMonitor(
       () => this.settings,
-      (url) => (0, import_obsidian9.requestUrl)({ url, method: "GET", throw: true }),
+      (url) => (0, import_obsidian10.requestUrl)({ url, method: "GET", throw: true }),
       () => this.saveSettings(false, false),
-      (message) => new import_obsidian9.Notice(message),
+      (message) => new import_obsidian10.Notice(message),
       sharedRequestGate(`bark:${this.app.vault.getName()}`)
     );
     this.repository = new LedgerRepository(this.app, this.settings.ledgerFolder, () => {
@@ -6819,10 +9993,13 @@ var LedgerStatisticsPlugin = class extends import_obsidian9.Plugin {
       this.refreshViews();
       (_a = this.settingTab) == null ? void 0 : _a.refreshBalanceSummary();
       this.checkBudget();
+      void this.captureAssetSnapshot().catch(() => {
+      });
     });
     this.registerView(LEDGER_VIEW_TYPE, (leaf) => new LedgerStatisticsView(leaf, this));
     this.addRibbonIcon("chart-pie", "\u6253\u5F00\u8BB0\u8D26\u7EDF\u8BA1", () => void this.activateView());
     this.addCommand({ id: "open-ledger-statistics", name: "\u6253\u5F00\u8BB0\u8D26\u7EDF\u8BA1", callback: () => void this.activateView() });
+    this.addCommand({ id: "open-ledger-assets", name: "\u6253\u5F00\u8D44\u4EA7\u603B\u89C8", callback: () => void this.activateView(true) });
     this.settingTab = new LedgerSettingTab(this.app, this);
     this.addSettingTab(this.settingTab);
     await this.repository.start();
@@ -6832,6 +10009,8 @@ var LedgerStatisticsPlugin = class extends import_obsidian9.Plugin {
       await this.saveSettings(false);
     }
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
+      if (this.settings.assets.accounts.length) void this.updateAssets((state) => renameAssetLinks(state, oldPath, file.path)).catch(() => {
+      });
       const renamed = renameStarredIds(this.settings.starredRecordIds, oldPath, file.path);
       let fixedChanged = false;
       for (const item of this.settings.fixedExpenses) for (const [cycle, id] of Object.entries(item.payments)) {
@@ -6852,10 +10031,15 @@ var LedgerStatisticsPlugin = class extends import_obsidian9.Plugin {
     });
     this.registerDomEvent(window, "focus", () => this.tick());
     this.checkBudget();
+    await this.captureAssetSnapshot();
+    void this.refreshAssetQuotes().catch(() => {
+    });
   }
   onunload() {
-    var _a;
-    (_a = this.budgetMonitor) == null ? void 0 : _a.stop();
+    var _a, _b;
+    this.assetsStopped = true;
+    (_a = this.assetQuotes) == null ? void 0 : _a.stop();
+    (_b = this.budgetMonitor) == null ? void 0 : _b.stop();
     for (const leaf of this.app.workspace.getLeavesOfType(LEDGER_VIEW_TYPE)) {
       if (leaf.view instanceof LedgerStatisticsView) leaf.view.cancelFinanceRequest();
     }
@@ -6882,14 +10066,57 @@ var LedgerStatisticsPlugin = class extends import_obsidian9.Plugin {
     }
     (_a = this.settingTab) == null ? void 0 : _a.refreshBalanceSummary();
     this.checkBudget();
+    if (!document.hidden) {
+      void this.captureAssetSnapshot().catch(() => {
+      });
+      void this.refreshAssetQuotes().catch(() => {
+      });
+    }
   }
-  async activateView() {
+  assetSnapshot() {
+    return buildAssetSnapshot(this.settings.assets, flattenRecords(this.repository.files.values()));
+  }
+  refreshAssetQuotes(force = false) {
+    return this.assetQuotes.refresh(force);
+  }
+  refreshAssetViews() {
+    this.refreshViews();
+  }
+  updateAssets(change) {
+    const operation = this.assetQueue.then(async () => {
+      if (this.assetsStopped) return;
+      const before = this.settings.assets, next = JSON.parse(JSON.stringify(before));
+      change(next);
+      storeAssetSnapshot(next, buildAssetSnapshot(next, flattenRecords(this.repository.files.values())));
+      this.settings.assets = next;
+      try {
+        await this.saveSettings(false, false);
+      } catch (error) {
+        this.settings.assets = before;
+        throw error;
+      }
+      if (!this.assetsStopped) this.refreshViews();
+    });
+    this.assetQueue = operation.catch(() => {
+    });
+    return operation;
+  }
+  captureAssetSnapshot() {
+    var _a;
+    if (!((_a = this.repository) == null ? void 0 : _a.loaded) || !this.settings.assets.accounts.length || this.assetsStopped) return Promise.resolve();
+    const snapshot = this.assetSnapshot(), clone2 = JSON.parse(JSON.stringify(this.settings.assets));
+    if (!storeAssetSnapshot(clone2, snapshot)) return Promise.resolve();
+    return this.updateAssets(() => {
+    });
+  }
+  async activateView(assets = false) {
     let leaf = this.app.workspace.getLeavesOfType(LEDGER_VIEW_TYPE)[0];
     if (!leaf) {
       leaf = this.app.workspace.getLeaf("tab");
       await leaf.setViewState({ type: LEDGER_VIEW_TYPE, active: true });
     }
     await this.app.workspace.revealLeaf(leaf);
+    if (assets && leaf.view instanceof LedgerStatisticsView) leaf.view.showAssets();
   }
   refreshViews() {
     for (const leaf of this.app.workspace.getLeavesOfType(LEDGER_VIEW_TYPE)) {
@@ -6899,8 +10126,38 @@ var LedgerStatisticsPlugin = class extends import_obsidian9.Plugin {
   }
 };
 /*!
+ * decimal.js 10.6.0 - The MIT Licence
+ * Copyright (c) 2025 Michael Mclaughlin
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the 'Software'), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+ * of the Software, and to permit persons to whom the Software is furnished to
+ * do so, subject to the following conditions:
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ * THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+/*!
  * jsonrepair 3.15.0 - The ISC License
  * Copyright (c) 2020-2026 by Jos de Jong
  * Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
  * THE SOFTWARE IS PROVIDED "AS IS" AND ISC DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL ISC BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
+/*! Bundled license information:
+
+decimal.js/decimal.mjs:
+  (*!
+   *  decimal.js v10.6.0
+   *  An arbitrary-precision Decimal type for JavaScript.
+   *  https://github.com/MikeMcl/decimal.js
+   *  Copyright (c) 2025 Michael Mclaughlin <M8ch88l@gmail.com>
+   *  MIT Licence
+   *)
+*/

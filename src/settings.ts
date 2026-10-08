@@ -11,11 +11,13 @@ import { FixedExpenseModal, StarRepairModal } from "./management";
 import type { ReportCache, ReportPreferences } from "./report";
 import { defaultReportPreferences } from "./report";
 import { DEFAULT_REPORT_OBJECT_RULES, parseObjectRules } from "./report-config";
+import { AssetState, emptyAssets } from "./assets";
 
-export type LedgerViewId = "overview" | "category" | "trend" | "calendar" | "details" | "compare" | "report";
+export type LedgerViewId = "overview" | "category" | "trend" | "calendar" | "details" | "compare" | "report" | "assets";
 export type DefaultDatePreset = "today" | "week" | "month" | "salary" | "year";
 
 export interface LedgerSettings {
+  assets: AssetState;
   reportPreferences: ReportPreferences;
   reportCaches: ReportCache[];
   reportObjectRules: string;
@@ -42,6 +44,7 @@ export interface LedgerSettings {
 }
 
 export const DEFAULT_SETTINGS: LedgerSettings = {
+  assets: emptyAssets(),
   reportPreferences: defaultReportPreferences(),
   reportCaches: [],
   reportObjectRules: DEFAULT_REPORT_OBJECT_RULES,
@@ -74,7 +77,8 @@ const VIEW_NAMES: Record<LedgerViewId, string> = {
   calendar: "日历",
   details: "明细",
   compare: "对比",
-  report: "支出报告"
+  report: "支出报告",
+  assets: "资产"
 };
 
 const OPENAI_CHAT_ENDPOINT = "https://api.openai.com/v1/chat/completions";

@@ -2506,7 +2506,7 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
 
   .ledger-tabs {
     display: grid;
-    grid-template-columns: repeat(7, minmax(0, 1fr));
+    grid-template-columns: repeat(8, minmax(0, 1fr));
     gap: 4px;
     margin: 12px 0 16px;
     overflow: visible;
@@ -2515,10 +2515,10 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
 
   .ledger-tabs .ledger-button {
     min-width: 0;
-    min-height: 42px;
+    min-height: 44px;
     padding: 5px 2px;
     font-size: 12px;
-    white-space: normal;
+    white-space: nowrap;
     line-height: 1.25;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
@@ -3011,6 +3011,11 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
   }
 }
 
+.ledger-report-tab-label span { display: inline; }
+@media (max-width: 700px) {
+  .ledger-report-tab-label span { display: block; }
+}
+
 @keyframes ledger-mobile-tick {
   from { opacity: 0; transform: scaleY(0); }
 }
@@ -3330,4 +3335,94 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
   .ledger-category-chart-cell .ledger-donut-wrap { grid-template-columns: minmax(0, 1fr); }
   .ledger-category-chart-cell .ledger-legend-left { grid-column: 1; grid-row: 2; }
   .ledger-category-chart-cell .ledger-legend-right { grid-column: 1; grid-row: 3; }
+}
+
+/* Asset workspace: the pastel composition system is intentionally local to this page. */
+.ledger-assets { --asset-purple: #8c82b0; --asset-muted: #858294; --asset-card: #fff; --asset-hero: #eeeaf7; display: grid; gap: 22px; min-width: 0; }
+.ledger-assets h2, .ledger-assets h3 { margin: 0; }
+.ledger-assets-title-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.ledger-assets-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ledger-assets .ledger-button, .ledger-assets-modal .ledger-button, .ledger-assets-sankey-modal .ledger-button { min-height: 44px; }
+.ledger-assets-primary { background: #8576ad !important; color: white !important; border-color: transparent !important; }
+.ledger-assets-hero { border-radius: 28px; background: var(--asset-hero); padding: 28px 28px 8px; }
+.ledger-assets-caption { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--asset-muted); }
+.ledger-assets-caption .ledger-button { background: transparent; border: 0; color: inherit; padding: 0 8px; font-size: 12px; }
+.ledger-assets-toggle { margin-left: auto; display: flex; align-items: center; gap: 8px; min-height: 44px; }
+.ledger-assets-toggle input { margin: 0; }
+.ledger-assets-total { font-size: clamp(30px, 4vw, 52px); line-height: 1.2; font-weight: 650; letter-spacing: -1.4px; font-variant-numeric: tabular-nums; margin: 8px 0; overflow-wrap: anywhere; }
+.ledger-assets-updated, .ledger-assets-hint { color: var(--asset-muted, var(--text-muted)); font-size: 12px; line-height: 1.65; }
+.ledger-assets-metrics { display: flex; flex-wrap: wrap; gap: 12px 22px; font-size: 14px; margin: 16px 0 24px; }
+.ledger-assets-comparison { background: var(--asset-card); border-radius: 22px; padding: 18px 20px; margin: 0 -20px; }
+.ledger-assets-comparison > .ledger-assets-title-row { font-size: 13px; color: var(--asset-muted); }
+.ledger-assets-comparison .ledger-button { border: 0; background: transparent; color: var(--asset-muted); }
+.ledger-assets-change-summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; padding: 8px 0 16px; font-size: 15px; }
+.ledger-assets-change-bars { display: flex; gap: 12px; padding-top: 6px; }
+.ledger-assets-change-column { min-width: 0; flex: 1; text-align: center; }
+.ledger-assets-change-column > small { display: block; white-space: nowrap; font-size: 11px; color: var(--asset-muted); }
+.ledger-assets-change-column > small.is-up { color: #bc7272; }
+.ledger-assets-change-column > small.is-down { color: #589378; }
+.ledger-assets-change-track { height: 58px; display: flex; align-items: end; border-bottom: 1px solid #d9d5df; margin: 5px 0 10px; }
+.ledger-assets-change-fill { width: 100%; background: #d5d0e3; }
+.ledger-assets-change-fill.is-negative { background: #cbe2d9; }
+.ledger-assets-card { background: var(--asset-card); border-radius: 24px; padding: 24px; min-width: 0; }
+.ledger-assets-card > .ledger-assets-title-row { margin-bottom: 14px; }
+.ledger-assets-card h3 { font-size: 19px; }
+.ledger-assets-sankey-scroll { width: 100%; overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; }
+.ledger-assets-sankey { display: block; width: 100%; min-width: 0; height: auto; color: var(--mono-ink, var(--text-normal)); font-family: var(--font-interface), sans-serif; }
+.ledger-assets-sankey [role="button"] { cursor: pointer; }
+.ledger-assets-sankey [role="button"]:focus-visible { outline: 2px solid #8576ad; outline-offset: 2px; }
+.ledger-assets-sankey [role="button"]:hover text { fill: #8576ad; }
+.ledger-assets-account { display: flex; align-items: center; gap: 16px; border-top: 1px solid var(--background-modifier-border); padding: 14px 0; }
+.ledger-assets-account > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ledger-assets-account small { display: block; color: var(--asset-muted); margin-top: 4px; }
+.ledger-assets-account > strong { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ledger-assets-holding { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 18px; padding: 12px 16px; background: color-mix(in srgb, var(--asset-purple) 5%, transparent); border-radius: 12px; margin-bottom: 8px; font-size: 13px; }
+.ledger-assets-holding > span:nth-child(2) { grid-column: 1; color: var(--asset-muted); }
+.ledger-assets-holding > span:nth-child(3) { grid-column: 2; grid-row: 1 / 3; align-self: center; font-weight: 650; }
+.ledger-assets-holding > small:last-child { grid-column: 1 / -1; color: var(--asset-muted); }
+.ledger-assets-warning { border: 1px solid #d6b686; background: color-mix(in srgb, #d6b686 10%, transparent); padding: 18px; border-radius: 18px; }
+.ledger-assets-warning p { margin: 6px 0; font-size: 13px; }
+.ledger-assets-event-row { border-bottom: 1px solid var(--background-modifier-border); padding: 12px 0; font-size: 13px; overflow-wrap: anywhere; }
+.ledger-assets-modal { width: min(640px, 94vw); }
+.ledger-assets-form { display: grid; gap: 14px; }
+.ledger-assets-field { display: grid; gap: 6px; font-size: 13px; min-width: 0; }
+.ledger-assets-field input:not([type="checkbox"]), .ledger-assets-field select { min-height: 44px; width: 100%; max-width: 100%; }
+.ledger-assets-field small { color: var(--text-muted); line-height: 1.6; }
+.ledger-assets-field:has(input[type="checkbox"]) { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+.ledger-assets-form-error { color: var(--text-error); font-size: 13px; }
+.ledger-assets-sankey-modal { width: min(1400px, 96vw); max-width: 96vw; }
+.ledger-assets-sankey-modal .ledger-assets-sankey { min-width: 0; }
+.ledger-assets-calendar { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; max-width: 560px; margin: 18px 0; text-align: center; }
+.ledger-assets-calendar .ledger-button { min-width: 0; padding: 4px; min-height: 44px; }
+.ledger-assets-calendar .ledger-button.is-selected { background: #8576ad; color: white; }
+.ledger-assets-calendar .ledger-button:disabled { opacity: .35; }
+.theme-dark .ledger-assets { --asset-hero: #302b3e; --asset-card: #29272e; --asset-muted: #bab3cb; }
+.theme-dark .ledger-assets-change-track { border-color: #5a5366; }
+.theme-dark .ledger-assets-change-fill { background: #665c80; }
+.theme-dark .ledger-assets-change-fill.is-negative { background: #456e5e; }
+@container (max-width: 600px) {
+  .ledger-assets { gap: 16px; }
+  .ledger-assets-sankey { min-width: 1080px; }
+  .ledger-assets-hero { border-radius: 24px; padding: 18px 18px 6px; }
+  .ledger-assets-caption { gap: 6px; font-size: 12px; }
+  .ledger-assets-caption .ledger-button { font-size: 11px; }
+  .ledger-assets-toggle { font-size: 11px; }
+  .ledger-assets-total { font-size: 34px; }
+  .ledger-assets-metrics { font-size: 12px; gap: 8px 14px; margin-bottom: 16px; }
+  .ledger-assets-comparison { padding: 12px; margin: 0 -12px; }
+  .ledger-assets-change-summary { font-size: 13px; }
+  .ledger-assets-change-bars { gap: 6px; }
+  .ledger-assets-change-column > small { font-size: 9px; }
+  .ledger-assets-card { padding: 18px 12px; border-radius: 20px; }
+  .ledger-assets-title-row h2 { font-size: 22px; }
+  .ledger-assets-title-row h3 { font-size: 18px; }
+  .ledger-assets-actions { gap: 6px; width: 100%; }
+  .ledger-assets-actions .ledger-button { padding-inline: 10px; font-size: 12px; flex: 1; white-space: nowrap; }
+  .ledger-assets-account { gap: 8px; }
+  .ledger-assets-account > strong { font-size: 13px; }
+  .ledger-assets-account .ledger-button { padding-inline: 10px; }
+  .ledger-assets-holding { gap: 5px 8px; padding: 10px; }
+}
+@media (max-width: 600px) {
+  .ledger-assets-sankey-modal .ledger-assets-sankey { min-width: 1080px; }
 }
