@@ -30,7 +30,7 @@ await esbuild.build({
       export class ItemView {}
       export class MarkdownView {}
       export class Menu {}
-      export class Modal {}
+      export const Modal = globalThis.__ledgerTestModal ?? class {};
       export class FuzzySuggestModal {}
       export class Setting {}
       export class Notice { constructor(message) { (globalThis.__ledgerTestNotices ??= []).push(message); } }

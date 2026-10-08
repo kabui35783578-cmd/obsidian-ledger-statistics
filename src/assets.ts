@@ -31,6 +31,7 @@ export interface AssetAccount {
 export interface AssetHolding {
   id: string; accountId: string; kind: SecurityKind; code: string; name: string;
   quantity: string; costCents: number; acquiredOn: string;
+  amountBasisCents?: number;
 }
 export interface AssetQuote {
   key: string; name: string; price: string; asOf: string; fetchedAt: string;
@@ -86,6 +87,27 @@ export function validateQuantity(value: string, kind: SecurityKind): string {
   return q.toFixed();
 }
 export function quoteKey(kind: SecurityKind, code: string): string { return `${kind}:${normalizeCode(kind, code)}`; }
+// A current-value entry establishes today's valuation baseline, not a historical purchase.
+export function addAmountHolding(state: AssetState, accountId: string, kind: SecurityKind, code: string, amount: string, now = new Date()): AssetHolding {
+  if (!state.accounts.some(a => a.id === accountId && a.kind === "investment")) throw new Error("请选择投资账户");
+  const normalized = normalizeCode(kind, code), cents = moneyCents(amount);
+  if (cents <= 0) throw new Error("当前持仓金额须大于零");
+  const holding: AssetHolding = { id: assetId(), accountId, kind, code: normalized, name: normalized, quantity: "0", costCents: cents, amountBasisCents: cents, acquiredOn: isoFromDate(now) };
+  state.holdings.push(holding);
+  return holding;
+}
+export function applyAssetQuote(state: AssetState, quote: AssetQuote): void {
+  const holdings = state.holdings.filter(h => quoteKey(h.kind, h.code) === quote.key);
+  if (!holdings.length) return;
+  state.quotes[quote.key] = quote;
+  if (quote.error || decimal(quote.price).lte(0)) return;
+  for (const h of holdings) {
+    if (h.name === h.code) h.name = quote.name;
+    if (h.amountBasisCents !== undefined && h.quantity === "0") {
+      h.quantity = new Decimal(h.amountBasisCents).div(100).div(quote.price).toDecimalPlaces(12).toFixed();
+    }
+  }
+}
 export function normalizeCode(kind: SecurityKind, input: string): string {
   const code = input.trim().toLowerCase();
   if (kind === "fund") { if (!/^\d{6}$/.test(code)) throw new Error("基金代码须为6位数字"); return code; }
@@ -103,7 +125,7 @@ export function normalizeAssets(input: unknown): AssetState {
   out.accounts = (Array.isArray(s.accounts) ? s.accounts : []).filter(a => a && typeof a.id === "string" && typeof a.name === "string" && a.kind in ASSET_NAMES && validCents(a.balanceCents) && validInstant(a.baselineAt)).map(a => ({ ...a, includedEventIds: stringIds(a.includedEventIds), includedRecordIds: stringIds(a.includedRecordIds) }));
   const accounts = new Set(out.accounts.map(a => a.id));
   out.holdings = (Array.isArray(s.holdings) ? s.holdings : []).filter(h => {
-    try { return h && typeof h.id === "string" && typeof h.name === "string" && accounts.has(h.accountId) && ["fund", "stock", "etf"].includes(h.kind) && normalizeCode(h.kind, h.code) === h.code && validQuantity(h.quantity) && validCents(h.costCents) && h.costCents >= 0 && isValidIsoDate(h.acquiredOn); } catch { return false; }
+    try { return h && typeof h.id === "string" && typeof h.name === "string" && accounts.has(h.accountId) && ["fund", "stock", "etf"].includes(h.kind) && normalizeCode(h.kind, h.code) === h.code && validQuantity(h.quantity) && validCents(h.costCents) && h.costCents >= 0 && (h.amountBasisCents === undefined || (validCents(h.amountBasisCents) && h.amountBasisCents > 0)) && isValidIsoDate(h.acquiredOn); } catch { return false; }
   });
   out.events = (Array.isArray(s.events) ? s.events : []).filter(e => e && typeof e.id === "string" && ["buy", "sell", "income", "transfer", "repay", "dividend", "reinvest", "quantity", "adjust"].includes(e.kind) && accounts.has(e.accountId) && isValidIsoDate(e.date) && validInstant(e.createdAt) && validCents(e.amountCents) && validCents(e.feeCents));
   out.epochs = (Array.isArray(s.epochs) ? s.epochs : []).filter(e => e && accounts.has(e.accountId) && validInstant(e.from) && (!e.to || validInstant(e.to))).map(e => ({ ...e, includedRecordIds: stringIds(e.includedRecordIds) }));
@@ -142,7 +164,7 @@ export function setDefaultCash(state: AssetState, accountId: string, records: Le
 }
 export function calibrateAccount(state: AssetState, id: string, cents: number, records: LedgerRecord[], now: Date): void {
   const account = state.accounts.find(a => a.id === id);
-  if (!account || account.kind === "investment" || !validCents(cents) || (account.kind === "liability" && cents < 0)) throw new Error("余额无效或该账户须通过持仓估值");
+  if (!account || !validCents(cents) || (account.kind === "liability" && cents < 0)) throw new Error("余额无效");
   account.balanceCents = cents; account.baselineAt = now.toISOString();
   account.includedEventIds = state.events.map(e => e.id); account.includedRecordIds = baselineRecordIds(records, now);
 }
@@ -208,10 +230,10 @@ export function buildAssetSnapshot(state: AssetState, records: LedgerRecord[], n
     }
     const holdings = state.holdings.filter(h => h.accountId === account.id).map(h => {
       const quote = state.quotes[quoteKey(h.kind, h.code)];
-      const value = decimal(h.quantity).eq(0) ? 0 : quote && decimal(quote.price).gt(0) ? valueCents(h.quantity, quote.price) : null;
+      const value = h.amountBasisCents !== undefined && h.quantity === "0" ? h.amountBasisCents : decimal(h.quantity).eq(0) ? 0 : quote && decimal(quote.price).gt(0) ? valueCents(h.quantity, quote.price) : null;
       return { ...h, quote: quote ? { ...quote } : undefined, valueCents: value };
     });
-    if (account.kind === "investment") cents = holdings.reduce((sum, h) => sum + (h.valueCents ?? 0), 0);
+    if (account.kind === "investment") cents += holdings.reduce((sum, h) => sum + (h.valueCents ?? 0), 0);
     if (!Number.isSafeInteger(cents)) throw new Error("账户金额超出可计算范围");
     return { id: account.id, name: account.name, kind: account.kind, cents, missing: holdings.some(h => h.valueCents === null), holdings };
   });
@@ -260,6 +282,7 @@ export function addAssetEvent(state: AssetState, event: AssetEvent): void {
   if (["buy", "sell", "dividend", "reinvest", "quantity"].includes(event.kind)) {
     const h = state.holdings.find(h => h.id === event.holdingId && h.accountId === account.id);
     if (!h) throw new Error("请选择该账户的持仓");
+    if (h.amountBasisCents !== undefined && event.kind !== "dividend") throw new Error("请先核对平台实际份额和成本，再记录买卖或份额变动");
     if ((event.kind === "buy" && event.amountCents <= event.feeCents) || (event.kind === "sell" && event.amountCents + event.feeCents <= 0)) throw new Error("请填写实际成交金额和费用");
     if (event.price && decimal(event.price).lte(0)) throw new Error("成交价格必须大于零");
     if (["reinvest", "quantity"].includes(event.kind) && (event.amountCents !== 0 || event.feeCents !== 0)) throw new Error("份额调整不直接改变现金，金额与费用应为0");

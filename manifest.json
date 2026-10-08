@@ -1,7 +1,7 @@
 {
   "id": "ledger-statistics",
   "name": "记账统计",
-  "version": "2.10.0",
+  "version": "2.10.1",
   "minAppVersion": "1.5.12",
   "description": "本地记账统计、资产总览与持仓自动估值，支持双端桑基图、预算、消费报告和可选 AI 洞察。",
   "author": "Local",

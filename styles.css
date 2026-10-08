@@ -3426,3 +3426,23 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
 @media (max-width: 600px) {
   .ledger-assets-sankey-modal .ledger-assets-sankey { min-width: 1080px; }
 }
+
+.ledger-assets-allocation { display: grid; grid-template-columns: minmax(160px, 240px) minmax(0, 1fr); gap: 28px; align-items: center; }
+.ledger-assets-ring { width: 100%; height: auto; color: var(--text-normal); }
+.ledger-assets-allocation-legend { display: grid; gap: 18px; }
+.ledger-assets-allocation-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 6px 12px; align-items: center; }
+.ledger-assets-allocation-row strong { font-variant-numeric: tabular-nums; }
+.ledger-assets-allocation-row small { grid-column: 2 / -1; color: var(--asset-muted); }
+.ledger-assets-dot { width: 10px; height: 10px; border-radius: 50%; }
+.ledger-assets-holding-list { margin-bottom: 12px; }
+.ledger-assets summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; gap: 8px; }
+.ledger-assets summary::before { content: '›'; color: var(--asset-muted); }
+.ledger-assets details[open] > summary::before { transform: rotate(90deg); }
+.ledger-assets-holding-list summary { color: var(--asset-muted); font-size: 13px; }
+.ledger-assets details > .ledger-assets-actions { margin-top: 12px; }
+.ledger-assets-field[hidden] { display: none; }
+@media (max-width: 600px) {
+  .ledger-assets-allocation { grid-template-columns: 1fr; gap: 12px; }
+  .ledger-assets-ring { max-width: 220px; justify-self: center; }
+  .ledger-assets-allocation-legend { gap: 12px; }
+}

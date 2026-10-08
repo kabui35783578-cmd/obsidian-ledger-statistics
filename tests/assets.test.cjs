@@ -247,3 +247,41 @@ test('asset changes serialize, roll back failed persistence and preserve the nex
   const failure = assert.rejects(first, /磁盘错误/); blocked.resolve(); await failure; await second;
   assert.equal(plugin.settings.assets.accounts[0].name, '已保存'); assert.equal(saves, 2); assert.equal(redraws, 1);
 });
+
+test('investment cash is included and can be recalibrated without removing holdings', () => {
+  const state = fixture(); state.accounts.find(a => a.id === 'funds').balanceCents = 50000;
+  assert.equal(balances(state).funds, 60000);
+  a.calibrateAccount(state, 'funds', 75000, [], at(12));
+  assert.equal(balances(state).funds, 85000);
+  assert.equal(state.holdings[0].quantity, '100');
+});
+test('current amount entries save immediately, survive reload and establish quantity only once', () => {
+  let state = fixture();
+  const h = a.addAmountHolding(state, 'funds', 'fund', '000002', '1234.56', at(12));
+  assert.equal(h.acquiredOn, core.isoFromDate(at(12)));
+  assert.equal(h.quantity, '0'); assert.equal(balances(state).funds, 133456);
+  state = a.normalizeAssets(clone(state));
+  const holding = state.holdings.find(v => v.id === h.id);
+  assert.equal(holding.amountBasisCents, 123456);
+  assert.equal(q.quoteDue(holding, undefined, at(12)), true);
+  a.applyAssetQuote(state, { key: 'fund:000002', name: '测试基金', price: '0', asOf: '', fetchedAt: at(12).toISOString(), attemptedAt: at(12).toISOString(), error: '请求失败' });
+  assert.equal(balances(state).funds, 133456); assert.equal(holding.quantity, '0');
+  const quote = { key: 'fund:000002', name: '测试基金', price: '1.23456', asOf: '2026-10-08', fetchedAt: at(12).toISOString() };
+  a.applyAssetQuote(state, quote);
+  assert.equal(holding.name, '测试基金'); assert.equal(holding.quantity, '1000');
+  assert.equal(balances(state).funds, 133456);
+  a.applyAssetQuote(state, { ...quote, price: '1.5' });
+  assert.equal(holding.quantity, '1000'); assert.equal(balances(state).funds, 160000);
+  assert.equal(balances(state).cash, 100000);
+  assert.throws(() => a.addAmountHolding(state, 'cash', 'fund', '000002', '100'), /投资账户/);
+  assert.throws(() => a.addAmountHolding(state, 'funds', 'fund', '000002', '0'), /大于零/);
+  assert.throws(() => a.addAssetEvent(state, event('buy', { holdingId: h.id, quantity: '100' })), /核对平台/);
+});
+test('stock amount estimates retain fractional exposure without rounding away entered value', () => {
+  const state = fixture();
+  const h = a.addAmountHolding(state, 'funds', 'stock', '600000', '100.01', at(12));
+  a.applyAssetQuote(state, { key: 'stock:sh600000', name: '股票', price: '13.17', asOf: '2026-10-08', fetchedAt: at(12).toISOString() });
+  assert.equal(a.valueCents(h.quantity, '13.17'), 10001);
+  assert.ok(a.decimal(h.quantity).gt(0));
+  assert.equal(a.normalizeAssets(clone(state)).holdings.length, 2);
+});

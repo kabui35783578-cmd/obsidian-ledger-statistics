@@ -31,9 +31,9 @@ export function parseStockQuote(holding: Pick<AssetHolding, "code" | "kind">, so
   return { key: quoteKey(holding.kind, holding.code), name: fields[1] || holding.code, price: decimal(price).toFixed(), asOf, fetchedAt: now.toISOString() };
 }
 export function quoteDue(holding: AssetHolding, quote: AssetQuote | undefined, now: Date, force = false): boolean {
-  if (decimal(holding.quantity).eq(0)) return false;
+  if (decimal(holding.quantity).eq(0) && holding.amountBasisCents === undefined) return false;
   if (quote?.error && quote.attemptedAt && now.getTime() - Date.parse(quote.attemptedAt) < 15 * 60000) return false;
-  return force || !quote || now.getTime() - Date.parse(quote.fetchedAt) >= (holding.kind === "fund" ? 6 * 3600000 : 15 * 60000);
+  return force || (holding.amountBasisCents !== undefined && holding.quantity === "0") || !quote || now.getTime() - Date.parse(quote.fetchedAt) >= (holding.kind === "fund" ? 6 * 3600000 : 15 * 60000);
 }
 export class AssetQuoteMonitor {
   private stopped = false;

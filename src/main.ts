@@ -8,7 +8,7 @@ import { DEFAULT_SETTINGS, LedgerSettingTab, LedgerSettings } from "./settings";
 import { LedgerStatisticsView, LEDGER_VIEW_TYPE } from "./view";
 import { normalizeReportPreferences } from "./report";
 import { normalizeReportCaches } from "./report-ai";
-import { AssetSnapshot, AssetState, buildAssetSnapshot, normalizeAssets, quoteKey, renameAssetLinks, storeAssetSnapshot } from "./assets";
+import { AssetSnapshot, AssetState, applyAssetQuote, buildAssetSnapshot, normalizeAssets, renameAssetLinks, storeAssetSnapshot } from "./assets";
 import { AssetQuoteMonitor } from "./asset-quotes";
 
 export default class LedgerStatisticsPlugin extends Plugin {
@@ -29,11 +29,7 @@ export default class LedgerStatisticsPlugin extends Plugin {
       const response = await requestUrl({ url, method: "GET", throw: true });
       return { text: response.text, arrayBuffer: response.arrayBuffer };
     }, quotes => this.updateAssets(state => {
-      const held = new Set(state.holdings.map(h => quoteKey(h.kind, h.code)));
-      for (const quote of quotes) if (held.has(quote.key)) {
-        state.quotes[quote.key] = quote;
-        if (!quote.error) for (const h of state.holdings) if (quoteKey(h.kind, h.code) === quote.key && h.name === h.code) h.name = quote.name;
-      }
+      for (const quote of quotes) applyAssetQuote(state, quote);
     }));
     this.settings.reportPreferences = normalizeReportPreferences(this.settings.reportPreferences);
     this.settings.reportCaches = normalizeReportCaches(this.settings.reportCaches);

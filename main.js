@@ -5395,6 +5395,26 @@ function validateQuantity(value, kind) {
 function quoteKey(kind, code) {
   return `${kind}:${normalizeCode(kind, code)}`;
 }
+function addAmountHolding(state, accountId, kind, code, amount, now = /* @__PURE__ */ new Date()) {
+  if (!state.accounts.some((a) => a.id === accountId && a.kind === "investment")) throw new Error("\u8BF7\u9009\u62E9\u6295\u8D44\u8D26\u6237");
+  const normalized = normalizeCode(kind, code), cents = moneyCents(amount);
+  if (cents <= 0) throw new Error("\u5F53\u524D\u6301\u4ED3\u91D1\u989D\u987B\u5927\u4E8E\u96F6");
+  const holding = { id: assetId(), accountId, kind, code: normalized, name: normalized, quantity: "0", costCents: cents, amountBasisCents: cents, acquiredOn: isoFromDate(now) };
+  state.holdings.push(holding);
+  return holding;
+}
+function applyAssetQuote(state, quote) {
+  const holdings = state.holdings.filter((h) => quoteKey(h.kind, h.code) === quote.key);
+  if (!holdings.length) return;
+  state.quotes[quote.key] = quote;
+  if (quote.error || decimal2(quote.price).lte(0)) return;
+  for (const h of holdings) {
+    if (h.name === h.code) h.name = quote.name;
+    if (h.amountBasisCents !== void 0 && h.quantity === "0") {
+      h.quantity = new decimal_default(h.amountBasisCents).div(100).div(quote.price).toDecimalPlaces(12).toFixed();
+    }
+  }
+}
 function normalizeCode(kind, input2) {
   const code = input2.trim().toLowerCase();
   if (kind === "fund") {
@@ -5429,7 +5449,7 @@ function normalizeAssets(input2) {
   const accounts = new Set(out.accounts.map((a) => a.id));
   out.holdings = (Array.isArray(s.holdings) ? s.holdings : []).filter((h) => {
     try {
-      return h && typeof h.id === "string" && typeof h.name === "string" && accounts.has(h.accountId) && ["fund", "stock", "etf"].includes(h.kind) && normalizeCode(h.kind, h.code) === h.code && validQuantity(h.quantity) && validCents(h.costCents) && h.costCents >= 0 && isValidIsoDate(h.acquiredOn);
+      return h && typeof h.id === "string" && typeof h.name === "string" && accounts.has(h.accountId) && ["fund", "stock", "etf"].includes(h.kind) && normalizeCode(h.kind, h.code) === h.code && validQuantity(h.quantity) && validCents(h.costCents) && h.costCents >= 0 && (h.amountBasisCents === void 0 || validCents(h.amountBasisCents) && h.amountBasisCents > 0) && isValidIsoDate(h.acquiredOn);
     } catch (e) {
       return false;
     }
@@ -5478,7 +5498,7 @@ function setDefaultCash(state, accountId, records, now) {
 }
 function calibrateAccount(state, id, cents, records, now) {
   const account = state.accounts.find((a) => a.id === id);
-  if (!account || account.kind === "investment" || !validCents(cents) || account.kind === "liability" && cents < 0) throw new Error("\u4F59\u989D\u65E0\u6548\u6216\u8BE5\u8D26\u6237\u987B\u901A\u8FC7\u6301\u4ED3\u4F30\u503C");
+  if (!account || !validCents(cents) || account.kind === "liability" && cents < 0) throw new Error("\u4F59\u989D\u65E0\u6548");
   account.balanceCents = cents;
   account.baselineAt = now.toISOString();
   account.includedEventIds = state.events.map((e) => e.id);
@@ -5544,10 +5564,10 @@ function buildAssetSnapshot(state, records, now = /* @__PURE__ */ new Date()) {
     }
     const holdings = state.holdings.filter((h) => h.accountId === account.id).map((h) => {
       const quote = state.quotes[quoteKey(h.kind, h.code)];
-      const value = decimal2(h.quantity).eq(0) ? 0 : quote && decimal2(quote.price).gt(0) ? valueCents(h.quantity, quote.price) : null;
+      const value = h.amountBasisCents !== void 0 && h.quantity === "0" ? h.amountBasisCents : decimal2(h.quantity).eq(0) ? 0 : quote && decimal2(quote.price).gt(0) ? valueCents(h.quantity, quote.price) : null;
       return { ...h, quote: quote ? { ...quote } : void 0, valueCents: value };
     });
-    if (account.kind === "investment") cents = holdings.reduce((sum3, h) => {
+    if (account.kind === "investment") cents += holdings.reduce((sum3, h) => {
       var _a2;
       return sum3 + ((_a2 = h.valueCents) != null ? _a2 : 0);
     }, 0);
@@ -5603,6 +5623,7 @@ function addAssetEvent(state, event) {
   if (["buy", "sell", "dividend", "reinvest", "quantity"].includes(event.kind)) {
     const h = state.holdings.find((h2) => h2.id === event.holdingId && h2.accountId === account.id);
     if (!h) throw new Error("\u8BF7\u9009\u62E9\u8BE5\u8D26\u6237\u7684\u6301\u4ED3");
+    if (h.amountBasisCents !== void 0 && event.kind !== "dividend") throw new Error("\u8BF7\u5148\u6838\u5BF9\u5E73\u53F0\u5B9E\u9645\u4EFD\u989D\u548C\u6210\u672C\uFF0C\u518D\u8BB0\u5F55\u4E70\u5356\u6216\u4EFD\u989D\u53D8\u52A8");
     if (event.kind === "buy" && event.amountCents <= event.feeCents || event.kind === "sell" && event.amountCents + event.feeCents <= 0) throw new Error("\u8BF7\u586B\u5199\u5B9E\u9645\u6210\u4EA4\u91D1\u989D\u548C\u8D39\u7528");
     if (event.price && decimal2(event.price).lte(0)) throw new Error("\u6210\u4EA4\u4EF7\u683C\u5FC5\u987B\u5927\u4E8E\u96F6");
     if (["reinvest", "quantity"].includes(event.kind) && (event.amountCents !== 0 || event.feeCents !== 0)) throw new Error("\u4EFD\u989D\u8C03\u6574\u4E0D\u76F4\u63A5\u6539\u53D8\u73B0\u91D1\uFF0C\u91D1\u989D\u4E0E\u8D39\u7528\u5E94\u4E3A0");
@@ -8069,6 +8090,39 @@ var import_obsidian8 = require("obsidian");
 // src/asset-charts.ts
 var NS2 = "http://www.w3.org/2000/svg";
 var COLORS = { cash: "#bb8967", investment: "#8678b0", fixed: "#a6acb6", receivable: "#8a93a4", liability: "#cb8f96" };
+function renderAssetAllocation(parent, snapshot, excludeFixed, hide) {
+  const accounts = snapshot.accounts.filter((a) => a.kind !== "liability" && !(excludeFixed && a.kind === "fixed") && a.cents > 0);
+  const total3 = accounts.reduce((sum3, a) => sum3 + a.cents, 0);
+  if (!total3) {
+    parent.createEl("p", { cls: "ledger-assets-empty", text: "\u6682\u65E0\u6B63\u8D44\u4EA7\uFF0C\u6DFB\u52A0\u8D26\u6237\u6216\u6301\u4ED3\u540E\u663E\u793A\u56FE\u8868\u3002" });
+    return;
+  }
+  const groups = ["cash", "investment", "fixed", "receivable"].map((kind) => ({ kind, cents: accounts.filter((a) => a.kind === kind).reduce((sum3, a) => sum3 + a.cents, 0) })).filter((g) => g.cents > 0);
+  const layout = parent.createDiv({ cls: "ledger-assets-allocation" });
+  const svg = document.createElementNS(NS2, "svg");
+  svg.setAttribute("viewBox", "0 0 240 240");
+  svg.setAttribute("class", "ledger-assets-ring");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", hide ? "\u8D44\u4EA7\u7EC4\u6210\uFF0C\u91D1\u989D\u5DF2\u9690\u85CF" : "\u6B63\u8D44\u4EA7\u5206\u7C7B\u5360\u6BD4");
+  layout.appendChild(svg);
+  const radius = 86, circumference = 2 * Math.PI * radius;
+  el2("circle", { cx: 120, cy: 120, r: radius, fill: "none", stroke: "var(--background-modifier-border)", "stroke-width": 24 }, svg);
+  let offset = 0;
+  const legend = layout.createDiv({ cls: "ledger-assets-allocation-legend" });
+  for (const group2 of groups) {
+    const share = group2.cents / total3, length = share * circumference;
+    if (!hide) el2("circle", { cx: 120, cy: 120, r: radius, fill: "none", stroke: COLORS[group2.kind], "stroke-width": 24, "stroke-dasharray": `${length} ${circumference - length}`, "stroke-dashoffset": -offset, transform: "rotate(-90 120 120)" }, svg);
+    offset += length;
+    const row = legend.createDiv({ cls: "ledger-assets-allocation-row" }), dot = row.createSpan({ cls: "ledger-assets-dot" });
+    dot.style.background = COLORS[group2.kind];
+    row.createSpan({ text: ASSET_NAMES[group2.kind] });
+    row.createEl("strong", { text: hide ? "\u2022\u2022\u2022\u2022" : formatCents(group2.cents) });
+    row.createEl("small", { text: hide ? "" : `${(share * 100).toFixed(1)}%` });
+  }
+  label(svg, 120, 110, "\u8D44\u4EA7\u5206\u5E03", 15, "middle");
+  label(svg, 120, 137, hide ? "\u2022\u2022\u2022\u2022" : `${accounts.length}\u4E2A\u8D26\u6237`, 20, "middle");
+  if (snapshot.accounts.some((a) => a.kind !== "liability" && a.cents < 0)) parent.createEl("small", { cls: "ledger-assets-hint", text: "\u5360\u6BD4\u6309\u6B63\u8D44\u4EA7\u8BA1\u7B97\uFF0C\u8D1F\u4F59\u989D\u8BA1\u5165\u603B\u8D44\u4EA7\u3002" });
+}
 function el2(type, attrs, parent) {
   const node = document.createElementNS(NS2, type);
   for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, String(value));
@@ -8100,10 +8154,20 @@ function renderAssetSankey(parent, snapshot, excludeFixed, hide, expanded, onExp
   const visible = snapshot.accounts.filter((a) => a.kind !== "liability" && !(excludeFixed && a.kind === "fixed") && a.cents > 0);
   const kinds = ["cash", "fixed", "investment", "receivable"];
   const groups = kinds.map((kind) => ({ kind, accounts: visible.filter((a) => a.kind === kind) })).filter((g) => g.accounts.length);
-  const rows = groups.flatMap((g) => g.accounts.flatMap((a) => expanded.has(a.id) && a.kind === "investment" ? a.holdings.filter((h) => {
-    var _a;
-    return ((_a = h.valueCents) != null ? _a : 0) > 0;
-  }).map((h) => ({ account: a, id: h.id, name: h.name, cents: h.valueCents, holding: true })) : [{ account: a, id: a.id, name: a.name, cents: a.cents, holding: false }]));
+  const rows = groups.flatMap((g) => g.accounts.flatMap((a) => {
+    if (!expanded.has(a.id) || a.kind !== "investment") return [{ account: a, id: a.id, name: a.name, cents: a.cents, holding: false }];
+    const cash = a.cents - a.holdings.reduce((sum3, h) => {
+      var _a;
+      return sum3 + ((_a = h.valueCents) != null ? _a : 0);
+    }, 0);
+    if (cash < 0) return [{ account: a, id: a.id, name: a.name, cents: a.cents, holding: false }];
+    const rows2 = a.holdings.filter((h) => {
+      var _a;
+      return ((_a = h.valueCents) != null ? _a : 0) > 0;
+    }).map((h) => ({ account: a, id: h.id, name: h.name, cents: h.valueCents, holding: true }));
+    if (cash > 0) rows2.push({ account: a, id: a.id, name: `${a.name} \xB7 \u73B0\u91D1`, cents: cash, holding: true });
+    return rows2;
+  }));
   if (!rows.length) {
     parent.createEl("p", { cls: "ledger-assets-empty", text: snapshot.accounts.length ? "\u5F53\u524D\u6CA1\u6709\u53EF\u7ED8\u5236\u7684\u6B63\u8D44\u4EA7\uFF1B\u672A\u4F30\u503C\u6301\u4ED3\u3001\u8D1F\u4F59\u989D\u4E0E\u51C0\u8D44\u4EA7\u7F3A\u53E3\u8BF7\u67E5\u770B\u603B\u89C8\u548C\u8D26\u6237\u3002" : "\u6DFB\u52A0\u8D26\u6237\u548C\u6301\u4ED3\u540E\uFF0C\u8FD9\u91CC\u663E\u793A\u8D44\u4EA7\u7EC4\u6210\u6851\u57FA\u56FE\u3002" });
     return;
@@ -8197,14 +8261,6 @@ function select(parent, name, choices, value = "") {
   if (value) node.value = value;
   return node;
 }
-function localDateTime(now = /* @__PURE__ */ new Date()) {
-  return `${isoFromDate(now)}T${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-}
-function parseBaseline(value) {
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime()) || date.getTime() > Date.now()) throw new Error("\u4F59\u989D\u65F6\u70B9\u65E0\u6548\uFF0C\u4E0D\u80FD\u4F7F\u7528\u672A\u6765\u65F6\u95F4");
-  return date;
-}
 var AssetFormModal = class extends import_obsidian8.Modal {
   constructor(plugin, title, build) {
     super(plugin.app);
@@ -8224,6 +8280,7 @@ var AssetFormModal = class extends import_obsidian8.Modal {
       event.preventDefault();
       if (save.disabled) return;
       save.disabled = true;
+      save.setText("\u4FDD\u5B58\u4E2D\u2026");
       error.setText("");
       void submit().then(() => {
         this.close();
@@ -8231,6 +8288,7 @@ var AssetFormModal = class extends import_obsidian8.Modal {
       }).catch((reason) => {
         error.setText(reason instanceof Error ? reason.message : "\u4FDD\u5B58\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5");
         save.disabled = false;
+        save.setText("\u4FDD\u5B58");
       });
     });
   }
@@ -8255,7 +8313,6 @@ var AssetPanel = class {
     const actions = top.createDiv({ cls: "ledger-assets-actions" });
     button(actions, "\u6DFB\u52A0\u8D26\u6237", () => this.accountForm(), true);
     button(actions, "\u6DFB\u52A0\u6301\u4ED3", () => this.holdingForm());
-    button(actions, "\u8BB0\u5F55\u4EA4\u6613", () => this.eventForm());
     const refresh = button(actions, "\u5237\u65B0\u884C\u60C5", () => {
       refresh.disabled = true;
       void this.plugin.refreshAssetQuotes(true).catch((e) => new import_obsidian8.Notice(e instanceof Error ? e.message : "\u884C\u60C5\u5237\u65B0\u5931\u8D25")).finally(() => {
@@ -8279,7 +8336,7 @@ var AssetPanel = class {
       var _a2;
       return (_a2 = h.quote) == null ? void 0 : _a2.asOf;
     }).filter((v) => !!v))].sort().reverse()[0];
-    hero.createDiv({ cls: "ledger-assets-updated", text: latest ? `\u6700\u65B0\u884C\u60C5 ${latest.replace("T", " ").slice(0, 19)} \xB7 \u5404\u6301\u4ED3\u65E5\u671F\u89C1\u4E0B\u65B9` : "\u4F59\u989D\u6765\u81EA\u4F60\u786E\u8BA4\u7684\u65F6\u70B9\u4E0E\u5DF2\u8BB0\u5F55\u6536\u652F" });
+    hero.createDiv({ cls: "ledger-assets-updated", text: latest ? `\u884C\u60C5 ${latest.replace("T", " ").slice(0, 16)}` : "\u5F53\u524D\u4F59\u989D" });
     const metrics = hero.createDiv({ cls: "ledger-assets-metrics" });
     metrics.createSpan({ text: `\u51C0\u8D44\u4EA7 ${money3(totals.netCents)}` });
     metrics.createSpan({ text: `\u603B\u8D1F\u503A ${money3(totals.liabilitiesCents)}` });
@@ -8288,25 +8345,20 @@ var AssetPanel = class {
     if (snapshot.pending.length) {
       const warning = root.createDiv({ cls: "ledger-assets-warning" });
       warning.createEl("strong", { text: "\u6709\u8D44\u91D1\u53D8\u52A8\u5F85\u6838\u5BF9" });
-      for (const text2 of snapshot.pending) warning.createEl("p", { text: state.hideAmounts ? "\u6709\u6D41\u6C34\u65F6\u95F4\u6216\u5173\u8054\u9700\u8981\u6838\u5BF9" : text2 });
+      const details = warning.createEl("details");
+      details.createEl("summary", { text: `${snapshot.pending.length}\u9879\u5F85\u6838\u5BF9` });
+      for (const text2 of snapshot.pending) details.createEl("p", { text: state.hideAmounts ? "\u6D41\u6C34\u5F85\u6838\u5BF9" : text2 });
       button(warning, "\u6838\u5BF9\u6D41\u6C34", () => this.reviewForm());
       button(warning, "\u6838\u5BF9\u4EA4\u6613\u5173\u8054", () => this.linkForm());
     }
     const card2 = root.createDiv({ cls: "ledger-assets-card" }), heading = card2.createDiv({ cls: "ledger-assets-title-row" });
     heading.createEl("h3", { text: "\u8D44\u4EA7\u7EC4\u6210" });
     button(heading, "\u653E\u5927\u67E5\u770B", () => this.sankeyModal(snapshot));
-    renderAssetSankey(card2, snapshot, state.excludeFixed, state.hideAmounts, this.expanded, (id) => {
-      this.expanded.has(id) ? this.expanded.delete(id) : this.expanded.add(id);
-      this.plugin.refreshAssetViews();
-    }, (id) => this.accountDetails(id));
-    card2.createEl("p", { cls: "ledger-assets-hint", text: "\u66F2\u7EBF\u8868\u793A\u5F53\u524D\u8D44\u4EA7\u7EC4\u6210 \xB7 \u70B9\u51FB\u6295\u8D44\u8D26\u6237\u5C55\u5F00\u6301\u4ED3 \xB7 \u624B\u673A\u53EF\u6A2A\u5411\u6ED1\u52A8" });
+    renderAssetAllocation(card2, snapshot, state.excludeFixed, state.hideAmounts);
     const list = root.createDiv({ cls: "ledger-assets-card" });
     const listHeader = list.createDiv({ cls: "ledger-assets-title-row" });
     listHeader.createEl("h3", { text: "\u8D26\u6237\u4E0E\u6301\u4ED3" });
-    button(listHeader, "\u9ED8\u8BA4\u6263\u6B3E\u8D26\u6237", () => this.defaultForm());
-    button(listHeader, "\u6838\u5BF9\u6D41\u6C34", () => this.reviewForm());
-    button(listHeader, "\u4EA4\u6613\u5173\u8054", () => this.linkForm());
-    if (!state.accounts.length) list.createEl("p", { text: "\u5148\u6DFB\u52A0\u73B0\u91D1\u8D26\u6237\u548C\u6295\u8D44\u8D26\u6237\uFF0C\u518D\u6DFB\u52A0\u6301\u4ED3\u3002\u521D\u59CB\u8D44\u4EA7\u53EA\u767B\u8BB0\u4E00\u6B21\uFF0C\u4E4B\u540E\u884C\u60C5\u4E0E\u65B0\u6D88\u8D39\u4F1A\u81EA\u52A8\u66F4\u65B0\u3002" });
+    if (!state.accounts.length) list.createEl("p", { text: "\u6DFB\u52A0\u8D26\u6237\uFF0C\u5F00\u59CB\u67E5\u770B\u8D44\u4EA7\u3002" });
     for (const account of snapshot.accounts) {
       const row = list.createDiv({ cls: "ledger-assets-account" });
       const info = row.createDiv();
@@ -8314,20 +8366,29 @@ var AssetPanel = class {
       info.createEl("small", { text: `${ASSET_NAMES[account.kind]}${account.id === state.defaultCashId ? " \xB7 \u9ED8\u8BA4\u6D88\u8D39\u6263\u6B3E" : ""}${account.missing ? " \xB7 \u542B\u672A\u4F30\u503C\u6301\u4ED3" : ""}` });
       row.createEl("strong", { text: money3(account.cents) });
       button(row, "\u7BA1\u7406", () => this.accountDetails(account.id));
+      const holdingList = account.holdings.length ? list.createEl("details", { cls: "ledger-assets-holding-list" }) : null;
+      holdingList == null ? void 0 : holdingList.createEl("summary", { text: `${account.holdings.length}\u9879\u6301\u4ED3` });
       for (const holding of account.holdings) {
-        const detail = list.createDiv({ cls: "ledger-assets-holding" });
+        const detail = holdingList.createDiv({ cls: "ledger-assets-holding" });
         detail.createEl("strong", { text: holding.name });
-        detail.createSpan({ text: `${holding.code} \xB7 ${state.hideAmounts ? "\u2022\u2022\u2022\u2022" : holding.quantity} ${holding.kind === "stock" ? "\u80A1" : "\u4EFD"}` });
+        detail.createSpan({ text: `${holding.code}${holding.amountBasisCents !== void 0 ? " \xB7 \u53C2\u8003\u4EFD\u989D" : ""} \xB7 ${state.hideAmounts ? "\u2022\u2022\u2022\u2022" : holding.amountBasisCents !== void 0 && holding.quantity === "0" ? "\u5F85\u6362\u7B97" : decimal2(holding.quantity).toDecimalPlaces(2).toFixed()} ${holding.kind === "stock" ? "\u80A1" : "\u4EFD"}` });
         detail.createSpan({ text: holding.valueCents === null ? "\u672A\u4F30\u503C" : money3(holding.valueCents) });
-        if (holding.valueCents !== null) detail.createEl("small", { text: `\u6301\u4ED3\u76C8\u4E8F ${money3(holding.valueCents - holding.costCents)}` });
-        detail.createEl("small", { text: holding.quote && decimal2(holding.quote.price).gt(0) ? `\u884C\u60C5 ${holding.quote.asOf.replace("T", " ").slice(0, 19)}${holding.quote.error ? " \xB7 \u66F4\u65B0\u5931\u8D25\uFF0C\u4FDD\u7559\u4E0A\u6B21\u503C" : ""}` : ((_a = holding.quote) == null ? void 0 : _a.error) || "\u7B49\u5F85\u67E5\u8BE2\u51C0\u503C\u6216\u4EF7\u683C" });
+        if (holding.valueCents !== null) detail.createEl("small", { text: `${holding.amountBasisCents !== void 0 ? "\u5F55\u5165\u540E\u53D8\u5316" : "\u6301\u4ED3\u76C8\u4E8F"} ${money3(holding.valueCents - holding.costCents)}` });
+        detail.createEl("small", { text: holding.quote && decimal2(holding.quote.price).gt(0) ? `\u884C\u60C5 ${holding.quote.asOf.replace("T", " ").slice(0, 19)}${holding.quote.error ? " \xB7 \u66F4\u65B0\u5931\u8D25\uFF0C\u4FDD\u7559\u4E0A\u6B21\u503C" : ""}` : ((_a = holding.quote) == null ? void 0 : _a.error) || (holding.amountBasisCents !== void 0 ? "\u6309\u5F55\u5165\u91D1\u989D\u663E\u793A \xB7 \u7B49\u5F85\u884C\u60C5" : "\u7B49\u5F85\u884C\u60C5") });
         button(detail, "\u6838\u5BF9\u6301\u4ED3", () => this.holdingCorrection(holding));
       }
     }
-    const events = root.createEl("details", { cls: "ledger-assets-card" });
+    const tools = root.createEl("details", { cls: "ledger-assets-card" });
+    tools.createEl("summary", { text: "\u8D44\u4EA7\u7BA1\u7406" });
+    const toolsActions = tools.createDiv({ cls: "ledger-assets-actions" });
+    button(toolsActions, "\u8BB0\u5F55\u4EA4\u6613", () => this.eventForm());
+    button(toolsActions, "\u9ED8\u8BA4\u6263\u6B3E\u8D26\u6237", () => this.defaultForm());
+    button(toolsActions, "\u6838\u5BF9\u6D41\u6C34", () => this.reviewForm());
+    button(toolsActions, "\u4EA4\u6613\u5173\u8054", () => this.linkForm());
+    tools.createEl("p", { cls: "ledger-assets-hint", text: "\u4EFD\u989D\u7531\u5F53\u524D\u91D1\u989D\u548C\u9996\u6B21\u83B7\u53D6\u7684\u884C\u60C5\u4F30\u7B97\u3002\u57FA\u91D1\u51C0\u503C\u53EF\u80FD\u5EF6\u8FDF\uFF1B\u4E70\u5356\u524D\u53EF\u5728\u6301\u4ED3\u8BE6\u60C5\u6838\u5BF9\u5E73\u53F0\u5B9E\u9645\u4EFD\u989D\u4E0E\u6210\u672C\u3002" });
+    const events = tools.createEl("details", { cls: "ledger-assets-card" });
     events.createEl("summary", { text: `\u8D44\u4EA7\u4EA4\u6613\u8BB0\u5F55\uFF08${state.events.length}\u7B14\uFF09` });
     for (const event of [...state.events].reverse().slice(0, 100)) events.createDiv({ cls: "ledger-assets-event-row", text: `${event.date} \xB7 ${event.note || EVENT_NAMES[event.kind]} \xB7 ${money3(event.amountCents)}${event.link ? " \xB7 \u5DF2\u5173\u8054\u8D26\u672C" : ""}` });
-    root.createEl("p", { cls: "ledger-assets-hint", text: "\u8D44\u4EA7\u4E0E\u6D88\u8D39\u7EDF\u8BA1\u4F7F\u7528\u72EC\u7ACB\u53E3\u5F84\u3002\u57FA\u91D1\u6309\u6700\u65B0\u516C\u5E03\u51C0\u503C\u4F30\u503C\uFF1B\u884C\u60C5\u81EA\u52A8\u66F4\u65B0\u4E0D\u4F1A\u8C03\u7528AI\u3002\u516C\u5F00\u884C\u60C5\u53EF\u80FD\u5EF6\u8FDF\u6216\u6682\u65F6\u4E0D\u53EF\u7528\u3002" });
   }
   save(change) {
     return this.plugin.updateAssets(change);
@@ -8338,7 +8399,6 @@ var AssetPanel = class {
     title.createSpan({ text: previous ? `\u76F8\u6BD4 ${previous.date}` : "\u6682\u65E0\u53EF\u6BD4\u8BB0\u5F55" });
     button(title, "\u8D44\u4EA7\u6708\u5386 \u203A", () => this.calendarModal());
     if (!previous) {
-      card2.createEl("p", { cls: "ledger-assets-hint", text: "\u6BCF\u65E5\u81EA\u52A8\u4FDD\u5B58\u5B9E\u9645\u8D44\u4EA7\u5FEB\u7167\uFF0C\u6709\u4E0A\u6708\u8BB0\u5F55\u540E\u663E\u793A\u589E\u51CF\u3002" });
       return;
     }
     const before = assetTotals(previous, state.excludeFixed), after = assetTotals(current, state.excludeFixed);
@@ -8368,27 +8428,35 @@ var AssetPanel = class {
       const name = input(body, "\u8D26\u6237\u540D\u79F0", (_a = existing == null ? void 0 : existing.name) != null ? _a : "");
       const kind = select(body, "\u8D26\u6237\u7C7B\u522B", Object.entries(ASSET_NAMES), (_b = existing == null ? void 0 : existing.kind) != null ? _b : "cash");
       kind.disabled = !!existing;
-      const balance = input(body, "\u5B9E\u9645\u4F59\u989D\uFF0F\u8D44\u4EA7\u4EF7\u503C\uFF08\u5143\uFF09", existing ? (this.plugin.assetSnapshot().accounts.find((a) => a.id === existing.id).cents / 100).toFixed(2) : "0", "text", "\u6295\u8D44\u8D26\u6237\u6309\u6301\u4ED3\u4F30\u503C\uFF0C\u6B64\u9879\u4E0D\u53C2\u4E0E\u8BA1\u7B97\uFF1B\u8D1F\u503A\u586B\u5199\u5C1A\u6B20\u91D1\u989D\u3002");
-      const at = input(body, "\u4F59\u989D\u5BF9\u5E94\u65F6\u70B9", localDateTime(), "datetime-local", "\u6B64\u65F6\u70B9\u524D\u5DF2\u5B58\u5728\u7684\u6D88\u8D39\u89C6\u4E3A\u5DF2\u5305\u542B\u5728\u4F59\u989D\u4E2D\uFF1B\u672A\u77E5\u65F6\u95F4\u7684\u540C\u65E5\u8865\u8BB0\u9700\u6838\u5BF9\u3002");
-      const recalibrate = existing && existing.kind !== "investment" ? input(body, "\u6309\u6B64\u4F59\u989D\u91CD\u65B0\u6821\u51C6\uFF08\u5426\u5219\u4EC5\u4FEE\u6539\u540D\u79F0\uFF09", "", "checkbox") : null;
-      if (existing) {
-        balance.disabled = true;
-        at.disabled = true;
-        recalibrate == null ? void 0 : recalibrate.addEventListener("change", () => {
-          balance.disabled = !recalibrate.checked;
-          at.disabled = !recalibrate.checked;
-        });
-      }
+      const current = existing ? this.plugin.assetSnapshot().accounts.find((a) => a.id === existing.id) : null;
+      const currentBalance = current ? current.cents - ((existing == null ? void 0 : existing.kind) === "investment" ? current.holdings.reduce((sum3, h) => {
+        var _a2;
+        return sum3 + ((_a2 = h.valueCents) != null ? _a2 : 0);
+      }, 0) : 0) : 0;
+      const balance = input(body, "\u5F53\u524D\u4F59\u989D\uFF08\u5143\uFF09", existing ? (currentBalance / 100).toFixed(2) : "0");
+      const balanceLabel = balance.parentElement.querySelector("span");
+      const hint = body.createEl("small", { cls: "ledger-assets-hint" });
+      const updateFields = () => {
+        balanceLabel.setText(kind.value === "investment" ? "\u8D26\u6237\u73B0\u91D1\uFF08\u5143\uFF0C\u4E0D\u542B\u6301\u4ED3\uFF09" : kind.value === "liability" ? "\u5C1A\u6B20\u91D1\u989D\uFF08\u5143\uFF09" : "\u5F53\u524D\u4F59\u989D\uFF0F\u4EF7\u503C\uFF08\u5143\uFF09");
+        hint.setText(kind.value === "investment" ? "\u8D26\u6237\u73B0\u91D1\u4E0E\u6301\u4ED3\u5206\u522B\u8BA1\u7B97\uFF1B\u57FA\u91D1\u3001\u80A1\u7968\u91D1\u989D\u8BF7\u7528\u6DFB\u52A0\u6301\u4ED3\u3002" : "\u6309\u5F53\u524D\u4F59\u989D\u4FDD\u5B58\uFF0C\u4E4B\u524D\u7684\u6D41\u6C34\u4E0D\u91CD\u590D\u6263\u6B3E\u3002");
+      };
+      kind.addEventListener("change", updateFields);
+      updateFields();
       const useDefault = input(body, "\u8BBE\u4E3A\u9ED8\u8BA4\u6D88\u8D39\u6263\u6B3E\u8D26\u6237", "", "checkbox");
-      useDefault.checked = !this.plugin.settings.assets.defaultCashId;
+      useDefault.checked = existing ? existing.id === this.plugin.settings.assets.defaultCashId : !this.plugin.settings.assets.defaultCashId;
+      const updateDefault = () => {
+        useDefault.parentElement.hidden = kind.value !== "cash";
+      };
+      kind.addEventListener("change", updateDefault);
+      updateDefault();
       return async () => {
         if (!name.value.trim()) throw new Error("\u8BF7\u586B\u5199\u8D26\u6237\u540D\u79F0");
-        const now = parseBaseline(at.value), category = kind.value, cents = category === "investment" ? 0 : moneyCents(balance.value, category !== "liability");
+        const now = /* @__PURE__ */ new Date(), category = kind.value, cents = moneyCents(balance.value, category !== "liability");
         await this.save((state) => {
           let account = existing && state.accounts.find((a) => a.id === existing.id);
           if (account) {
             account.name = name.value.trim();
-            if (recalibrate == null ? void 0 : recalibrate.checked) calibrateAccount(state, account.id, cents, this.records(), now);
+            calibrateAccount(state, account.id, cents, this.records(), now);
           } else {
             account = { id: assetId(), name: name.value.trim(), kind: category, balanceCents: cents, baselineAt: now.toISOString(), includedRecordIds: baselineRecordIds(this.records(), now), includedEventIds: [] };
             state.accounts.push(account);
@@ -8405,30 +8473,18 @@ var AssetPanel = class {
       this.accountForm();
       return;
     }
-    new AssetFormModal(this.plugin, "\u6DFB\u52A0\u521D\u59CB\u6301\u4ED3", (body) => {
-      const account = select(body, "\u6295\u8D44\u8D26\u6237", choices), kind = select(body, "\u8BC1\u5238\u7C7B\u578B", [["fund", "\u666E\u901A\u51C0\u503C\u578B\u516C\u52DF\u57FA\u91D1"], ["stock", "A\u80A1"], ["etf", "\u573A\u5185ETF"]]);
-      const code = input(body, "\u8BC1\u5238\u4EE3\u7801"), name = input(body, "\u540D\u79F0\uFF08\u53EF\u7559\u7A7A\uFF0C\u67E5\u8BE2\u540E\u8865\u5145\uFF09");
-      const amount = input(body, "\u4E70\u5165\u5B9E\u9645\u652F\u4ED8\u91D1\u989D\uFF08\u5143\uFF0C\u542B\u8D39\u7528\uFF09", "", "text"), fee = input(body, "\u5176\u4E2D\u624B\u7EED\u8D39\uFF08\u5143\uFF09", "0"), price = input(body, "\u5B9E\u9645\u6210\u4EA4\u51C0\u503C\uFF0F\u4EF7\u683C");
-      const date = input(body, "\u6301\u4ED3\u786E\u8BA4\u65E5\u671F", isoFromDate(/* @__PURE__ */ new Date()), "date"), quantity = input(body, "\u786E\u8BA4\u6301\u6709\u4EFD\u989D\uFF0F\u80A1\u6570", "", "text", "\u70B9\u51FB\u6362\u7B97\u540E\uFF0C\u8BF7\u4E0E\u5E73\u53F0\u6838\u5BF9\uFF1B\u57FA\u91D1\u9ED8\u8BA4\u56DB\u820D\u4E94\u5165\u81F3\u4E24\u4F4D\uFF0C\u5B9E\u9645\u4EFD\u989D\u53EF\u4FEE\u6B63\u3002");
-      button(body, "\u6309\u91D1\u989D\u4E0E\u4EF7\u683C\u6362\u7B97", () => {
-        try {
-          quantity.value = quantityFromAmount(moneyCents(amount.value), moneyCents(fee.value), price.value, kind.value);
-        } catch (e) {
-          new import_obsidian8.Notice(e instanceof Error ? e.message : "\u6362\u7B97\u5931\u8D25");
-        }
-      });
-      const confirmed = input(body, "\u5DF2\u6838\u5BF9\u5E73\u53F0\u5B9E\u9645\u6301\u4ED3\u6570\u91CF", "", "checkbox");
-      body.createEl("p", { cls: "ledger-assets-hint", text: "\u8FD9\u662F\u5DF2\u6709\u6301\u4ED3\uFF0C\u4E0D\u91CD\u590D\u6263\u51CF\u73B0\u91D1\u3002\u8D27\u5E01\u57FA\u91D1\u6682\u4E0D\u652F\u6301\u81EA\u52A8\u6536\u76CA\u7D2F\u8BA1\uFF1B\u6295\u5165\u91D1\u989D\u4E0E\u51C0\u503C\u4E0D\u8DB3\u4EE5\u786E\u8BA4\u5206\u7EA2\u540E\u7684\u4EFD\u989D\uFF0C\u8BF7\u6838\u5BF9\u5E73\u53F0\u5B9E\u9645\u6570\u91CF\u3002" });
+    new AssetFormModal(this.plugin, "\u6DFB\u52A0\u6301\u4ED3", (body) => {
+      const account = select(body, "\u6295\u8D44\u8D26\u6237", choices);
+      if (choices.length === 1) account.parentElement.hidden = true;
+      const kind = select(body, "\u7C7B\u578B", [["fund", "\u57FA\u91D1"], ["stock", "\u80A1\u7968"], ["etf", "ETF"]]);
+      const code = input(body, "\u8BC1\u5238\u4EE3\u7801"), amount = input(body, "\u5F53\u524D\u6301\u4ED3\u91D1\u989D\uFF08\u5143\uFF09");
+      amount.inputMode = "decimal";
+      body.createEl("small", { cls: "ledger-assets-hint", text: "\u65E5\u671F\u9ED8\u8BA4\u4ECA\u5929\uFF0C\u540D\u79F0\u4E0E\u53C2\u8003\u4EFD\u989D\u81EA\u52A8\u67E5\u8BE2\u3002\u884C\u60C5\u66F4\u65B0\u524D\u663E\u793A\u586B\u5199\u91D1\u989D\uFF0C\u4E4B\u540E\u663E\u793A\u4F30\u503C\u53D8\u5316\u3002" });
       return async () => {
-        const security = kind.value, securityCode = normalizeCode(security, code.value), q = validateQuantity(quantity.value, security), cost = moneyCents(amount.value), fees = moneyCents(fee.value);
-        if (!confirmed.checked || fees >= cost || decimal2(price.value).lte(0)) throw new Error("\u8BF7\u6838\u5BF9\u5E76\u786E\u8BA4\u6301\u4ED3\u6570\u91CF\u3001\u6210\u4EA4\u4EF7\u683C\u53CA\u8D39\u7528");
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(date.value) || date.value > isoFromDate(/* @__PURE__ */ new Date())) throw new Error("\u786E\u8BA4\u65E5\u671F\u65E0\u6548");
-        if (/货币|现金管理|现金增利|活期/.test(name.value)) throw new Error("\u8D27\u5E01\u57FA\u91D1\u6682\u4E0D\u652F\u6301\u81EA\u52A8\u6536\u76CA\u7D2F\u8BA1");
         await this.save((state) => {
-          state.holdings.push({ id: assetId(), accountId: account.value, kind: security, code: securityCode, name: name.value.trim() || securityCode, quantity: q, costCents: cost, acquiredOn: date.value });
+          addAmountHolding(state, account.value, kind.value, code.value, amount.value);
         });
-        void this.plugin.refreshAssetQuotes().catch(() => {
-        });
+        void this.plugin.refreshAssetQuotes(true).catch((e) => new import_obsidian8.Notice(e instanceof Error ? e.message : "\u884C\u60C5\u66F4\u65B0\u5931\u8D25\uFF0C\u53EF\u7A0D\u540E\u91CD\u8BD5"));
       };
     }).open();
   }
@@ -8447,6 +8503,7 @@ var AssetPanel = class {
           h.code = normalized;
           h.quantity = number.toFixed();
           h.costCents = cents;
+          delete h.amountBasisCents;
         });
         void this.plugin.refreshAssetQuotes().catch(() => {
         });
@@ -9868,9 +9925,9 @@ function parseStockQuote(holding, source, now) {
   return { key: quoteKey(holding.kind, holding.code), name: fields[1] || holding.code, price: decimal2(price).toFixed(), asOf, fetchedAt: now.toISOString() };
 }
 function quoteDue(holding, quote, now, force = false) {
-  if (decimal2(holding.quantity).eq(0)) return false;
+  if (decimal2(holding.quantity).eq(0) && holding.amountBasisCents === void 0) return false;
   if ((quote == null ? void 0 : quote.error) && quote.attemptedAt && now.getTime() - Date.parse(quote.attemptedAt) < 15 * 6e4) return false;
-  return force || !quote || now.getTime() - Date.parse(quote.fetchedAt) >= (holding.kind === "fund" ? 6 * 36e5 : 15 * 6e4);
+  return force || holding.amountBasisCents !== void 0 && holding.quantity === "0" || !quote || now.getTime() - Date.parse(quote.fetchedAt) >= (holding.kind === "fund" ? 6 * 36e5 : 15 * 6e4);
 }
 var AssetQuoteMonitor = class {
   constructor(state, fetch, commit, clock = () => /* @__PURE__ */ new Date(), timeoutMs = 3e4) {
@@ -9966,13 +10023,7 @@ var LedgerStatisticsPlugin = class extends import_obsidian10.Plugin {
       const response = await (0, import_obsidian10.requestUrl)({ url, method: "GET", throw: true });
       return { text: response.text, arrayBuffer: response.arrayBuffer };
     }, (quotes) => this.updateAssets((state) => {
-      const held = new Set(state.holdings.map((h) => quoteKey(h.kind, h.code)));
-      for (const quote of quotes) if (held.has(quote.key)) {
-        state.quotes[quote.key] = quote;
-        if (!quote.error) {
-          for (const h of state.holdings) if (quoteKey(h.kind, h.code) === quote.key && h.name === h.code) h.name = quote.name;
-        }
-      }
+      for (const quote of quotes) applyAssetQuote(state, quote);
     }));
     this.settings.reportPreferences = normalizeReportPreferences(this.settings.reportPreferences);
     this.settings.reportCaches = normalizeReportCaches(this.settings.reportCaches);

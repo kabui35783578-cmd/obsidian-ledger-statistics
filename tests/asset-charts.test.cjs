@@ -49,3 +49,19 @@ test('asset panel works with an empty ledger and zero assets independently of sp
   panel.render(root); const text = root.all().map(n => n.textContent).join(' ');
   assert.match(text, /我的资产/); assert.match(text, /0.00/); assert.match(text, /暂无可比记录/); assert.match(text, /添加持仓/);
 }));
+
+test('compact allocation hides values and percentages when privacy is enabled', () => withDocument(() => {
+  const { renderAssetAllocation } = require('../dist/asset-charts.cjs');
+  const root = new Element(); renderAssetAllocation(root, snapshot(), false, true);
+  const nodes = root.all(), text = nodes.map(n => `${n.textContent} ${n.attributes['aria-label'] ?? ''}`).join(' ');
+  assert.ok(text.includes('••••')); assert.ok(!text.includes('%')); assert.ok(!text.includes('999,999'));
+  assert.equal(nodes.filter(n => n.tag === 'circle').length, 1);
+}));
+test('expanded investment Sankey retains account cash in its flows', () => withDocument(() => {
+  const snap = snapshot(); snap.accounts[1].cents = 101;
+  const root = new Element(); renderAssetSankey(root, snap, false, false, new Set(['i']), () => {}, () => {});
+  const nodes = root.all(), bars = nodes.filter(n => n.tag === 'rect' && n.attributes.x === '945');
+  assert.equal(bars.length, 3);
+  assert.equal(+bars[2].attributes.height / +bars[1].attributes.height, 100);
+  assert.ok(nodes.some(n => n.textContent.includes('现金')));
+}));

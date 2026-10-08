@@ -3,6 +3,32 @@ import { formatCents } from "./core";
 
 const NS = "http://www.w3.org/2000/svg";
 const COLORS: Record<AssetKind, string> = { cash: "#bb8967", investment: "#8678b0", fixed: "#a6acb6", receivable: "#8a93a4", liability: "#cb8f96" };
+export function renderAssetAllocation(parent: HTMLElement, snapshot: AssetSnapshot, excludeFixed: boolean, hide: boolean): void {
+  const accounts = snapshot.accounts.filter(a => a.kind !== "liability" && !(excludeFixed && a.kind === "fixed") && a.cents > 0);
+  const total = accounts.reduce((sum, a) => sum + a.cents, 0);
+  if (!total) { parent.createEl("p", { cls: "ledger-assets-empty", text: "暂无正资产，添加账户或持仓后显示图表。" }); return; }
+  const groups = (["cash", "investment", "fixed", "receivable"] as AssetKind[]).map(kind => ({ kind, cents: accounts.filter(a => a.kind === kind).reduce((sum, a) => sum + a.cents, 0) })).filter(g => g.cents > 0);
+  const layout = parent.createDiv({ cls: "ledger-assets-allocation" });
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", "0 0 240 240"); svg.setAttribute("class", "ledger-assets-ring");
+  svg.setAttribute("role", "img"); svg.setAttribute("aria-label", hide ? "资产组成，金额已隐藏" : "正资产分类占比"); layout.appendChild(svg);
+  const radius = 86, circumference = 2 * Math.PI * radius;
+  el("circle", { cx: 120, cy: 120, r: radius, fill: "none", stroke: "var(--background-modifier-border)", "stroke-width": 24 }, svg);
+  let offset = 0;
+  const legend = layout.createDiv({ cls: "ledger-assets-allocation-legend" });
+  for (const group of groups) {
+    const share = group.cents / total, length = share * circumference;
+    if (!hide) el("circle", { cx: 120, cy: 120, r: radius, fill: "none", stroke: COLORS[group.kind], "stroke-width": 24, "stroke-dasharray": `${length} ${circumference - length}`, "stroke-dashoffset": -offset, transform: "rotate(-90 120 120)" }, svg);
+    offset += length;
+    const row = legend.createDiv({ cls: "ledger-assets-allocation-row" }), dot = row.createSpan({ cls: "ledger-assets-dot" }); dot.style.background = COLORS[group.kind];
+    row.createSpan({ text: ASSET_NAMES[group.kind] });
+    row.createEl("strong", { text: hide ? "••••" : formatCents(group.cents) });
+    row.createEl("small", { text: hide ? "" : `${(share * 100).toFixed(1)}%` });
+  }
+  label(svg, 120, 110, "资产分布", 15, "middle");
+  label(svg, 120, 137, hide ? "••••" : `${accounts.length}个账户`, 20, "middle");
+  if (snapshot.accounts.some(a => a.kind !== "liability" && a.cents < 0)) parent.createEl("small", { cls: "ledger-assets-hint", text: "占比按正资产计算，负余额计入总资产。" });
+}
 function el<K extends keyof SVGElementTagNameMap>(type: K, attrs: Record<string, string | number>, parent: SVGElement): SVGElementTagNameMap[K] {
   const node = document.createElementNS(NS, type);
   for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, String(value));
@@ -26,9 +52,15 @@ export function renderAssetSankey(parent: HTMLElement, snapshot: AssetSnapshot, 
   const visible = snapshot.accounts.filter(a => a.kind !== "liability" && !(excludeFixed && a.kind === "fixed") && a.cents > 0);
   const kinds: AssetKind[] = ["cash", "fixed", "investment", "receivable"];
   const groups = kinds.map(kind => ({ kind, accounts: visible.filter(a => a.kind === kind) })).filter(g => g.accounts.length);
-  const rows = groups.flatMap(g => g.accounts.flatMap(a => expanded.has(a.id) && a.kind === "investment"
-    ? a.holdings.filter(h => (h.valueCents ?? 0) > 0).map(h => ({ account: a, id: h.id, name: h.name, cents: h.valueCents!, holding: true }))
-    : [{ account: a, id: a.id, name: a.name, cents: a.cents, holding: false }]));
+  const rows = groups.flatMap(g => g.accounts.flatMap(a => {
+    if (!expanded.has(a.id) || a.kind !== "investment") return [{ account: a, id: a.id, name: a.name, cents: a.cents, holding: false }];
+    const cash = a.cents - a.holdings.reduce((sum, h) => sum + (h.valueCents ?? 0), 0);
+    // Negative cash cannot be a positive flow; retain the aggregate in that case.
+    if (cash < 0) return [{ account: a, id: a.id, name: a.name, cents: a.cents, holding: false }];
+    const rows = a.holdings.filter(h => (h.valueCents ?? 0) > 0).map(h => ({ account: a, id: h.id, name: h.name, cents: h.valueCents!, holding: true }));
+    if (cash > 0) rows.push({ account: a, id: a.id, name: `${a.name} · 现金`, cents: cash, holding: true });
+    return rows;
+  }));
   if (!rows.length) { parent.createEl("p", { cls: "ledger-assets-empty", text: snapshot.accounts.length ? "当前没有可绘制的正资产；未估值持仓、负余额与净资产缺口请查看总览和账户。" : "添加账户和持仓后，这里显示资产组成桑基图。" }); return; }
   const rowGap = 44;
   const total = visible.reduce((sum, a) => sum + a.cents, 0), height = Math.max(360, rows.length * 64 + groups.length * 24 + 100);
