@@ -3,7 +3,7 @@ import { formatCents } from "./core";
 import { enableAssetGestures } from "./asset-gestures";
 
 const NS = "http://www.w3.org/2000/svg";
-const COLORS: Record<AssetKind, string> = { cash: "#bb8967", investment: "#8678b0", fixed: "#a6acb6", receivable: "#8a93a4", liability: "#cb8f96" };
+const COLORS: Record<AssetKind, string> = { cash: "var(--mono-2)", investment: "var(--mono-ink)", fixed: "var(--mono-3)", receivable: "var(--mono-muted)", liability: "var(--mono-2)" };
 export function renderAssetAllocation(parent: HTMLElement, snapshot: AssetSnapshot, excludeFixed: boolean, hide: boolean): void {
   const accounts = snapshot.accounts.filter(a => a.kind !== "liability" && !(excludeFixed && a.kind === "fixed") && a.cents > 0);
   const total = accounts.reduce((sum, a) => sum + a.cents, 0);
@@ -41,7 +41,7 @@ function label(parent: SVGElement, x: number, y: number, text: string, size = 16
 function band(svg: SVGElement, x1: number, y1: number, x2: number, y2: number, height: number, color: string): void {
   if (height <= 0) return;
   const middle = (x1 + x2) / 2;
-  el("path", { d: `M${x1},${y1} C${middle},${y1} ${middle},${y2} ${x2},${y2} L${x2},${y2 + height} C${middle},${y2 + height} ${middle},${y1 + height} ${x1},${y1 + height} Z`, fill: color, "fill-opacity": .35 }, svg);
+  el("path", { d: `M${x1},${y1} C${middle},${y1} ${middle},${y2} ${x2},${y2} L${x2},${y2 + height} C${middle},${y2 + height} ${middle},${y1 + height} ${x1},${y1 + height} Z`, fill: color, "fill-opacity": .5 }, svg);
 }
 function interactive(node: SVGElement, text: string, action: () => void): void {
   node.setAttribute("role", "button"); node.setAttribute("tabindex", "0"); node.setAttribute("aria-label", text);
@@ -82,8 +82,8 @@ export function renderAssetSankey(parent: HTMLElement, snapshot: AssetSnapshot, 
   }
   if (sources) {
     const debt = totals.liabilitiesCents, net = totals.netCents, netHeight = net * scale, debtHeight = debt * scale;
-    el("rect", { x: 80, y: 100, width: 12, height: netHeight, fill: "#78bf9f" }, svg);
-    band(svg, 92, 100, 310, 100, netHeight, "#78bf9f");
+    el("rect", { x: 80, y: 100, width: 12, height: netHeight, fill: "var(--mono-3)" }, svg);
+    band(svg, 92, 100, 310, 100, netHeight, "var(--mono-3)");
     label(svg, 75, 82, `净资产 ${amounts(net)}`, 16);
     if (debt > 0) {
       const y = 100 + netHeight + 28;
@@ -95,11 +95,11 @@ export function renderAssetSankey(parent: HTMLElement, snapshot: AssetSnapshot, 
     label(svg, 75, 82, `净资产 ${amounts(totals.netCents)}`, 16);
     label(svg, 75, 112, "缺口单独列示", 14);
   }
-  el("rect", { x: 310, y: 100, width: 13, height: total * scale, fill: "#9b94bd" }, svg);
+  el("rect", { x: 310, y: 100, width: 13, height: total * scale, fill: "var(--mono-2)" }, svg);
   label(svg, 310, 62, `${totals.missing || !sources ? "已估值正资产" : "总资产"} ${amounts(total)}`, 19);
   for (const group of groupLayout) {
     const color = COLORS[group.kind], groupHeight = group.cents * scale, groupRows = rows.filter(r => r.account.kind === group.kind);
-    band(svg, 323, rootCursor, 675, group.y, groupHeight, "#9b94bd");
+    band(svg, 323, rootCursor, 675, group.y, groupHeight, "var(--mono-2)");
     el("rect", { x: 675, y: group.y, width: 12, height: groupHeight, fill: color }, svg);
     label(svg, 660, group.y + groupHeight / 2, `${ASSET_NAMES[group.kind]} ${amounts(group.cents)}`, 17, "end");
     let source = group.y;

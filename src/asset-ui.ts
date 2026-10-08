@@ -1,4 +1,4 @@
-import { Modal, Notice } from "obsidian";
+import { Modal, Notice, setIcon } from "obsidian";
 import type LedgerStatisticsPlugin from "./main";
 import { LedgerRecord, flattenRecords, formatCents, isoFromDate } from "./core";
 import { ASSET_NAMES, AssetAccount, AssetEvent, AssetEventKind, AssetHolding, AssetKind, AssetSnapshot, SecurityKind, addAssetEvent, addEstimatedHolding, assetId, assetTotals, baselineRecordIds, calibrateAccount, decimal, knownRecord, linkRecord, moneyCents, normalizeCode, previousMonthSnapshot, quantityFromAmount, removeAssetAccount, removeAssetHolding, setDefaultCash, validateQuantity } from "./assets";
@@ -60,7 +60,8 @@ export class AssetPanel {
     button(actions, "更多", () => this.toolsModal());
     const hero = root.createDiv({ cls: "ledger-assets-hero" }), caption = hero.createDiv({ cls: "ledger-assets-caption" });
     caption.createSpan({ text: totals.missing ? "已估值资产（元）" : "总资产（元）" });
-    const privacy = button(caption, state.hideAmounts ? "◉" : "◎", () => void this.save(s => { s.hideAmounts = !s.hideAmounts; }).catch(e => new Notice(String(e))));
+    const privacy = button(caption, "", () => void this.save(s => { s.hideAmounts = !s.hideAmounts; }).catch(e => new Notice(String(e))));
+    setIcon(privacy, state.hideAmounts ? "eye-off" : "eye");
     privacy.setAttribute("aria-label", state.hideAmounts ? "显示金额" : "隐藏金额");
     const toggle = caption.createEl("label", { cls: "ledger-assets-toggle" }); toggle.createSpan({ text: "排除固定资产" });
     const check = toggle.createEl("input", { type: "checkbox" }); check.checked = state.excludeFixed;
@@ -73,14 +74,16 @@ export class AssetPanel {
     const updates = hero.createDiv({ cls: "ledger-assets-update-row" });
     const latest = snapshot.accounts.flatMap(a => a.holdings.filter(h => h.quote && decimal(h.quote.price).gt(0)).map(h => h.quote!.asOf)).sort().reverse()[0];
     updates.createEl("small", { text: latest ? `行情 ${latest.replace("T", " ").slice(0, 16)}` : "当前余额" });
-    const refresh = button(updates, "↻", () => { refresh.disabled = true; void this.plugin.refreshAssetQuotes(true).catch(e => new Notice(String(e))).finally(() => { refresh.disabled = false; }); });
+    const refresh = button(updates, "", () => { refresh.disabled = true; void this.plugin.refreshAssetQuotes(true).catch(e => new Notice(String(e))).finally(() => { refresh.disabled = false; }); });
+    setIcon(refresh, "refresh-cw");
     refresh.setAttribute("aria-label", "刷新行情");
     this.renderComparison(hero, snapshot);
     if (snapshot.pending.length) {
       const warning = root.createDiv({ cls: "ledger-assets-warning ledger-assets-compact-warning" }); warning.createSpan({ text: `${snapshot.pending.length}项变动待核对` }); button(warning, "查看", () => this.toolsModal());
     }
     const card = root.createDiv({ cls: "ledger-assets-card ledger-assets-chart-card" }), heading = card.createDiv({ cls: "ledger-assets-title-row" });
-    heading.createEl("h3", { text: "资产组成" }); button(heading, "⤢", () => this.sankeyModal(snapshot)).setAttribute("aria-label", "放大查看桑基图");
+    heading.createEl("h3", { text: "资产组成" });
+    const expand = button(heading, "", () => this.sankeyModal(snapshot)); setIcon(expand, "maximize-2"); expand.setAttribute("aria-label", "放大查看桑基图");
     renderAssetSankey(card, snapshot, state.excludeFixed, state.hideAmounts, this.expanded, id => { this.expanded.has(id) ? this.expanded.delete(id) : this.expanded.add(id); this.plugin.refreshAssetViews(); }, id => this.accountDetails(id));
     if (snapshot.accounts.length) {
       const grid = root.createDiv({ cls: "ledger-assets-account-grid" });

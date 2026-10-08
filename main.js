@@ -8221,7 +8221,7 @@ function enableAssetGestures(viewport, svg, tools) {
 
 // src/asset-charts.ts
 var NS2 = "http://www.w3.org/2000/svg";
-var COLORS = { cash: "#bb8967", investment: "#8678b0", fixed: "#a6acb6", receivable: "#8a93a4", liability: "#cb8f96" };
+var COLORS = { cash: "var(--mono-2)", investment: "var(--mono-ink)", fixed: "var(--mono-3)", receivable: "var(--mono-muted)", liability: "var(--mono-2)" };
 function el2(type, attrs, parent) {
   const node = document.createElementNS(NS2, type);
   for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, String(value));
@@ -8234,7 +8234,7 @@ function label(parent, x, y, text2, size = 16, anchor = "start") {
 function band(svg, x1, y1, x2, y2, height, color) {
   if (height <= 0) return;
   const middle = (x1 + x2) / 2;
-  el2("path", { d: `M${x1},${y1} C${middle},${y1} ${middle},${y2} ${x2},${y2} L${x2},${y2 + height} C${middle},${y2 + height} ${middle},${y1 + height} ${x1},${y1 + height} Z`, fill: color, "fill-opacity": 0.35 }, svg);
+  el2("path", { d: `M${x1},${y1} C${middle},${y1} ${middle},${y2} ${x2},${y2} L${x2},${y2 + height} C${middle},${y2 + height} ${middle},${y1 + height} ${x1},${y1 + height} Z`, fill: color, "fill-opacity": 0.5 }, svg);
 }
 function interactive(node, text2, action) {
   node.setAttribute("role", "button");
@@ -8298,8 +8298,8 @@ function renderAssetSankey(parent, snapshot, excludeFixed, hide, expanded, onExp
   }
   if (sources) {
     const debt = totals.liabilitiesCents, net = totals.netCents, netHeight = net * scale, debtHeight = debt * scale;
-    el2("rect", { x: 80, y: 100, width: 12, height: netHeight, fill: "#78bf9f" }, svg);
-    band(svg, 92, 100, 310, 100, netHeight, "#78bf9f");
+    el2("rect", { x: 80, y: 100, width: 12, height: netHeight, fill: "var(--mono-3)" }, svg);
+    band(svg, 92, 100, 310, 100, netHeight, "var(--mono-3)");
     label(svg, 75, 82, `\u51C0\u8D44\u4EA7 ${amounts(net)}`, 16);
     if (debt > 0) {
       const y = 100 + netHeight + 28;
@@ -8311,11 +8311,11 @@ function renderAssetSankey(parent, snapshot, excludeFixed, hide, expanded, onExp
     label(svg, 75, 82, `\u51C0\u8D44\u4EA7 ${amounts(totals.netCents)}`, 16);
     label(svg, 75, 112, "\u7F3A\u53E3\u5355\u72EC\u5217\u793A", 14);
   }
-  el2("rect", { x: 310, y: 100, width: 13, height: total3 * scale, fill: "#9b94bd" }, svg);
+  el2("rect", { x: 310, y: 100, width: 13, height: total3 * scale, fill: "var(--mono-2)" }, svg);
   label(svg, 310, 62, `${totals.missing || !sources ? "\u5DF2\u4F30\u503C\u6B63\u8D44\u4EA7" : "\u603B\u8D44\u4EA7"} ${amounts(total3)}`, 19);
   for (const group2 of groupLayout) {
     const color = COLORS[group2.kind], groupHeight = group2.cents * scale, groupRows = rows.filter((r) => r.account.kind === group2.kind);
-    band(svg, 323, rootCursor, 675, group2.y, groupHeight, "#9b94bd");
+    band(svg, 323, rootCursor, 675, group2.y, groupHeight, "var(--mono-2)");
     el2("rect", { x: 675, y: group2.y, width: 12, height: groupHeight, fill: color }, svg);
     label(svg, 660, group2.y + groupHeight / 2, `${ASSET_NAMES[group2.kind]} ${amounts(group2.cents)}`, 17, "end");
     let source = group2.y;
@@ -8435,9 +8435,10 @@ var AssetPanel = class {
     button(actions, "\u66F4\u591A", () => this.toolsModal());
     const hero = root.createDiv({ cls: "ledger-assets-hero" }), caption = hero.createDiv({ cls: "ledger-assets-caption" });
     caption.createSpan({ text: totals.missing ? "\u5DF2\u4F30\u503C\u8D44\u4EA7\uFF08\u5143\uFF09" : "\u603B\u8D44\u4EA7\uFF08\u5143\uFF09" });
-    const privacy = button(caption, state.hideAmounts ? "\u25C9" : "\u25CE", () => void this.save((s) => {
+    const privacy = button(caption, "", () => void this.save((s) => {
       s.hideAmounts = !s.hideAmounts;
     }).catch((e) => new import_obsidian8.Notice(String(e))));
+    (0, import_obsidian8.setIcon)(privacy, state.hideAmounts ? "eye-off" : "eye");
     privacy.setAttribute("aria-label", state.hideAmounts ? "\u663E\u793A\u91D1\u989D" : "\u9690\u85CF\u91D1\u989D");
     const toggle = caption.createEl("label", { cls: "ledger-assets-toggle" });
     toggle.createSpan({ text: "\u6392\u9664\u56FA\u5B9A\u8D44\u4EA7" });
@@ -8456,12 +8457,13 @@ var AssetPanel = class {
     const updates = hero.createDiv({ cls: "ledger-assets-update-row" });
     const latest = snapshot.accounts.flatMap((a) => a.holdings.filter((h) => h.quote && decimal2(h.quote.price).gt(0)).map((h) => h.quote.asOf)).sort().reverse()[0];
     updates.createEl("small", { text: latest ? `\u884C\u60C5 ${latest.replace("T", " ").slice(0, 16)}` : "\u5F53\u524D\u4F59\u989D" });
-    const refresh = button(updates, "\u21BB", () => {
+    const refresh = button(updates, "", () => {
       refresh.disabled = true;
       void this.plugin.refreshAssetQuotes(true).catch((e) => new import_obsidian8.Notice(String(e))).finally(() => {
         refresh.disabled = false;
       });
     });
+    (0, import_obsidian8.setIcon)(refresh, "refresh-cw");
     refresh.setAttribute("aria-label", "\u5237\u65B0\u884C\u60C5");
     this.renderComparison(hero, snapshot);
     if (snapshot.pending.length) {
@@ -8471,7 +8473,9 @@ var AssetPanel = class {
     }
     const card2 = root.createDiv({ cls: "ledger-assets-card ledger-assets-chart-card" }), heading = card2.createDiv({ cls: "ledger-assets-title-row" });
     heading.createEl("h3", { text: "\u8D44\u4EA7\u7EC4\u6210" });
-    button(heading, "\u2922", () => this.sankeyModal(snapshot)).setAttribute("aria-label", "\u653E\u5927\u67E5\u770B\u6851\u57FA\u56FE");
+    const expand = button(heading, "", () => this.sankeyModal(snapshot));
+    (0, import_obsidian8.setIcon)(expand, "maximize-2");
+    expand.setAttribute("aria-label", "\u653E\u5927\u67E5\u770B\u6851\u57FA\u56FE");
     renderAssetSankey(card2, snapshot, state.excludeFixed, state.hideAmounts, this.expanded, (id) => {
       this.expanded.has(id) ? this.expanded.delete(id) : this.expanded.add(id);
       this.plugin.refreshAssetViews();
