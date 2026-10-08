@@ -25,40 +25,40 @@ const a = require('../dist/assets.cjs');
 function plugin() {
   const state = a.emptyAssets();
   state.accounts.push({ id: 'i', name: '投资', kind: 'investment', balanceCents: 0, baselineAt: new Date().toISOString(), includedEventIds: [], includedRecordIds: [] });
-  return { settings: { assets: state }, repository: { files: new Map() }, updateAssets: async change => change(state), assetSnapshot: () => a.buildAssetSnapshot(state, []), refreshAssetQuotes: async () => {} };
+  return { settings: { assets: state }, repository: { files: new Map() }, updateAssets: async change => change(state), assetSnapshot: () => a.buildAssetSnapshot(state, []), refreshAssetQuotes: async () => {}, lookupAssetQuote: async (kind, code) => ({ key: a.quoteKey(kind,code), name: '测试基金', price: '1.25', asOf: new Date().toISOString(), fetchedAt: new Date().toISOString() }) };
 }
 function field(modal, name) { return modal.contentEl.all().find(e => e.attributes['aria-label'] === name); }
 async function submit(modal) { modal.contentEl.querySelector('form').listeners.submit({ preventDefault() {} }); await new Promise(resolve => setImmediate(resolve)); }
-test('simple holding form saves amount and code without waiting for network or extra confirmations', async () => {
+test('holding form needs only code and current value and derives name and shares from quote', async () => {
   const p = plugin(); p.refreshAssetQuotes = () => new Promise(() => {});
   new AssetPanel(p).holdingForm(); const modal = Modal.last;
-  field(modal, '投资账户').value = 'i'; field(modal, '类型').value = 'fund'; field(modal, '证券代码').value = '000001'; field(modal, '当前持仓金额（元）').value = '123.45';
+  field(modal, '类型').value = 'fund'; field(modal, '代码').value = '000001'; field(modal, '当前金额（元）').value = '123.45';
   const fields = modal.contentEl.all().filter(e => e.tag === 'input');
   assert.equal(fields.length, 2);
   await submit(modal);
   assert.equal(modal.closed, true); assert.equal(p.settings.assets.holdings.length, 1);
-  assert.equal(p.assetSnapshot().accounts[0].cents, 12345);
+  assert.equal(p.assetSnapshot().accounts[0].cents, 12345); assert.equal(p.settings.assets.holdings[0].name, '测试基金'); assert.equal(p.settings.assets.holdings[0].quantity, '98.76');
 });
 test('investment account creation and subsequent balance edits change totals immediately', async () => {
   const p = plugin(), panel = new AssetPanel(p);
   panel.accountForm(); let modal = Modal.last;
-  field(modal, '账户名称').value = '证券账户'; field(modal, '账户类别').value = 'investment'; field(modal, '当前余额（元）').value = '500';
+  field(modal, '账户名称').value = '证券账户'; field(modal, '类别').value = 'investment'; field(modal, '当前金额（元）').value = '500';
   await submit(modal);
   assert.equal(modal.closed, true); const account = p.settings.assets.accounts[1];
   assert.equal(account.balanceCents, 50000); assert.equal(a.assetTotals(p.assetSnapshot()).assetsCents, 50000);
   panel.accountForm(account); modal = Modal.last;
-  field(modal, '账户类别').value = 'investment'; field(modal, '当前余额（元）').value = '800';
+  field(modal, '类别').value = 'investment'; field(modal, '待分配金额（元）').value = '800';
   await submit(modal); assert.equal(account.balanceCents, 80000);
 });
 test('save failure remains visible and allows retry without claiming success', async () => {
   const p = plugin(); let fail = true;
   p.updateAssets = async change => { if (fail) throw new Error('磁盘写入失败'); change(p.settings.assets); };
   new AssetPanel(p).holdingForm(); const modal = Modal.last;
-  field(modal, '投资账户').value = 'i'; field(modal, '类型').value = 'fund'; field(modal, '证券代码').value = '000001'; field(modal, '当前持仓金额（元）').value = '100';
+  field(modal, '类型').value = 'fund'; field(modal, '代码').value = '000001'; field(modal, '当前金额（元）').value = '100';
   await submit(modal);
   assert.ok(!modal.closed); assert.equal(p.settings.assets.holdings.length, 0);
   assert.ok(modal.contentEl.all().some(e => e.textContent === '磁盘写入失败'));
   const save = modal.contentEl.all().find(e => e.tag === 'button' && e.type === 'submit');
-  assert.equal(save.disabled, false); assert.equal(save.textContent, '保存');
+  assert.equal(save.disabled, false); assert.equal(save.textContent, '添加');
   fail = false; await submit(modal); assert.equal(modal.closed, true);
 });

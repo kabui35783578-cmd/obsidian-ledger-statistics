@@ -27,11 +27,13 @@ export const ASSET_NAMES: Record<AssetKind, string> = { cash: "流动资金", in
 export interface AssetAccount {
   id: string; name: string; kind: AssetKind; balanceCents: number; baselineAt: string;
   includedEventIds: string[]; includedRecordIds: string[];
+  archived?: boolean;
 }
 export interface AssetHolding {
   id: string; accountId: string; kind: SecurityKind; code: string; name: string;
   quantity: string; costCents: number; acquiredOn: string;
   amountBasisCents?: number;
+  estimated?: boolean; costBasisKnown?: boolean;
 }
 export interface AssetQuote {
   key: string; name: string; price: string; asOf: string; fetchedAt: string;
@@ -46,7 +48,7 @@ export interface AssetEvent {
 }
 export interface CashEpoch { accountId: string; from: string; to?: string; includedRecordIds: string[]; }
 export interface ValuedHolding extends AssetHolding { valueCents: number | null; quote?: AssetQuote; }
-export interface ValuedAccount { id: string; name: string; kind: AssetKind; cents: number; missing: boolean; holdings: ValuedHolding[]; }
+export interface ValuedAccount { id: string; name: string; kind: AssetKind; cents: number; missing: boolean; holdings: ValuedHolding[]; unallocatedCents?: number; }
 export interface AssetSnapshot { date: string; savedAt: string; accounts: ValuedAccount[]; pending: string[]; }
 export interface AssetState {
   version: 1; accounts: AssetAccount[]; holdings: AssetHolding[]; events: AssetEvent[];
@@ -89,21 +91,22 @@ export function validateQuantity(value: string, kind: SecurityKind): string {
 export function quoteKey(kind: SecurityKind, code: string): string { return `${kind}:${normalizeCode(kind, code)}`; }
 // A current-value entry establishes today's valuation baseline, not a historical purchase.
 export function addAmountHolding(state: AssetState, accountId: string, kind: SecurityKind, code: string, amount: string, now = new Date()): AssetHolding {
-  if (!state.accounts.some(a => a.id === accountId && a.kind === "investment")) throw new Error("请选择投资账户");
+  if (!state.accounts.some(a => a.id === accountId && a.kind === "investment" && !a.archived)) throw new Error("请选择投资账户");
   const normalized = normalizeCode(kind, code), cents = moneyCents(amount);
   if (cents <= 0) throw new Error("当前持仓金额须大于零");
-  const holding: AssetHolding = { id: assetId(), accountId, kind, code: normalized, name: normalized, quantity: "0", costCents: cents, amountBasisCents: cents, acquiredOn: isoFromDate(now) };
+  const holding: AssetHolding = { id: assetId(), accountId, kind, code: normalized, name: normalized, quantity: "0", costCents: cents, amountBasisCents: cents, estimated: true, costBasisKnown: false, acquiredOn: isoFromDate(now) };
   state.holdings.push(holding);
   return holding;
 }
 export function applyAssetQuote(state: AssetState, quote: AssetQuote): void {
-  const holdings = state.holdings.filter(h => quoteKey(h.kind, h.code) === quote.key);
+  const holdings = state.holdings.filter(h => quoteKey(h.kind, h.code) === quote.key && state.accounts.some(a => a.id === h.accountId && !a.archived));
   if (!holdings.length) return;
   state.quotes[quote.key] = quote;
   if (quote.error || decimal(quote.price).lte(0)) return;
   for (const h of holdings) {
     if (h.name === h.code) h.name = quote.name;
     if (h.amountBasisCents !== undefined && h.quantity === "0") {
+      h.estimated = true; h.costBasisKnown = false;
       h.quantity = new Decimal(h.amountBasisCents).div(100).div(quote.price).toDecimalPlaces(12).toFixed();
     }
   }
@@ -126,10 +129,10 @@ export function normalizeAssets(input: unknown): AssetState {
   const accounts = new Set(out.accounts.map(a => a.id));
   out.holdings = (Array.isArray(s.holdings) ? s.holdings : []).filter(h => {
     try { return h && typeof h.id === "string" && typeof h.name === "string" && accounts.has(h.accountId) && ["fund", "stock", "etf"].includes(h.kind) && normalizeCode(h.kind, h.code) === h.code && validQuantity(h.quantity) && validCents(h.costCents) && h.costCents >= 0 && (h.amountBasisCents === undefined || (validCents(h.amountBasisCents) && h.amountBasisCents > 0)) && isValidIsoDate(h.acquiredOn); } catch { return false; }
-  });
+  }).map(h => h.amountBasisCents !== undefined ? { ...h, estimated: h.estimated ?? true, costBasisKnown: h.costBasisKnown ?? false } : h);
   out.events = (Array.isArray(s.events) ? s.events : []).filter(e => e && typeof e.id === "string" && ["buy", "sell", "income", "transfer", "repay", "dividend", "reinvest", "quantity", "adjust"].includes(e.kind) && accounts.has(e.accountId) && isValidIsoDate(e.date) && validInstant(e.createdAt) && validCents(e.amountCents) && validCents(e.feeCents));
   out.epochs = (Array.isArray(s.epochs) ? s.epochs : []).filter(e => e && accounts.has(e.accountId) && validInstant(e.from) && (!e.to || validInstant(e.to))).map(e => ({ ...e, includedRecordIds: stringIds(e.includedRecordIds) }));
-  out.defaultCashId = out.accounts.some(a => a.id === s.defaultCashId && a.kind === "cash") ? s.defaultCashId! : "";
+  out.defaultCashId = out.accounts.some(a => a.id === s.defaultCashId && a.kind === "cash" && !a.archived) ? s.defaultCashId! : "";
   for (const [key, q] of Object.entries(s.quotes ?? {})) {
     if (q && q.key === key && typeof q.name === "string" && validInstant(q.fetchedAt) && validQuantity(q.price)
       && (validInstant(q.asOf) || (q.asOf === "" && decimal(q.price).eq(0) && typeof q.error === "string" && validInstant(q.attemptedAt)))) out.quotes[key] = q;
@@ -155,7 +158,7 @@ export function baselineRecordIds(records: LedgerRecord[], now: Date): string[] 
   return records.filter(r => r.date < date || (r.date === date && (recordInstant(r) === null || recordInstant(r)! <= now.getTime()))).map(r => r.id);
 }
 export function setDefaultCash(state: AssetState, accountId: string, records: LedgerRecord[], now: Date): void {
-  if (!state.accounts.some(a => a.id === accountId && a.kind === "cash")) throw new Error("请选择现金账户");
+  if (!state.accounts.some(a => a.id === accountId && a.kind === "cash" && !a.archived)) throw new Error("请选择现金账户");
   if (state.defaultCashId === accountId) return;
   const at = now.toISOString();
   for (const epoch of state.epochs) if (!epoch.to) epoch.to = at;
@@ -164,13 +167,14 @@ export function setDefaultCash(state: AssetState, accountId: string, records: Le
 }
 export function calibrateAccount(state: AssetState, id: string, cents: number, records: LedgerRecord[], now: Date): void {
   const account = state.accounts.find(a => a.id === id);
-  if (!account || !validCents(cents) || (account.kind === "liability" && cents < 0)) throw new Error("余额无效");
+  if (!account || account.archived || !validCents(cents) || (account.kind === "liability" && cents < 0)) throw new Error("余额无效或账户已删除");
   account.balanceCents = cents; account.baselineAt = now.toISOString();
   account.includedEventIds = state.events.map(e => e.id); account.includedRecordIds = baselineRecordIds(records, now);
 }
 function linkedRecords(state: AssetState, records: LedgerRecord[], pending: Set<string>): Set<string> {
   const excluded = new Set<string>();
-  for (const event of state.events) if (event.link) {
+  const active = new Set(state.accounts.filter(a => !a.archived).map(a => a.id));
+  for (const event of state.events) if (event.link && (active.has(event.accountId) || (event.cashAccountId && active.has(event.cashAccountId)))) {
     const matches = records.filter(r => stableIdentity(r.id) === stableIdentity(event.link!.id));
     if (matches.length === 1) excluded.add(matches[0].id);
     else {
@@ -196,7 +200,7 @@ export function buildAssetSnapshot(state: AssetState, records: LedgerRecord[], n
       }
     } catch { /* Older unmatched identities have no reliable candidate. */ }
   }
-  const accounts = state.accounts.map(account => {
+  const accounts = state.accounts.filter(a => !a.archived).map(account => {
     let cents = account.balanceCents;
     const baseline = Date.parse(account.baselineAt);
     for (const event of state.events) {
@@ -233,9 +237,10 @@ export function buildAssetSnapshot(state: AssetState, records: LedgerRecord[], n
       const value = h.amountBasisCents !== undefined && h.quantity === "0" ? h.amountBasisCents : decimal(h.quantity).eq(0) ? 0 : quote && decimal(quote.price).gt(0) ? valueCents(h.quantity, quote.price) : null;
       return { ...h, quote: quote ? { ...quote } : undefined, valueCents: value };
     });
+    const unallocatedCents = account.kind === "investment" ? cents : undefined;
     if (account.kind === "investment") cents += holdings.reduce((sum, h) => sum + (h.valueCents ?? 0), 0);
     if (!Number.isSafeInteger(cents)) throw new Error("账户金额超出可计算范围");
-    return { id: account.id, name: account.name, kind: account.kind, cents, missing: holdings.some(h => h.valueCents === null), holdings };
+    return { id: account.id, name: account.name, kind: account.kind, cents, missing: holdings.some(h => h.valueCents === null || (h.amountBasisCents !== undefined && h.quantity === "0")), holdings, unallocatedCents };
   });
   return { date: today, savedAt: now.toISOString(), accounts, pending: [...pending] };
 }
@@ -268,9 +273,9 @@ export function addAssetEvent(state: AssetState, event: AssetEvent): void {
   if (!isValidIsoDate(event.date) || event.date > isoFromDate(new Date())) throw new Error("请填写已确认交易的日期，不能填写未来日期");
   if (!validCents(event.amountCents) || !validCents(event.feeCents) || event.feeCents < 0 || (event.kind !== "adjust" && event.amountCents < 0)) throw new Error("交易金额无效");
   const account = state.accounts.find(a => a.id === event.accountId), cash = state.accounts.find(a => a.id === event.cashAccountId);
-  if (!account) throw new Error("账户不存在");
+  if (!account || account.archived) throw new Error("账户不存在或已删除");
   if (event.link && state.events.some(e => e.link && stableIdentity(e.link.id) === stableIdentity(event.link!.id))) throw new Error("这条账本流水已关联其他交易");
-  if (["buy", "sell", "dividend", "transfer", "repay"].includes(event.kind) && (!cash || cash.kind !== "cash")) throw new Error("请选择现金账户");
+  if (["buy", "sell", "dividend", "transfer", "repay"].includes(event.kind) && (!cash || cash.kind !== "cash" || cash.archived)) throw new Error("请选择现金账户");
   if (event.kind === "transfer" && (account.kind !== "cash" || account.id === cash?.id)) throw new Error("转出、转入必须是不同现金账户");
   if (event.kind === "income" && account.kind !== "cash") throw new Error("收入必须进入现金账户");
   if (event.kind === "repay" && account.kind !== "liability") throw new Error("还款须选择负债账户");
@@ -308,4 +313,35 @@ export function renameAssetLinks(state: AssetState, oldPath: string, newPath: st
   const assignments: Record<string, string> = {};
   for (const [id, account] of Object.entries(state.recordAssignments)) assignments[renameStarredIds([id], oldPath, newPath)[0]] = account;
   state.recordAssignments = assignments;
+}
+
+/** Current value is a valuation baseline, not the historical purchase cost. */
+export function addEstimatedHolding(state: AssetState, accountId: string, kind: SecurityKind, code: string, cents: number, quote: AssetQuote, now = new Date()): AssetHolding {
+  const account = state.accounts.find(a => a.id === accountId && a.kind === "investment" && !a.archived);
+  if (!account) throw new Error("请选择有效的投资账户");
+  if (!validCents(cents) || cents <= 0) throw new Error("当前金额须大于零");
+  const normalized = normalizeCode(kind, code);
+  if (quote.key !== quoteKey(kind, normalized) || !validInstant(quote.asOf) || decimal(quote.price).lte(0)) throw new Error("没有可用于估算的行情，请稍后重试");
+  const quantity = new Decimal(cents).div(100).div(quote.price).toDecimalPlaces(12).toFixed();
+  if (decimal(quantity).lte(0) || valueCents(quantity, quote.price) !== cents) throw new Error("金额无法可靠换算，请核对金额");
+  const holding: AssetHolding = { id: assetId(), accountId, kind, code: normalized, name: quote.name || normalized, quantity, costCents: cents, acquiredOn: isoFromDate(now), estimated: true, costBasisKnown: false };
+  account.balanceCents -= Math.min(Math.max(0, account.balanceCents), cents);
+  state.holdings.push(holding); state.quotes[quote.key] = { ...quote };
+  return holding;
+}
+
+/** Keep past cash legs and ledger associations; deleting a visible account is not reversing its transactions. */
+export function removeAssetAccount(state: AssetState, id: string, now = new Date()): void {
+  const account = state.accounts.find(a => a.id === id && !a.archived);
+  if (!account) throw new Error("账户不存在或已删除");
+  account.archived = true;
+  if (state.defaultCashId === id) {
+    state.defaultCashId = "";
+    for (const epoch of state.epochs) if (epoch.accountId === id && !epoch.to) epoch.to = now.toISOString();
+  }
+}
+
+export function removeAssetHolding(state: AssetState, id: string): void {
+  if (!state.holdings.some(h => h.id === id)) throw new Error("持仓不存在");
+  state.holdings = state.holdings.filter(h => h.id !== id);
 }

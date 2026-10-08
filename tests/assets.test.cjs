@@ -248,6 +248,72 @@ test('asset changes serialize, roll back failed persistence and preserve the nex
   assert.equal(plugin.settings.assets.accounts[0].name, '已保存'); assert.equal(saves, 2); assert.equal(redraws, 1);
 });
 
+test('investment amounts display immediately and allocation to holdings never counts the same money twice', () => {
+  const state = fixture(); state.holdings = []; state.accounts.find(a => a.id === 'funds').balanceCents = 100000;
+  assert.equal(balances(state).funds, 100000);
+  a.addEstimatedHolding(state, 'funds', 'fund', '000001', 60000, state.quotes['fund:000001'], at(18));
+  assert.equal(balances(state).funds, 100000); assert.equal(state.accounts.find(a => a.id === 'funds').balanceCents, 40000);
+  a.addEstimatedHolding(state, 'funds', 'fund', '000001', 50000, state.quotes['fund:000001'], at(18));
+  assert.equal(balances(state).funds, 110000); assert.equal(state.accounts.find(a => a.id === 'funds').balanceCents, 0);
+  state.quotes['fund:000001'].price = '2'; assert.equal(balances(state).funds, 220000);
+});
+
+test('current amounts establish an estimated tracking position with provider name and today date, not a claimed purchase cost', () => {
+  const state = fixture(), quote = q.parseStockQuote({ kind: 'stock', code: 'sh600000' }, stockText('sh600000'), at(18));
+  const h = a.addEstimatedHolding(state, 'funds', 'stock', '600000', 99999, quote, at(18));
+  assert.equal(h.name, '测试股票'); assert.equal(h.acquiredOn, '2026-10-08'); assert.equal(h.estimated, true); assert.equal(h.costBasisKnown, false);
+  assert.equal(a.valueCents(h.quantity, quote.price), 99999); assert.equal(balances(state).cash, 100000);
+  assert.ok(!Number.isInteger(Number(h.quantity)), 'estimated exposure is explicitly marked, not passed off as actual fractional shares');
+  const before = clone(state);
+  assert.throws(() => a.addEstimatedHolding(state, 'funds', 'fund', '000001', 10000, quote), /行情/);
+  assert.deepEqual(state, before);
+});
+
+test('deleting accounts preserves counterpart cash flows and ledger links across restart while removing current assets', () => {
+  const state = fixture(), rs = records('- 10:00 | 餐饮 | Y10.00');
+  a.addAssetEvent(state, event('transfer', { accountId: 'cash', cashAccountId: 'other', amountCents: 10000, link: a.linkRecord(rs[0]) }));
+  const snapshot = a.buildAssetSnapshot(state, rs, at(11)); a.storeAssetSnapshot(state, snapshot);
+  a.removeAssetAccount(state, 'cash', at(12));
+  assert.equal(state.defaultCashId, ''); assert.equal(state.epochs[0].to, at(12).toISOString());
+  assert.equal(balances(state, rs).other, 10000); assert.equal(balances(state, rs).cash, undefined);
+  assert.deepEqual(balances(a.normalizeAssets(clone(state)), rs), balances(state, rs));
+  assert.equal(state.snapshots[0].accounts.some(a => a.id === 'cash'), true);
+  assert.throws(() => a.addAssetEvent(state, event('income', { accountId: 'cash' })), /删除/);
+});
+
+test('deleting holdings removes current valuation but does not reverse confirmed cash transactions or rewrite history', () => {
+  const state = fixture(); a.addAssetEvent(state, event('buy', { quantity: '100' }));
+  a.storeAssetSnapshot(state, a.buildAssetSnapshot(state, [], at(18))); const history = clone(state.snapshots[0]);
+  a.removeAssetHolding(state, 'h'); assert.equal(balances(state).cash, 90000); assert.equal(balances(state).funds, 0);
+  assert.deepEqual(state.snapshots[0], history); assert.equal(state.events.length, 1);
+});
+
+test('removed investment accounts no longer request automatic quotes', async () => {
+  const state = fixture(); a.removeAssetAccount(state, 'funds'); let calls = 0;
+  const monitor = new q.AssetQuoteMonitor(() => state, async () => { calls++; throw new Error('should not fetch'); }, async () => {}, () => at(18));
+  await monitor.refresh(true); monitor.stop(); assert.equal(calls, 0);
+});
+
+test('quick entry quotes share deduplication and two-connection limit with the background monitor', async () => {
+  const state = fixture(); state.quotes = {}; const calls = [];
+  const monitor = new q.AssetQuoteMonitor(() => state, url => { const d = deferred(); calls.push({ ...d, url }); return d.promise; }, async () => {}, () => at(18));
+  const first = monitor.lookup('stock', '600000'), duplicate = monitor.lookup('stock', 'sh600000'), second = monitor.lookup('stock', 'sz000001');
+  await assert.rejects(monitor.lookup('etf', 'sh510300'), /正在更新/); await Promise.resolve(); assert.equal(calls.length, 2);
+  calls[0].resolve({ text: stockText('sh600000') }); calls[1].resolve({ text: stockText('sz000001') });
+  const results = await Promise.all([first, duplicate, second]); assert.equal(results[0].key, results[1].key);
+  state.quotes[results[0].key] = results[0]; await monitor.lookup('stock', '600000'); assert.equal(calls.length, 2); monitor.stop();
+});
+
+test('quick entry failures expose the error, enforce retry cooldown and reject responses after plugin shutdown', async () => {
+  const state = fixture(); state.quotes = {}; let calls = 0;
+  const offline = new q.AssetQuoteMonitor(() => state, async () => { calls++; throw new Error('离线'); }, async () => {}, () => at(18));
+  await assert.rejects(offline.lookup('fund', '000001'), /离线/); await assert.rejects(offline.lookup('fund', '000001'), /稍后重试/); assert.equal(calls, 1); offline.stop();
+  const pending = deferred(), monitor = new q.AssetQuoteMonitor(() => state, () => pending.promise, async () => {}, () => at(18));
+  const result = monitor.lookup('stock', 'sh600000'); monitor.stop(); pending.resolve({ text: stockText('sh600000') }); await assert.rejects(result, /关闭/);
+});
+
+
+
 test('investment cash is included and can be recalibrated without removing holdings', () => {
   const state = fixture(); state.accounts.find(a => a.id === 'funds').balanceCents = 50000;
   assert.equal(balances(state).funds, 60000);
@@ -284,4 +350,29 @@ test('stock amount estimates retain fractional exposure without rounding away en
   assert.equal(a.valueCents(h.quantity, '13.17'), 10001);
   assert.ok(a.decimal(h.quantity).gt(0));
   assert.equal(a.normalizeAssets(clone(state)).holdings.length, 2);
+});
+
+
+test('v2.10.1 pending amount holdings retain value and disclose incomplete quote after upgrade', () => {
+  const now = at(18);
+  const state = fixture(); state.holdings = [];
+  const h = a.addAmountHolding(state, 'funds', 'fund', '000001', '123.45', now);
+  delete h.estimated; delete h.costBasisKnown;
+  const upgraded = a.normalizeAssets(clone(state));
+  assert.equal(upgraded.holdings[0].estimated, true);
+  assert.equal(upgraded.holdings[0].costBasisKnown, false);
+  assert.equal(a.assetTotals(a.buildAssetSnapshot(upgraded, [], now)).missing, true);
+  const q = {key:'fund:000001',name:'基金',price:'1.25',asOf:now.toISOString(),fetchedAt:now.toISOString()};
+  a.applyAssetQuote(upgraded,q);
+  assert.equal(upgraded.holdings[0].quantity,'98.76');
+  assert.equal(a.buildAssetSnapshot(upgraded,[],now).accounts.find(x=>x.id==='funds').holdings[0].valueCents,12345);
+});
+
+test('late quotes do not initialize legacy holdings on deleted accounts', () => {
+  const now = at(18);
+  const state = fixture(); state.holdings = [];
+  const h = a.addAmountHolding(state,'funds','fund','000001','100',now);
+  a.removeAssetAccount(state,'funds',now);
+  a.applyAssetQuote(state,{key:'fund:000001',name:'基金',price:'1',asOf:now.toISOString(),fetchedAt:now.toISOString()});
+  assert.equal(h.quantity,'0');
 });

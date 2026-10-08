@@ -1,8 +1,9 @@
 import { Modal, Notice } from "obsidian";
 import type LedgerStatisticsPlugin from "./main";
 import { LedgerRecord, flattenRecords, formatCents, isoFromDate } from "./core";
-import { ASSET_NAMES, AssetAccount, AssetEvent, AssetEventKind, AssetHolding, AssetKind, AssetSnapshot, SecurityKind, addAmountHolding, addAssetEvent, assetId, assetTotals, baselineRecordIds, calibrateAccount, decimal, knownRecord, linkRecord, moneyCents, normalizeCode, previousMonthSnapshot, quantityFromAmount, setDefaultCash } from "./assets";
-import { renderAssetAllocation, renderAssetSankey } from "./asset-charts";
+import { ASSET_NAMES, AssetAccount, AssetEvent, AssetEventKind, AssetHolding, AssetKind, AssetSnapshot, SecurityKind, addAssetEvent, addEstimatedHolding, assetId, assetTotals, baselineRecordIds, calibrateAccount, decimal, knownRecord, linkRecord, moneyCents, normalizeCode, previousMonthSnapshot, quantityFromAmount, removeAssetAccount, removeAssetHolding, setDefaultCash, validateQuantity } from "./assets";
+import { renderAssetSankey } from "./asset-charts";
+import type { AssetQuote } from "./assets";
 
 function button(parent: HTMLElement, text: string, action: () => void, primary = false): HTMLButtonElement {
   const node = parent.createEl("button", { cls: `ledger-button${primary ? " ledger-assets-primary" : ""}`, text });
@@ -19,21 +20,31 @@ function select(parent: HTMLElement, name: string, choices: Array<[string, strin
   for (const [key, text] of choices) node.createEl("option", { value: key, text });
   if (value) node.value = value; return node;
 }
-class AssetFormModal extends Modal {
-  constructor(plugin: LedgerStatisticsPlugin, private title: string, private build: (body: HTMLElement) => () => Promise<void>) { super(plugin.app); }
+function localDateTime(now = new Date()): string { return `${isoFromDate(now)}T${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`; }
+function parseBaseline(value: string): Date {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime()) || date.getTime() > Date.now()) throw new Error("余额时点无效，不能使用未来时间");
+  return date;
+}
+export class AssetFormModal extends Modal {
+  private alive = false;
+  constructor(plugin: LedgerStatisticsPlugin, private title: string, private build: (body: HTMLElement, active: () => boolean) => () => Promise<void>, private saveLabel = "保存") { super(plugin.app); }
   onOpen(): void {
+    this.alive = true;
     this.modalEl.addClass("ledger-assets-modal"); this.setTitle(this.title);
     const body = this.contentEl.createEl("form", { cls: "ledger-assets-form" });
-    const submit = this.build(body), error = body.createDiv({ cls: "ledger-assets-form-error", attr: { role: "alert" } });
+    const submit = this.build(body, () => this.alive), error = body.createDiv({ cls: "ledger-assets-form-error", attr: { role: "alert" } });
     const controls = body.createDiv({ cls: "ledger-assets-actions" });
-    const save = controls.createEl("button", { cls: "ledger-button ledger-assets-primary", text: "保存" }); save.type = "submit";
+    const save = controls.createEl("button", { cls: "ledger-button ledger-assets-primary", text: this.saveLabel }); save.type = "submit";
     button(controls, "取消", () => this.close());
     body.addEventListener("submit", event => {
-      event.preventDefault(); if (save.disabled) return; save.disabled = true; save.setText("保存中…"); error.setText("");
-      void submit().then(() => { this.close(); new Notice("资产已保存"); }).catch(reason => { error.setText(reason instanceof Error ? reason.message : "保存失败，请重试"); save.disabled = false; save.setText("保存"); });
+      event.preventDefault(); if (save.disabled) return; save.disabled = true; error.setText("");
+      save.setText("处理中…"); body.setAttribute("aria-busy", "true");
+      void submit().then(() => { if (this.alive) { this.close(); new Notice(this.saveLabel === "删除" ? "已删除" : "资产已保存"); } }).catch(reason => { if (!this.alive) return; error.setText(reason instanceof Error ? reason.message : "保存失败，请重试"); save.disabled = false; save.setText(this.saveLabel); body.setAttribute("aria-busy", "false"); });
     });
   }
-  onClose(): void { this.contentEl.empty(); }
+  close(): void { this.alive = false; super.close(); }
+  onClose(): void { this.alive = false; }
 }
 export class AssetPanel {
   private expanded = new Set<string>();
@@ -42,75 +53,56 @@ export class AssetPanel {
   render(parent: HTMLElement): void {
     const state = this.plugin.settings.assets, snapshot = this.plugin.assetSnapshot(), totals = assetTotals(snapshot, state.excludeFixed);
     const money = (cents: number): string => state.hideAmounts ? "••••" : formatCents(cents);
-    const root = parent.createDiv({ cls: "ledger-assets" }), top = root.createDiv({ cls: "ledger-assets-title-row" });
-    top.createEl("h2", { text: "我的资产" });
-    const actions = top.createDiv({ cls: "ledger-assets-actions" });
-    button(actions, "添加账户", () => this.accountForm(), true);
-    button(actions, "添加持仓", () => this.holdingForm());
-    const refresh = button(actions, "刷新行情", () => {
-      refresh.disabled = true;
-      void this.plugin.refreshAssetQuotes(true).catch(e => new Notice(e instanceof Error ? e.message : "行情刷新失败")).finally(() => { refresh.disabled = false; });
-    });
+    const root = parent.createDiv({ cls: "ledger-assets" });
+    const actions = root.createDiv({ cls: "ledger-assets-actions ledger-assets-main-actions" });
+    button(actions, "添加账户", () => this.accountForm());
+    button(actions, "添加持仓", () => this.holdingForm(), true);
+    button(actions, "更多", () => this.toolsModal());
     const hero = root.createDiv({ cls: "ledger-assets-hero" }), caption = hero.createDiv({ cls: "ledger-assets-caption" });
-    caption.createSpan({ text: totals.missing ? "已估值资产（元）· 估值不完整" : "总资产（元）" });
-    button(caption, state.hideAmounts ? "显示金额" : "隐藏金额", () => void this.save(s => { s.hideAmounts = !s.hideAmounts; }).catch(e => new Notice(String(e))));
+    caption.createSpan({ text: totals.missing ? "已估值资产（元）" : "总资产（元）" });
+    const privacy = button(caption, state.hideAmounts ? "◉" : "◎", () => void this.save(s => { s.hideAmounts = !s.hideAmounts; }).catch(e => new Notice(String(e))));
+    privacy.setAttribute("aria-label", state.hideAmounts ? "显示金额" : "隐藏金额");
     const toggle = caption.createEl("label", { cls: "ledger-assets-toggle" }); toggle.createSpan({ text: "排除固定资产" });
     const check = toggle.createEl("input", { type: "checkbox" }); check.checked = state.excludeFixed;
     check.addEventListener("change", () => void this.save(s => { s.excludeFixed = check.checked; }).catch(e => new Notice(String(e))));
     hero.createDiv({ cls: "ledger-assets-total", text: state.hideAmounts ? "••••" : formatCents(totals.assetsCents).replace("¥", "") });
-    const latest = [...snapshot.accounts.flatMap(a => a.holdings.filter(h => h.valueCents !== null && h.quote && decimal(h.quote.price).gt(0)).map(h => h.quote?.asOf).filter((v): v is string => !!v))].sort().reverse()[0];
-    hero.createDiv({ cls: "ledger-assets-updated", text: latest ? `行情 ${latest.replace("T", " ").slice(0, 16)}` : "当前余额" });
     const metrics = hero.createDiv({ cls: "ledger-assets-metrics" });
-    metrics.createSpan({ text: `净资产 ${money(totals.netCents)}` }); metrics.createSpan({ text: `总负债 ${money(totals.liabilitiesCents)}` });
-    metrics.createSpan({ text: `负债率 ${state.hideAmounts ? "••••" : totals.assetsCents > 0 ? `${(totals.liabilitiesCents / totals.assetsCents * 100).toFixed(2)}%` : "—"}` });
+    for (const [label, value] of [["净资产", money(totals.netCents)], ["负债", money(totals.liabilitiesCents)], ["负债率", state.hideAmounts ? "••••" : totals.assetsCents > 0 ? `${(totals.liabilitiesCents / totals.assetsCents * 100).toFixed(1)}%` : "—"]]) {
+      const metric = metrics.createDiv(); metric.createEl("small", { text: label }); metric.createEl("strong", { text: value });
+    }
+    const updates = hero.createDiv({ cls: "ledger-assets-update-row" });
+    const latest = snapshot.accounts.flatMap(a => a.holdings.filter(h => h.quote && decimal(h.quote.price).gt(0)).map(h => h.quote!.asOf)).sort().reverse()[0];
+    updates.createEl("small", { text: latest ? `行情 ${latest.replace("T", " ").slice(0, 16)}` : "当前余额" });
+    const refresh = button(updates, "↻", () => { refresh.disabled = true; void this.plugin.refreshAssetQuotes(true).catch(e => new Notice(String(e))).finally(() => { refresh.disabled = false; }); });
+    refresh.setAttribute("aria-label", "刷新行情");
     this.renderComparison(hero, snapshot);
     if (snapshot.pending.length) {
-      const warning = root.createDiv({ cls: "ledger-assets-warning" }); warning.createEl("strong", { text: "有资金变动待核对" });
-      const details = warning.createEl("details"); details.createEl("summary", { text: `${snapshot.pending.length}项待核对` });
-      for (const text of snapshot.pending) details.createEl("p", { text: state.hideAmounts ? "流水待核对" : text });
-      button(warning, "核对流水", () => this.reviewForm()); button(warning, "核对交易关联", () => this.linkForm());
+      const warning = root.createDiv({ cls: "ledger-assets-warning ledger-assets-compact-warning" }); warning.createSpan({ text: `${snapshot.pending.length}项变动待核对` }); button(warning, "查看", () => this.toolsModal());
     }
-    const card = root.createDiv({ cls: "ledger-assets-card" }), heading = card.createDiv({ cls: "ledger-assets-title-row" });
-    heading.createEl("h3", { text: "资产组成" });
-    button(heading, "放大查看", () => this.sankeyModal(snapshot));
-    renderAssetAllocation(card, snapshot, state.excludeFixed, state.hideAmounts);
-    const list = root.createDiv({ cls: "ledger-assets-card" });
-    const listHeader = list.createDiv({ cls: "ledger-assets-title-row" }); listHeader.createEl("h3", { text: "账户与持仓" });
-
-    if (!state.accounts.length) list.createEl("p", { text: "添加账户，开始查看资产。" });
-    for (const account of snapshot.accounts) {
-      const row = list.createDiv({ cls: "ledger-assets-account" });
-      const info = row.createDiv(); info.createEl("strong", { text: account.name });
-      info.createEl("small", { text: `${ASSET_NAMES[account.kind]}${account.id === state.defaultCashId ? " · 默认消费扣款" : ""}${account.missing ? " · 含未估值持仓" : ""}` });
-      row.createEl("strong", { text: money(account.cents) }); button(row, "管理", () => this.accountDetails(account.id));
-      const holdingList = account.holdings.length ? list.createEl("details", { cls: "ledger-assets-holding-list" }) : null;
-      holdingList?.createEl("summary", { text: `${account.holdings.length}项持仓` });
-      for (const holding of account.holdings) {
-        const detail = holdingList!.createDiv({ cls: "ledger-assets-holding" });
-        detail.createEl("strong", { text: holding.name });
-        detail.createSpan({ text: `${holding.code}${holding.amountBasisCents !== undefined ? " · 参考份额" : ""} · ${state.hideAmounts ? "••••" : holding.amountBasisCents !== undefined && holding.quantity === "0" ? "待换算" : decimal(holding.quantity).toDecimalPlaces(2).toFixed()} ${holding.kind === "stock" ? "股" : "份"}` });
-        detail.createSpan({ text: holding.valueCents === null ? "未估值" : money(holding.valueCents) });
-        if (holding.valueCents !== null) detail.createEl("small", { text: `${holding.amountBasisCents !== undefined ? "录入后变化" : "持仓盈亏"} ${money(holding.valueCents - holding.costCents)}` });
-        detail.createEl("small", { text: holding.quote && decimal(holding.quote.price).gt(0) ? `行情 ${holding.quote.asOf.replace("T", " ").slice(0, 19)}${holding.quote.error ? " · 更新失败，保留上次值" : ""}` : holding.quote?.error || (holding.amountBasisCents !== undefined ? "按录入金额显示 · 等待行情" : "等待行情") });
-        button(detail, "核对持仓", () => this.holdingCorrection(holding));
+    const card = root.createDiv({ cls: "ledger-assets-card ledger-assets-chart-card" }), heading = card.createDiv({ cls: "ledger-assets-title-row" });
+    heading.createEl("h3", { text: "资产组成" }); button(heading, "⤢", () => this.sankeyModal(snapshot)).setAttribute("aria-label", "放大查看桑基图");
+    renderAssetSankey(card, snapshot, state.excludeFixed, state.hideAmounts, this.expanded, id => { this.expanded.has(id) ? this.expanded.delete(id) : this.expanded.add(id); this.plugin.refreshAssetViews(); }, id => this.accountDetails(id));
+    if (snapshot.accounts.length) {
+      const grid = root.createDiv({ cls: "ledger-assets-account-grid" });
+      const maximum = Math.max(1, ...snapshot.accounts.map(a => Math.abs(a.cents)));
+      for (const account of snapshot.accounts) {
+        const tile = button(grid, "", () => this.accountDetails(account.id)); tile.addClass("ledger-assets-account-tile");
+        tile.setAttribute("aria-label", `${account.name}，管理账户`);
+        const title = tile.createDiv(); title.createSpan({ cls: `ledger-assets-dot is-${account.kind}` }); title.createSpan({ text: account.name });
+        tile.createEl("strong", { text: money(account.cents) });
+        tile.createEl("small", { text: account.missing ? "等待行情" : account.id === state.defaultCashId ? "默认扣款" : ASSET_NAMES[account.kind] });
+        const bar = tile.createDiv({ cls: "ledger-assets-account-bar" }), fill = bar.createDiv({ cls: `is-${account.kind}` }); fill.style.width = `${state.hideAmounts ? 0 : Math.abs(account.cents) / maximum * 100}%`;
       }
     }
-    const tools = root.createEl("details", { cls: "ledger-assets-card" }); tools.createEl("summary", { text: "资产管理" });
-    const toolsActions = tools.createDiv({ cls: "ledger-assets-actions" });
-    button(toolsActions, "记录交易", () => this.eventForm()); button(toolsActions, "默认扣款账户", () => this.defaultForm()); button(toolsActions, "核对流水", () => this.reviewForm()); button(toolsActions, "交易关联", () => this.linkForm());
-    tools.createEl("p", { cls: "ledger-assets-hint", text: "份额由当前金额和首次获取的行情估算。基金净值可能延迟；买卖前可在持仓详情核对平台实际份额与成本。" });
-    const events = tools.createEl("details", { cls: "ledger-assets-card" }); events.createEl("summary", { text: `资产交易记录（${state.events.length}笔）` });
-    for (const event of [...state.events].reverse().slice(0, 100)) events.createDiv({ cls: "ledger-assets-event-row", text: `${event.date} · ${event.note || EVENT_NAMES[event.kind]} · ${money(event.amountCents)}${event.link ? " · 已关联账本" : ""}` });
-
   }
   private save(change: (state: LedgerStatisticsPlugin["settings"]["assets"]) => void): Promise<void> { return this.plugin.updateAssets(change); }
   private renderComparison(parent: HTMLElement, current: AssetSnapshot): void {
     const state = this.plugin.settings.assets, previous = previousMonthSnapshot(state, current.date), card = parent.createDiv({ cls: "ledger-assets-comparison" });
     const title = card.createDiv({ cls: "ledger-assets-title-row" }); title.createSpan({ text: previous ? `相比 ${previous.date}` : "暂无可比记录" });
     button(title, "资产月历 ›", () => this.calendarModal());
-    if (!previous) { return; }
+    if (!previous) return;
     const before = assetTotals(previous, state.excludeFixed), after = assetTotals(current, state.excludeFixed);
-    if (before.missing || after.missing) { card.createEl("p", { text: "本次或历史估值不完整，暂不判断资产增减。" }); return; }
+    if (before.missing || after.missing) { card.createEl("p", { text: "估值待补全" }); return; }
     const delta = after.assetsCents - before.assetsCents, debt = after.liabilitiesCents - before.liabilitiesCents;
     const summary = card.createDiv({ cls: "ledger-assets-change-summary" });
     summary.createSpan({ text: `总资产 ${state.hideAmounts ? "••••" : `${delta >= 0 ? "+" : "−"}${formatCents(Math.abs(delta))}`}` });
@@ -126,71 +118,88 @@ export class AssetPanel {
     }
   }
   private accountForm(existing?: AssetAccount): void {
-    new AssetFormModal(this.plugin, existing ? "管理账户与余额核对" : "添加资产账户", body => {
+    new AssetFormModal(this.plugin, existing ? "编辑账户" : "添加账户", body => {
       const name = input(body, "账户名称", existing?.name ?? "");
-      const kind = select(body, "账户类别", Object.entries(ASSET_NAMES), existing?.kind ?? "cash"); kind.disabled = !!existing;
-      const current = existing ? this.plugin.assetSnapshot().accounts.find(a => a.id === existing.id)! : null;
-      const currentBalance = current ? current.cents - (existing?.kind === "investment" ? current.holdings.reduce((sum, h) => sum + (h.valueCents ?? 0), 0) : 0) : 0;
-      const balance = input(body, "当前余额（元）", existing ? (currentBalance / 100).toFixed(2) : "0");
-      const balanceLabel = balance.parentElement!.querySelector("span")!;
-      const hint = body.createEl("small", { cls: "ledger-assets-hint" });
-      const updateFields = (): void => {
-        balanceLabel.setText(kind.value === "investment" ? "账户现金（元，不含持仓）" : kind.value === "liability" ? "尚欠金额（元）" : "当前余额／价值（元）");
-        hint.setText(kind.value === "investment" ? "账户现金与持仓分别计算；基金、股票金额请用添加持仓。" : "按当前余额保存，之前的流水不重复扣款。");
-      };
-      kind.addEventListener("change", updateFields); updateFields();
-      const useDefault = input(body, "设为默认消费扣款账户", "", "checkbox"); useDefault.checked = existing ? existing.id === this.plugin.settings.assets.defaultCashId : !this.plugin.settings.assets.defaultCashId;
-      const updateDefault = (): void => { useDefault.parentElement!.hidden = kind.value !== "cash"; };
-      kind.addEventListener("change", updateDefault); updateDefault();
+      const kind = select(body, "类别", Object.entries(ASSET_NAMES), existing?.kind ?? "cash"); kind.disabled = !!existing;
+      const valued = existing && this.plugin.assetSnapshot().accounts.find(a => a.id === existing.id);
+      const initial = existing ? (existing.kind === "investment" ? valued?.unallocatedCents ?? existing.balanceCents : valued?.cents ?? existing.balanceCents) : 0;
+      const balance = input(body, existing?.kind === "investment" ? "待分配金额（元）" : "当前金额（元）", (initial / 100).toFixed(2));
+      const allocation = body.createEl("small", { cls: "ledger-assets-hint", text: "添加持仓时，会自动从这笔金额中分配，避免重复计算。" });
+      const useDefault = input(body, "作为默认消费扣款账户", "", "checkbox");
+      useDefault.checked = existing ? existing.id === this.plugin.settings.assets.defaultCashId : !this.plugin.settings.assets.defaultCashId;
+      const updateFields = (): void => { allocation.hidden = kind.value !== "investment"; useDefault.parentElement!.hidden = kind.value !== "cash"; }; kind.addEventListener("change", updateFields); updateFields();
+      const advanced = body.createEl("details", { cls: "ledger-assets-advanced" }); advanced.createEl("summary", { text: "余额时点" });
+      const at = input(advanced, "余额对应时点", localDateTime(), "datetime-local");
       return async () => {
-        if (!name.value.trim()) throw new Error("请填写账户名称");
-        const now = new Date(), category = kind.value as AssetKind, cents = moneyCents(balance.value, category !== "liability");
+        const category = kind.value as AssetKind, cents = moneyCents(balance.value, category !== "liability");
+        const now = advanced.open ? parseBaseline(at.value) : new Date();
         await this.save(state => {
-          let account = existing && state.accounts.find(a => a.id === existing.id);
-          if (account) { account.name = name.value.trim(); calibrateAccount(state, account.id, cents, this.records(), now); }
-          else { account = { id: assetId(), name: name.value.trim(), kind: category, balanceCents: cents, baselineAt: now.toISOString(), includedRecordIds: baselineRecordIds(this.records(), now), includedEventIds: [] }; state.accounts.push(account); }
-          if (category === "cash" && useDefault.checked) setDefaultCash(state, account.id, this.records(), existing ? new Date() : now);
+          let account = existing && state.accounts.find(a => a.id === existing.id && !a.archived);
+          if (existing && !account) throw new Error("账户已删除");
+          if (account) { account.name = name.value.trim() || account.name; if (cents !== initial || advanced.open) calibrateAccount(state, account.id, cents, this.records(), now); }
+          else { account = { id: assetId(), name: name.value.trim() || ASSET_NAMES[category], kind: category, balanceCents: cents, baselineAt: now.toISOString(), includedRecordIds: baselineRecordIds(this.records(), now), includedEventIds: [] }; state.accounts.push(account); }
+          if (category === "cash" && useDefault.checked) setDefaultCash(state, account.id, this.records(), new Date());
+          else if (category === "cash" && state.defaultCashId === account.id) { state.defaultCashId = ""; for (const epoch of state.epochs) if (!epoch.to && epoch.accountId === account.id) epoch.to = new Date().toISOString(); }
         });
       };
     }).open();
   }
-  private holdingForm(): void {
-    const choices = this.plugin.settings.assets.accounts.filter(a => a.kind === "investment").map(a => [a.id, a.name] as [string, string]);
-    if (!choices.length) { new Notice("请先添加一个投资理财账户"); this.accountForm(); return; }
-    new AssetFormModal(this.plugin, "添加持仓", body => {
-      const account = select(body, "投资账户", choices);
-      if (choices.length === 1) account.parentElement!.hidden = true;
+  private holdingForm(preferredAccount = ""): void {
+    const choices = this.plugin.settings.assets.accounts.filter(a => a.kind === "investment" && !a.archived).map(a => [a.id, a.name] as [string, string]);
+    new AssetFormModal(this.plugin, "添加持仓", (body, active) => {
+      const account = choices.length > 1 ? select(body, "投资账户", choices, preferredAccount) : null;
       const kind = select(body, "类型", [["fund", "基金"], ["stock", "股票"], ["etf", "ETF"]]);
-      const code = input(body, "证券代码"), amount = input(body, "当前持仓金额（元）");
-      amount.inputMode = "decimal";
-      body.createEl("small", { cls: "ledger-assets-hint", text: "日期默认今天，名称与参考份额自动查询。行情更新前显示填写金额，之后显示估值变化。" });
+      const code = input(body, "代码"), amount = input(body, "当前金额（元）");
+      code.placeholder = "例如 000001"; amount.inputMode = "decimal";
+      body.createEl("small", { cls: "ledger-assets-hint", text: "名称自动获取，日期默认今天；按最新可用行情估算份额。" });
       return async () => {
-        await this.save(state => { addAmountHolding(state, account.value, kind.value as SecurityKind, code.value, amount.value); });
-        void this.plugin.refreshAssetQuotes(true).catch(e => new Notice(e instanceof Error ? e.message : "行情更新失败，可稍后重试"));
+        const security = kind.value as SecurityKind, normalized = normalizeCode(security, code.value), cents = moneyCents(amount.value);
+        if (cents <= 0) throw new Error("当前金额须大于零");
+        const quote = await this.plugin.lookupAssetQuote(security, normalized);
+        if (!active()) throw new Error("已取消添加");
+        await this.save(state => {
+          if (!active()) throw new Error("已取消添加");
+          let id = account?.value || preferredAccount || choices[0]?.[0];
+          if (!id) { id = assetId(); state.accounts.push({ id, name: "投资账户", kind: "investment", balanceCents: 0, baselineAt: new Date().toISOString(), includedEventIds: [], includedRecordIds: [] }); }
+          if (state.holdings.some(h => h.accountId === id && h.kind === security && h.code === normalized)) throw new Error("此账户已有该持仓，请点击账户中的持仓调整金额");
+          addEstimatedHolding(state, id, security, normalized, cents, quote);
+        });
       };
-    }).open();
+    }, "添加").open();
   }
   private holdingCorrection(holding: AssetHolding): void {
-    new AssetFormModal(this.plugin, "核对持仓信息", body => {
-      const name = input(body, "持仓名称", holding.name), code = input(body, "证券代码", holding.code), quantity = input(body, "当前实际总数量／份额", holding.quantity), cost = input(body, "剩余持仓总成本（元）", (holding.costCents / 100).toFixed(2));
-      body.createEl("p", { text: "用于纠正初始录入、分红或拆分后的持仓。此操作不移动现金；实际买卖请使用记录交易。历史快照保留当时数据。" });
+    new AssetFormModal(this.plugin, holding.name, (body, active) => {
+      const valued = this.plugin.assetSnapshot().accounts.flatMap(a => a.holdings).find(h => h.id === holding.id);
+      const amount = input(body, "当前金额（元）", ((valued?.valueCents ?? holding.costCents) / 100).toFixed(2));
+      const advanced = body.createEl("details", { cls: "ledger-assets-advanced" }); advanced.createEl("summary", { text: "使用平台实际份额" });
+      const quantity = input(advanced, "实际份额／股数", holding.quantity);
       return async () => {
-        const normalized = normalizeCode(holding.kind, code.value), number = decimal(quantity.value);
-        if (number.lt(0) || (holding.kind !== "fund" && !number.isInteger())) throw new Error("数量须为非负数，股票和ETF须为整数");
-        const cents = moneyCents(cost.value);
-        await this.save(s => { const h = s.holdings.find(h => h.id === holding.id); if (!h) throw new Error("持仓不存在"); h.name = name.value.trim() || normalized; h.code = normalized; h.quantity = number.toFixed(); h.costCents = cents; delete h.amountBasisCents; });
-        void this.plugin.refreshAssetQuotes().catch(() => {});
+        let q: string, cents: number, quote: AssetQuote | undefined;
+        if (advanced.open) { q = validateQuantity(quantity.value, holding.kind); cents = holding.costCents; }
+        else {
+          cents = moneyCents(amount.value); if (cents <= 0) throw new Error("当前金额须大于零");
+          quote = await this.plugin.lookupAssetQuote(holding.kind, holding.code);
+          q = decimal(String(cents)).div(100).div(quote.price).toDecimalPlaces(12).toFixed();
+        }
+        if (!active()) throw new Error("已取消调整");
+        await this.save(state => {
+          if (!active()) throw new Error("已取消调整");
+          const h = state.holdings.find(h => h.id === holding.id && state.accounts.some(a => a.id === h.accountId && !a.archived)); if (!h) throw new Error("持仓或账户已删除");
+          h.quantity = q; h.estimated = !advanced.open; delete h.amountBasisCents;
+          if (quote) state.quotes[quote.key] = { ...quote };
+          if (!advanced.open && h.costBasisKnown === false) h.costCents = cents;
+        });
       };
     }).open();
   }
   private eventForm(): void {
     const state = this.plugin.settings.assets;
-    if (!state.accounts.length) { this.accountForm(); return; }
+    if (!state.accounts.some(a => !a.archived)) { this.accountForm(); return; }
     new AssetFormModal(this.plugin, "记录资产交易", body => {
       const type = select(body, "交易类型", Object.entries(EVENT_NAMES));
-      const account = select(body, "投资／转出／收入／负债账户", state.accounts.map(a => [a.id, `${a.name} · ${ASSET_NAMES[a.kind]}`]));
-      const cash = select(body, "扣款／到账／转入现金账户", [["", "请选择"], ...state.accounts.filter(a => a.kind === "cash").map(a => [a.id, a.name] as [string, string])], state.defaultCashId);
-      const holding = select(body, "持仓（买卖、分红或份额调整时必选）", [["", "请选择"], ...state.holdings.map(h => [h.id, `${h.name} · ${state.accounts.find(a => a.id === h.accountId)?.name}`] as [string, string])]);
+      const account = select(body, "投资／转出／收入／负债账户", state.accounts.filter(a => !a.archived).map(a => [a.id, `${a.name} · ${ASSET_NAMES[a.kind]}`]));
+      const cash = select(body, "扣款／到账／转入现金账户", [["", "请选择"], ...state.accounts.filter(a => a.kind === "cash" && !a.archived).map(a => [a.id, a.name] as [string, string])], state.defaultCashId);
+      const holding = select(body, "持仓（买卖、分红或份额调整时必选）", [["", "请选择"], ...state.holdings.filter(h => state.accounts.some(a => a.id === h.accountId && !a.archived)).map(h => [h.id, `${h.name} · ${state.accounts.find(a => a.id === h.accountId)?.name}`] as [string, string])]);
       holding.addEventListener("change", () => { const h = state.holdings.find(h => h.id === holding.value); if (h) account.value = h.accountId; });
       const amount = input(body, "实际支付／到账金额（元，含费用；余额调整可负数）", "0");
       const fee = input(body, "手续费（元）", "0"), price = input(body, "成交价格／净值（买卖换算时填写）"), quantity = input(body, "实际成交数量／份额调整后的总数量");
@@ -214,7 +223,7 @@ export class AssetPanel {
     }).open();
   }
   private defaultForm(): void {
-    const accounts = this.plugin.settings.assets.accounts.filter(a => a.kind === "cash");
+    const accounts = this.plugin.settings.assets.accounts.filter(a => a.kind === "cash" && !a.archived);
     if (!accounts.length) { this.accountForm(); return; }
     new AssetFormModal(this.plugin, "默认消费扣款账户", body => {
       const account = select(body, "现金账户", accounts.map(a => [a.id, a.name]), this.plugin.settings.assets.defaultCashId);
@@ -227,7 +236,7 @@ export class AssetPanel {
     if (!records.length) { new Notice("没有可核对的消费流水"); return; }
     new AssetFormModal(this.plugin, "核对付款账户与补记", body => {
       const record = select(body, "消费流水", records.map(r => [r.id, `${r.date} ${r.time} ${formatCents(r.cents)} ${r.note || r.category}`]));
-      const account = select(body, "扣款归属", [["exclude", "已包含在基线／无需再次扣款"], ...this.plugin.settings.assets.accounts.filter(a => a.kind === "cash").map(a => [a.id, a.name] as [string, string])]);
+      const account = select(body, "扣款归属", [["exclude", "已包含在基线／无需再次扣款"], ...this.plugin.settings.assets.accounts.filter(a => a.kind === "cash" && !a.archived).map(a => [a.id, a.name] as [string, string])]);
       body.createEl("p", { text: "明确指定后，这笔流水不再按默认账户推算。余额核对会将当时已入账记录纳入新基线。" });
       return () => this.save(s => {
         const selected = records.find(r => r.id === record.value)!;
@@ -253,7 +262,48 @@ export class AssetPanel {
       });
     }).open();
   }
-  private accountDetails(id: string): void { const account = this.plugin.settings.assets.accounts.find(a => a.id === id); if (account) this.accountForm(account); }
+  private accountDetails(id: string): void {
+    const account = this.plugin.settings.assets.accounts.find(a => a.id === id && !a.archived), valued = this.plugin.assetSnapshot().accounts.find(a => a.id === id);
+    if (!account || !valued) return;
+    const state = this.plugin.settings.assets, modal = new Modal(this.plugin.app); modal.setTitle(account.name); modal.modalEl.addClass("ledger-assets-modal");
+    modal.onOpen = () => {
+      modal.contentEl.createDiv({ cls: "ledger-assets-dialog-total", text: state.hideAmounts ? "••••" : formatCents(valued.cents) });
+      const actions = modal.contentEl.createDiv({ cls: "ledger-assets-actions" });
+      button(actions, "编辑账户", () => { modal.close(); this.accountForm(account); });
+      if (account.kind === "investment") button(actions, "添加持仓", () => { modal.close(); this.holdingForm(id); }, true);
+      button(actions, "删除账户", () => { modal.close(); this.deleteForm("账户", account.name, s => removeAssetAccount(s, id)); }).addClass("ledger-assets-danger");
+      if (account.kind === "investment" && (valued.unallocatedCents ?? 0) !== 0) modal.contentEl.createEl("p", { cls: "ledger-assets-hint", text: `待添加持仓 ${state.hideAmounts ? "••••" : formatCents(valued.unallocatedCents!)}` });
+      for (const h of valued.holdings) {
+        const row = modal.contentEl.createDiv({ cls: "ledger-assets-position-row" }), info = row.createDiv();
+        info.createEl("strong", { text: h.name });
+        info.createEl("small", { text: `${h.code} · ${h.estimated ? "估算份额" : "实际份额"} ${state.hideAmounts ? "••••" : decimal(h.quantity).toDecimalPlaces(h.estimated ? 4 : 12).toFixed()}` });
+        info.createEl("small", { text: h.quote?.asOf ? `行情 ${h.quote.asOf.replace("T", " ").slice(0, 16)}${h.quote.error ? " · 更新失败" : ""}` : "待更新行情" });
+        row.createEl("strong", { text: h.valueCents === null ? "未估值" : state.hideAmounts ? "••••" : formatCents(h.valueCents) });
+        const controls = row.createDiv({ cls: "ledger-assets-actions" });
+        button(controls, "调整", () => { modal.close(); this.holdingCorrection(h); });
+        const remove = button(controls, "×", () => { modal.close(); this.deleteForm("持仓", h.name, s => removeAssetHolding(s, h.id)); }); remove.setAttribute("aria-label", `删除持仓 ${h.name}`);
+      }
+    }; modal.open();
+  }
+  private deleteForm(kind: string, name: string, change: (state: LedgerStatisticsPlugin["settings"]["assets"]) => void): void {
+    new AssetFormModal(this.plugin, `删除${kind} · ${name}`, body => {
+      body.createEl("p", { text: "从当前资产中移除，历史快照和已记录的现金交易保留。" });
+      return () => this.save(change);
+    }, "删除").open();
+  }
+  private toolsModal(): void {
+    const modal = new Modal(this.plugin.app); modal.setTitle("资产管理"); modal.modalEl.addClass("ledger-assets-modal");
+    modal.onOpen = () => {
+      const actions = modal.contentEl.createDiv({ cls: "ledger-assets-tool-grid" });
+      for (const [name, action] of [["记录交易", () => this.eventForm()], ["默认扣款账户", () => this.defaultForm()], ["核对流水", () => this.reviewForm()], ["交易关联", () => this.linkForm()], ["资产月历", () => this.calendarModal()]] as Array<[string, () => void]>) button(actions, name, () => { modal.close(); action(); });
+      for (const text of this.plugin.assetSnapshot().pending) modal.contentEl.createEl("p", { cls: "ledger-assets-hint", text: this.plugin.settings.assets.hideAmounts ? "有资金变动待核对" : text });
+      const events = this.plugin.settings.assets.events;
+      if (events.length) {
+        const history = modal.contentEl.createEl("details"); history.createEl("summary", { text: `交易记录 · ${events.length}笔` });
+        for (const e of [...events].reverse().slice(0, 100)) history.createDiv({ cls: "ledger-assets-event-row", text: `${e.date} · ${e.note || EVENT_NAMES[e.kind]} · ${this.plugin.settings.assets.hideAmounts ? "••••" : formatCents(e.amountCents)}` });
+      }
+    }; modal.open();
+  }
   private sankeyModal(snapshot: AssetSnapshot): void {
     const modal = new Modal(this.plugin.app); modal.setTitle(`资产组成 · ${snapshot.date}`); modal.modalEl.addClass("ledger-assets-sankey-modal");
     const expanded = new Set(this.expanded), draw = (): void => {

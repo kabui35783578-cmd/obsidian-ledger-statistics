@@ -3367,7 +3367,7 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
 .ledger-assets-card { background: var(--asset-card); border-radius: 24px; padding: 24px; min-width: 0; }
 .ledger-assets-card > .ledger-assets-title-row { margin-bottom: 14px; }
 .ledger-assets-card h3 { font-size: 19px; }
-.ledger-assets-sankey-scroll { width: 100%; overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; }
+.ledger-assets-sankey-scroll { width: 100%; overflow: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: none; max-height: min(65vh, 650px); min-height: 180px; }
 .ledger-assets-sankey { display: block; width: 100%; min-width: 0; height: auto; color: var(--mono-ink, var(--text-normal)); font-family: var(--font-interface), sans-serif; }
 .ledger-assets-sankey [role="button"] { cursor: pointer; }
 .ledger-assets-sankey [role="button"]:focus-visible { outline: 2px solid #8576ad; outline-offset: 2px; }
@@ -3426,6 +3426,74 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
 @media (max-width: 600px) {
   .ledger-assets-sankey-modal .ledger-assets-sankey { min-width: 1080px; }
 }
+
+/* Asset home: figures first, detailed management in dialogs. */
+.ledger-assets { gap: 16px; }
+.ledger-assets-main-actions { justify-content: flex-end; }
+.ledger-assets-hero { padding: 22px 24px 8px; }
+.ledger-assets-total { font-size: clamp(32px, 4vw, 46px); margin: 4px 0 12px; }
+.ledger-assets-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0 0 8px; }
+.ledger-assets-metrics > div { min-width: 0; display: grid; gap: 4px; }
+.ledger-assets-metrics small { color: var(--asset-muted); font-size: 11px; }
+.ledger-assets-metrics strong { font-size: 15px; font-weight: 550; overflow-wrap: anywhere; }
+.ledger-assets-update-row { display: flex; align-items: center; gap: 8px; color: var(--asset-muted); margin: 4px 0; }
+.ledger-assets-update-row small { font-size: 11px; }
+.ledger-assets-update-row .ledger-button { background: transparent; border: 0; padding: 0; width: 44px; font-size: 20px; }
+.ledger-assets-comparison { padding: 8px 16px 12px; margin-inline: -16px; border-radius: 18px; }
+.ledger-assets-change-summary { padding-block: 4px 8px; }
+.ledger-assets-change-track { height: 40px; }
+.ledger-assets-chart-card { position: relative; }
+.ledger-assets-zoom-tools { display: flex; justify-content: flex-end; gap: 4px; margin-bottom: 8px; }
+.ledger-assets-zoom-tools .ledger-button { min-height: 44px; min-width: 44px; width: 44px; padding: 0; font-size: 18px; }
+.ledger-assets-zoom-tools .ledger-assets-zoom-value { font-size: 10px; }
+.ledger-assets-chart-card > .ledger-assets-zoom-tools { position: absolute; right: 76px; top: 21px; margin: 0; }
+.ledger-assets-chart-card > .ledger-assets-title-row .ledger-button { width: 44px; padding: 0; font-size: 22px; }
+.ledger-assets-account-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.ledger-assets .ledger-assets-account-tile { display: grid; gap: 8px; text-align: left; border: 0; border-radius: 18px; background: var(--asset-card); color: inherit; padding: 16px; height: auto; white-space: normal; min-width: 0; box-shadow: none; }
+.ledger-assets-account-tile > div:first-child { display: flex; align-items: center; gap: 8px; font-size: 13px; min-width: 0; }
+.ledger-assets-account-tile > div:first-child > span:last-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ledger-assets-account-tile > strong { font-size: 19px; font-weight: 600; overflow-wrap: anywhere; }
+.ledger-assets-account-tile > small { font-size: 10px; color: var(--asset-muted); }
+.ledger-assets-dot { --asset-node: #bb8967; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--asset-node); flex-shrink: 0; }
+.is-investment { --asset-node: #8678b0; }
+.is-fixed { --asset-node: #a6acb6; }
+.is-receivable { --asset-node: #8a93a4; }
+.is-liability { --asset-node: #cb8f96; }
+.ledger-assets-account-bar { height: 3px; border-radius: 4px; background: color-mix(in srgb, var(--asset-purple) 8%, transparent); overflow: hidden; }
+.ledger-assets-account-bar > div { --asset-node: #bb8967; background: var(--asset-node); height: 100%; }
+.ledger-assets-account-bar > .is-investment { --asset-node: #8678b0; }
+.ledger-assets-account-bar > .is-fixed { --asset-node: #a6acb6; }
+.ledger-assets-account-bar > .is-receivable { --asset-node: #8a93a4; }
+.ledger-assets-account-bar > .is-liability { --asset-node: #cb8f96; }
+.ledger-assets-compact-warning { display: flex; align-items: center; justify-content: space-between; padding: 4px 12px; font-size: 12px; }
+.ledger-assets-dialog-total { font-size: 32px; font-weight: 650; margin-bottom: 16px; }
+.ledger-assets-position-row { display: flex; gap: 10px; flex-wrap: wrap; padding: 16px 0; border-top: 1px solid var(--background-modifier-border); align-items: center; }
+.ledger-assets-position-row > div:first-child { flex: 1; min-width: 120px; overflow-wrap: anywhere; }
+.ledger-assets-position-row small { display: block; font-size: 11px; margin-top: 5px; color: var(--text-muted); }
+.ledger-assets-position-row > strong { font-size: 14px; }
+.ledger-assets-position-row .ledger-assets-actions { width: auto; }
+.ledger-assets-tool-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 16px; }
+.ledger-assets-tool-grid .ledger-button { min-height: 44px; height: auto; white-space: normal; }
+.ledger-assets-danger { color: var(--text-error) !important; margin-left: auto; }
+.ledger-assets-advanced { font-size: 12px; color: var(--text-muted); }
+.ledger-assets-advanced[open] > .ledger-assets-field { margin-top: 12px; }
+.ledger-assets-advanced summary { min-height: 36px; display: flex; align-items: center; cursor: pointer; }
+.ledger-assets-modal [hidden] { display: none !important; }
+@container (max-width: 600px) {
+  .ledger-assets-hero { padding: 12px 16px 6px; }
+  .ledger-assets-total { font-size: 32px; margin-top: 0; }
+  .ledger-assets-metrics { gap: 8px; }
+  .ledger-assets-metrics strong { font-size: 12px; }
+  .ledger-assets-comparison { padding: 4px 12px 8px; margin-inline: -10px; }
+  .ledger-assets-chart-card > .ledger-assets-zoom-tools { right: 62px; top: 17px; }
+  .ledger-assets-sankey-scroll { max-height: 340px; }
+  .ledger-assets-account-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .ledger-assets .ledger-assets-account-tile { padding: 12px; }
+  .ledger-assets-account-tile > strong { font-size: 15px; }
+  .ledger-assets-account-tile > div:first-child { font-size: 12px; }
+}
+
+
 
 .ledger-assets-allocation { display: grid; grid-template-columns: minmax(160px, 240px) minmax(0, 1fr); gap: 28px; align-items: center; }
 .ledger-assets-ring { width: 100%; height: auto; color: var(--text-normal); }

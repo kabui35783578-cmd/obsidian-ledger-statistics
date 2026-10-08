@@ -280,9 +280,9 @@ export class LedgerStatisticsView extends ItemView {
   private renderHeader(root: HTMLElement): void {
     const header = root.createDiv({ cls: "ledger-header" });
     const title = header.createDiv();
-    title.createEl("h2", { text: "记账统计" });
-    title.createDiv({ cls: "ledger-subtitle", text: this.activeView === "assets" ? "资产总览 · 持仓行情自动更新" : "本地只读 · 正文逐笔记录为统计来源" });
+    title.createEl("h2", { text: this.activeView === "assets" ? "资产" : "记账统计" });
     if (this.activeView === "assets") return;
+    title.createDiv({ cls: "ledger-subtitle", text: "本地只读 · 正文逐笔记录为统计来源" });
     const selectedScope = this.activeView === "report" ? this.plugin.settings.reportPreferences?.scope ?? "consumption" : this.filter.scope;
     const scope = header.createDiv({ cls: `ledger-scope-badge is-${selectedScope}` });
     scope.setText(selectedScope === "consumption" ? "筛选口径：消费支出" : "筛选口径：全部支出");

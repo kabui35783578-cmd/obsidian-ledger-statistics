@@ -47,7 +47,7 @@ test('Sankey hides numeric text including accessible names and retains negative 
 test('asset panel works with an empty ledger and zero assets independently of spending reports', () => withDocument(() => {
   const state = emptyAssets(), root = new Element(), panel = new AssetPanel({ settings: { assets: state }, repository: { files: new Map() }, assetSnapshot: () => ({ date: '2026-10-08', savedAt: '', accounts: [], pending: [] }) });
   panel.render(root); const text = root.all().map(n => n.textContent).join(' ');
-  assert.match(text, /我的资产/); assert.match(text, /0.00/); assert.match(text, /暂无可比记录/); assert.match(text, /添加持仓/);
+  assert.match(text, /总资产/); assert.match(text, /0.00/); assert.match(text, /暂无可比记录/); assert.match(text, /添加持仓/);
 }));
 
 test('compact allocation hides values and percentages when privacy is enabled', () => withDocument(() => {

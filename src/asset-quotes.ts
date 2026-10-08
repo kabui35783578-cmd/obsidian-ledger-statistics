@@ -1,4 +1,4 @@
-import { AssetHolding, AssetQuote, AssetState, decimal, quoteKey } from "./assets";
+import { AssetHolding, AssetQuote, AssetState, SecurityKind, decimal, normalizeCode, quoteKey } from "./assets";
 import { isValidIsoDate } from "./core";
 
 export interface QuoteResponse { text: string; arrayBuffer?: ArrayBuffer; }
@@ -40,9 +40,24 @@ export class AssetQuoteMonitor {
   private running: Promise<void> | null = null;
   private rerun = false;
   private connections = 0;
+  private inflight = new Map<string, Promise<AssetQuote>>();
+  private failedLookups = new Map<string, { at: number; message: string }>();
   constructor(private state: () => AssetState, private fetch: QuoteFetcher,
     private commit: (quotes: AssetQuote[]) => Promise<void>, private clock = () => new Date(), private timeoutMs = 30000) {}
   stop(): void { this.stopped = true; }
+  lookup(kind: SecurityKind, input: string): Promise<AssetQuote> {
+    const code = normalizeCode(kind, input), key = quoteKey(kind, code), now = this.clock();
+    if (this.stopped) return Promise.reject(new Error("插件已关闭，请重新打开资产页"));
+    const failed = this.failedLookups.get(key);
+    if (failed && now.getTime() - failed.at < 15 * 60000) return Promise.reject(new Error(`${failed.message}，请稍后重试`));
+    const cached = this.state().quotes[key];
+    if (cached && decimal(cached.price).gt(0) && now.getTime() - Date.parse(cached.fetchedAt) < (kind === "fund" ? 6 * 3600000 : 15 * 60000)) return Promise.resolve({ ...cached });
+    if (!this.inflight.has(key) && this.connections >= 2) return Promise.reject(new Error("行情正在更新，请稍后再保存"));
+    return this.requestQuote(kind, code).catch(error => {
+      if (!this.stopped) this.failedLookups.set(key, { at: now.getTime(), message: error instanceof Error ? error.message : "行情查询失败" });
+      throw error;
+    });
+  }
   refresh(force = false): Promise<void> {
     if (this.stopped) return Promise.resolve();
     if (this.running) { this.rerun = true; return this.running; }
@@ -54,28 +69,37 @@ export class AssetQuoteMonitor {
   }
   private async run(force: boolean): Promise<void> {
     const state = this.state(), now = this.clock(), unique = new Map<string, AssetHolding>();
-    for (const h of state.holdings) if (quoteDue(h, state.quotes[quoteKey(h.kind, h.code)], now, force)) unique.set(quoteKey(h.kind, h.code), { ...h });
+    const activeAccounts = new Set(state.accounts.filter(a => !a.archived).map(a => a.id));
+    for (const h of state.holdings) if (activeAccounts.has(h.accountId) && quoteDue(h, state.quotes[quoteKey(h.kind, h.code)], now, force)) unique.set(quoteKey(h.kind, h.code), { ...h });
     const jobs = [...unique.values()], updates: AssetQuote[] = [];
     let index = 0;
     await Promise.all(Array.from({ length: Math.min(2, jobs.length) }, async () => {
       while (!this.stopped && this.connections < 2 && index < jobs.length) {
         const h = jobs[index++], key = quoteKey(h.kind, h.code), old = this.state().quotes[key];
         try {
-          const url = h.kind === "fund" ? `https://fund.eastmoney.com/pingzhongdata/${h.code}.js` : `https://qt.gtimg.cn/q=${h.code}`;
-          const response = await this.fetchBounded(url);
-          let text = response.text;
-          if (h.kind !== "fund" && response.arrayBuffer) {
-            try { text = new TextDecoder("gb18030").decode(response.arrayBuffer); } catch { /* requestUrl text is still usable. */ }
-          }
-          const quote = h.kind === "fund" ? parseFundQuote(h.code, text, this.clock()) : parseStockQuote(h, text, this.clock());
-          if (old && Date.parse(quote.asOf) < Date.parse(old.asOf)) throw new Error("数据源返回较旧行情，已保留上次报价");
-          updates.push(quote);
+          updates.push(await this.requestQuote(h.kind, h.code));
         } catch (error) {
           updates.push({ key, name: old?.name ?? h.name, price: old?.price ?? "0", asOf: old?.asOf ?? "", fetchedAt: old?.fetchedAt ?? now.toISOString(), attemptedAt: this.clock().toISOString(), error: error instanceof Error ? error.message : "行情更新失败" });
         }
       }
     }));
     if (!this.stopped && updates.length) await this.commit(updates);
+  }
+  private requestQuote(kind: SecurityKind, code: string): Promise<AssetQuote> {
+    const key = quoteKey(kind, code), existing = this.inflight.get(key);
+    if (existing) return existing;
+    const request = (async () => {
+      const url = kind === "fund" ? `https://fund.eastmoney.com/pingzhongdata/${code}.js` : `https://qt.gtimg.cn/q=${code}`;
+      const response = await this.fetchBounded(url);
+      if (this.stopped) throw new Error("插件已关闭");
+      let source = response.text;
+      if (kind !== "fund" && response.arrayBuffer) { try { source = new TextDecoder("gb18030").decode(response.arrayBuffer); } catch { /* Keep requestUrl text. */ } }
+      const quote = kind === "fund" ? parseFundQuote(code, source, this.clock()) : parseStockQuote({ kind, code }, source, this.clock());
+      const old = this.state().quotes[key];
+      if (old && Date.parse(quote.asOf) < Date.parse(old.asOf)) throw new Error("数据源返回较旧行情，已保留上次报价");
+      return quote;
+    })().finally(() => this.inflight.delete(key));
+    this.inflight.set(key, request); return request;
   }
   private async fetchBounded(url: string): Promise<QuoteResponse> {
     this.connections++;

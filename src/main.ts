@@ -8,7 +8,7 @@ import { DEFAULT_SETTINGS, LedgerSettingTab, LedgerSettings } from "./settings";
 import { LedgerStatisticsView, LEDGER_VIEW_TYPE } from "./view";
 import { normalizeReportPreferences } from "./report";
 import { normalizeReportCaches } from "./report-ai";
-import { AssetSnapshot, AssetState, applyAssetQuote, buildAssetSnapshot, normalizeAssets, renameAssetLinks, storeAssetSnapshot } from "./assets";
+import { AssetSnapshot, AssetState, SecurityKind, applyAssetQuote, buildAssetSnapshot, normalizeAssets, quoteKey, renameAssetLinks, storeAssetSnapshot } from "./assets";
 import { AssetQuoteMonitor } from "./asset-quotes";
 
 export default class LedgerStatisticsPlugin extends Plugin {
@@ -29,7 +29,9 @@ export default class LedgerStatisticsPlugin extends Plugin {
       const response = await requestUrl({ url, method: "GET", throw: true });
       return { text: response.text, arrayBuffer: response.arrayBuffer };
     }, quotes => this.updateAssets(state => {
-      for (const quote of quotes) applyAssetQuote(state, quote);
+      const active = new Set(state.accounts.filter(a => !a.archived).map(a => a.id));
+      const held = new Set(state.holdings.filter(h => active.has(h.accountId)).map(h => quoteKey(h.kind, h.code)));
+      for (const quote of quotes) if (held.has(quote.key)) applyAssetQuote(state, quote);
     }));
     this.settings.reportPreferences = normalizeReportPreferences(this.settings.reportPreferences);
     this.settings.reportCaches = normalizeReportCaches(this.settings.reportCaches);
@@ -122,12 +124,13 @@ export default class LedgerStatisticsPlugin extends Plugin {
   }
 
   refreshAssetQuotes(force = false): Promise<void> { return this.assetQuotes.refresh(force); }
+  lookupAssetQuote(kind: SecurityKind, code: string) { return this.assetQuotes.lookup(kind, code); }
 
   refreshAssetViews(): void { this.refreshViews(); }
 
   updateAssets(change: (state: AssetState) => void): Promise<void> {
     const operation = this.assetQueue.then(async () => {
-      if (this.assetsStopped) return;
+      if (this.assetsStopped) throw new Error("插件已关闭，请重新打开资产页");
       const before = this.settings.assets, next = JSON.parse(JSON.stringify(before)) as AssetState;
       change(next);
       storeAssetSnapshot(next, buildAssetSnapshot(next, flattenRecords(this.repository.files.values())));

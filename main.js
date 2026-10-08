@@ -5395,22 +5395,16 @@ function validateQuantity(value, kind) {
 function quoteKey(kind, code) {
   return `${kind}:${normalizeCode(kind, code)}`;
 }
-function addAmountHolding(state, accountId, kind, code, amount, now = /* @__PURE__ */ new Date()) {
-  if (!state.accounts.some((a) => a.id === accountId && a.kind === "investment")) throw new Error("\u8BF7\u9009\u62E9\u6295\u8D44\u8D26\u6237");
-  const normalized = normalizeCode(kind, code), cents = moneyCents(amount);
-  if (cents <= 0) throw new Error("\u5F53\u524D\u6301\u4ED3\u91D1\u989D\u987B\u5927\u4E8E\u96F6");
-  const holding = { id: assetId(), accountId, kind, code: normalized, name: normalized, quantity: "0", costCents: cents, amountBasisCents: cents, acquiredOn: isoFromDate(now) };
-  state.holdings.push(holding);
-  return holding;
-}
 function applyAssetQuote(state, quote) {
-  const holdings = state.holdings.filter((h) => quoteKey(h.kind, h.code) === quote.key);
+  const holdings = state.holdings.filter((h) => quoteKey(h.kind, h.code) === quote.key && state.accounts.some((a) => a.id === h.accountId && !a.archived));
   if (!holdings.length) return;
   state.quotes[quote.key] = quote;
   if (quote.error || decimal2(quote.price).lte(0)) return;
   for (const h of holdings) {
     if (h.name === h.code) h.name = quote.name;
     if (h.amountBasisCents !== void 0 && h.quantity === "0") {
+      h.estimated = true;
+      h.costBasisKnown = false;
       h.quantity = new decimal_default(h.amountBasisCents).div(100).div(quote.price).toDecimalPlaces(12).toFixed();
     }
   }
@@ -5453,10 +5447,13 @@ function normalizeAssets(input2) {
     } catch (e) {
       return false;
     }
+  }).map((h) => {
+    var _a2, _b2;
+    return h.amountBasisCents !== void 0 ? { ...h, estimated: (_a2 = h.estimated) != null ? _a2 : true, costBasisKnown: (_b2 = h.costBasisKnown) != null ? _b2 : false } : h;
   });
   out.events = (Array.isArray(s.events) ? s.events : []).filter((e) => e && typeof e.id === "string" && ["buy", "sell", "income", "transfer", "repay", "dividend", "reinvest", "quantity", "adjust"].includes(e.kind) && accounts.has(e.accountId) && isValidIsoDate(e.date) && validInstant(e.createdAt) && validCents(e.amountCents) && validCents(e.feeCents));
   out.epochs = (Array.isArray(s.epochs) ? s.epochs : []).filter((e) => e && accounts.has(e.accountId) && validInstant(e.from) && (!e.to || validInstant(e.to))).map((e) => ({ ...e, includedRecordIds: stringIds(e.includedRecordIds) }));
-  out.defaultCashId = out.accounts.some((a) => a.id === s.defaultCashId && a.kind === "cash") ? s.defaultCashId : "";
+  out.defaultCashId = out.accounts.some((a) => a.id === s.defaultCashId && a.kind === "cash" && !a.archived) ? s.defaultCashId : "";
   for (const [key, q] of Object.entries((_a = s.quotes) != null ? _a : {})) {
     if (q && q.key === key && typeof q.name === "string" && validInstant(q.fetchedAt) && validQuantity(q.price) && (validInstant(q.asOf) || q.asOf === "" && decimal2(q.price).eq(0) && typeof q.error === "string" && validInstant(q.attemptedAt))) out.quotes[key] = q;
   }
@@ -5489,7 +5486,7 @@ function baselineRecordIds(records, now) {
   return records.filter((r) => r.date < date || r.date === date && (recordInstant(r) === null || recordInstant(r) <= now.getTime())).map((r) => r.id);
 }
 function setDefaultCash(state, accountId, records, now) {
-  if (!state.accounts.some((a) => a.id === accountId && a.kind === "cash")) throw new Error("\u8BF7\u9009\u62E9\u73B0\u91D1\u8D26\u6237");
+  if (!state.accounts.some((a) => a.id === accountId && a.kind === "cash" && !a.archived)) throw new Error("\u8BF7\u9009\u62E9\u73B0\u91D1\u8D26\u6237");
   if (state.defaultCashId === accountId) return;
   const at = now.toISOString();
   for (const epoch of state.epochs) if (!epoch.to) epoch.to = at;
@@ -5498,7 +5495,7 @@ function setDefaultCash(state, accountId, records, now) {
 }
 function calibrateAccount(state, id, cents, records, now) {
   const account = state.accounts.find((a) => a.id === id);
-  if (!account || !validCents(cents) || account.kind === "liability" && cents < 0) throw new Error("\u4F59\u989D\u65E0\u6548");
+  if (!account || account.archived || !validCents(cents) || account.kind === "liability" && cents < 0) throw new Error("\u4F59\u989D\u65E0\u6548\u6216\u8D26\u6237\u5DF2\u5220\u9664");
   account.balanceCents = cents;
   account.baselineAt = now.toISOString();
   account.includedEventIds = state.events.map((e) => e.id);
@@ -5506,7 +5503,8 @@ function calibrateAccount(state, id, cents, records, now) {
 }
 function linkedRecords(state, records, pending) {
   const excluded = /* @__PURE__ */ new Set();
-  for (const event of state.events) if (event.link) {
+  const active = new Set(state.accounts.filter((a) => !a.archived).map((a) => a.id));
+  for (const event of state.events) if (event.link && (active.has(event.accountId) || event.cashAccountId && active.has(event.cashAccountId))) {
     const matches = records.filter((r) => stableIdentity(r.id) === stableIdentity(event.link.id));
     if (matches.length === 1) excluded.add(matches[0].id);
     else {
@@ -5530,7 +5528,7 @@ function buildAssetSnapshot(state, records, now = /* @__PURE__ */ new Date()) {
     } catch (e) {
     }
   }
-  const accounts = state.accounts.map((account) => {
+  const accounts = state.accounts.filter((a) => !a.archived).map((account) => {
     var _a, _b, _c;
     let cents = account.balanceCents;
     const baseline = Date.parse(account.baselineAt);
@@ -5567,12 +5565,13 @@ function buildAssetSnapshot(state, records, now = /* @__PURE__ */ new Date()) {
       const value = h.amountBasisCents !== void 0 && h.quantity === "0" ? h.amountBasisCents : decimal2(h.quantity).eq(0) ? 0 : quote && decimal2(quote.price).gt(0) ? valueCents(h.quantity, quote.price) : null;
       return { ...h, quote: quote ? { ...quote } : void 0, valueCents: value };
     });
+    const unallocatedCents = account.kind === "investment" ? cents : void 0;
     if (account.kind === "investment") cents += holdings.reduce((sum3, h) => {
       var _a2;
       return sum3 + ((_a2 = h.valueCents) != null ? _a2 : 0);
     }, 0);
     if (!Number.isSafeInteger(cents)) throw new Error("\u8D26\u6237\u91D1\u989D\u8D85\u51FA\u53EF\u8BA1\u7B97\u8303\u56F4");
-    return { id: account.id, name: account.name, kind: account.kind, cents, missing: holdings.some((h) => h.valueCents === null), holdings };
+    return { id: account.id, name: account.name, kind: account.kind, cents, missing: holdings.some((h) => h.valueCents === null || h.amountBasisCents !== void 0 && h.quantity === "0"), holdings, unallocatedCents };
   });
   return { date: today, savedAt: now.toISOString(), accounts, pending: [...pending] };
 }
@@ -5609,9 +5608,9 @@ function addAssetEvent(state, event) {
   if (!isValidIsoDate(event.date) || event.date > isoFromDate(/* @__PURE__ */ new Date())) throw new Error("\u8BF7\u586B\u5199\u5DF2\u786E\u8BA4\u4EA4\u6613\u7684\u65E5\u671F\uFF0C\u4E0D\u80FD\u586B\u5199\u672A\u6765\u65E5\u671F");
   if (!validCents(event.amountCents) || !validCents(event.feeCents) || event.feeCents < 0 || event.kind !== "adjust" && event.amountCents < 0) throw new Error("\u4EA4\u6613\u91D1\u989D\u65E0\u6548");
   const account = state.accounts.find((a) => a.id === event.accountId), cash = state.accounts.find((a) => a.id === event.cashAccountId);
-  if (!account) throw new Error("\u8D26\u6237\u4E0D\u5B58\u5728");
+  if (!account || account.archived) throw new Error("\u8D26\u6237\u4E0D\u5B58\u5728\u6216\u5DF2\u5220\u9664");
   if (event.link && state.events.some((e) => e.link && stableIdentity(e.link.id) === stableIdentity(event.link.id))) throw new Error("\u8FD9\u6761\u8D26\u672C\u6D41\u6C34\u5DF2\u5173\u8054\u5176\u4ED6\u4EA4\u6613");
-  if (["buy", "sell", "dividend", "transfer", "repay"].includes(event.kind) && (!cash || cash.kind !== "cash")) throw new Error("\u8BF7\u9009\u62E9\u73B0\u91D1\u8D26\u6237");
+  if (["buy", "sell", "dividend", "transfer", "repay"].includes(event.kind) && (!cash || cash.kind !== "cash" || cash.archived)) throw new Error("\u8BF7\u9009\u62E9\u73B0\u91D1\u8D26\u6237");
   if (event.kind === "transfer" && (account.kind !== "cash" || account.id === (cash == null ? void 0 : cash.id))) throw new Error("\u8F6C\u51FA\u3001\u8F6C\u5165\u5FC5\u987B\u662F\u4E0D\u540C\u73B0\u91D1\u8D26\u6237");
   if (event.kind === "income" && account.kind !== "cash") throw new Error("\u6536\u5165\u5FC5\u987B\u8FDB\u5165\u73B0\u91D1\u8D26\u6237");
   if (event.kind === "repay" && account.kind !== "liability") throw new Error("\u8FD8\u6B3E\u987B\u9009\u62E9\u8D1F\u503A\u8D26\u6237");
@@ -5649,6 +5648,33 @@ function renameAssetLinks(state, oldPath, newPath) {
   const assignments = {};
   for (const [id, account] of Object.entries(state.recordAssignments)) assignments[renameStarredIds([id], oldPath, newPath)[0]] = account;
   state.recordAssignments = assignments;
+}
+function addEstimatedHolding(state, accountId, kind, code, cents, quote, now = /* @__PURE__ */ new Date()) {
+  const account = state.accounts.find((a) => a.id === accountId && a.kind === "investment" && !a.archived);
+  if (!account) throw new Error("\u8BF7\u9009\u62E9\u6709\u6548\u7684\u6295\u8D44\u8D26\u6237");
+  if (!validCents(cents) || cents <= 0) throw new Error("\u5F53\u524D\u91D1\u989D\u987B\u5927\u4E8E\u96F6");
+  const normalized = normalizeCode(kind, code);
+  if (quote.key !== quoteKey(kind, normalized) || !validInstant(quote.asOf) || decimal2(quote.price).lte(0)) throw new Error("\u6CA1\u6709\u53EF\u7528\u4E8E\u4F30\u7B97\u7684\u884C\u60C5\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5");
+  const quantity = new decimal_default(cents).div(100).div(quote.price).toDecimalPlaces(12).toFixed();
+  if (decimal2(quantity).lte(0) || valueCents(quantity, quote.price) !== cents) throw new Error("\u91D1\u989D\u65E0\u6CD5\u53EF\u9760\u6362\u7B97\uFF0C\u8BF7\u6838\u5BF9\u91D1\u989D");
+  const holding = { id: assetId(), accountId, kind, code: normalized, name: quote.name || normalized, quantity, costCents: cents, acquiredOn: isoFromDate(now), estimated: true, costBasisKnown: false };
+  account.balanceCents -= Math.min(Math.max(0, account.balanceCents), cents);
+  state.holdings.push(holding);
+  state.quotes[quote.key] = { ...quote };
+  return holding;
+}
+function removeAssetAccount(state, id, now = /* @__PURE__ */ new Date()) {
+  const account = state.accounts.find((a) => a.id === id && !a.archived);
+  if (!account) throw new Error("\u8D26\u6237\u4E0D\u5B58\u5728\u6216\u5DF2\u5220\u9664");
+  account.archived = true;
+  if (state.defaultCashId === id) {
+    state.defaultCashId = "";
+    for (const epoch of state.epochs) if (epoch.accountId === id && !epoch.to) epoch.to = now.toISOString();
+  }
+}
+function removeAssetHolding(state, id) {
+  if (!state.holdings.some((h) => h.id === id)) throw new Error("\u6301\u4ED3\u4E0D\u5B58\u5728");
+  state.holdings = state.holdings.filter((h) => h.id !== id);
 }
 
 // src/settings.ts
@@ -8087,42 +8113,115 @@ function renderCategoryAnalysis(parent, category, analysis, trendUnit, open, sho
 // src/asset-ui.ts
 var import_obsidian8 = require("obsidian");
 
+// src/asset-gestures.ts
+function clampAssetZoom(value) {
+  return Math.max(0.3, Math.min(4, value));
+}
+function zoomScrollOffset(scroll, anchor, previous, next) {
+  return (scroll + anchor) * next / previous - anchor;
+}
+function enableAssetGestures(viewport, svg, tools) {
+  let scale = 1, base = 0, dragged = false, suppressUntil = 0, origin = { x: 0, y: 0 };
+  const points = /* @__PURE__ */ new Map();
+  const minus = tools.createEl("button", { cls: "ledger-button", text: "\u2212", attr: { "aria-label": "\u7F29\u5C0F\u6851\u57FA\u56FE" } });
+  const reset = tools.createEl("button", { cls: "ledger-button ledger-assets-zoom-value", text: "100%", attr: { "aria-label": "\u91CD\u7F6E\u6851\u57FA\u56FE\u7F29\u653E" } });
+  const plus = tools.createEl("button", { cls: "ledger-button", text: "+", attr: { "aria-label": "\u653E\u5927\u6851\u57FA\u56FE" } });
+  for (const button2 of [minus, reset, plus]) button2.type = "button";
+  const measure = () => {
+    var _a;
+    if (!base) base = ((_a = svg.getBoundingClientRect) == null ? void 0 : _a.call(svg).width) || Math.max(viewport.clientWidth || 0, 1080);
+  };
+  const zoomAt = (value, anchor) => {
+    measure();
+    const next = clampAssetZoom(value), x = zoomScrollOffset(viewport.scrollLeft, anchor.x, scale, next), y = zoomScrollOffset(viewport.scrollTop, anchor.y, scale, next);
+    svg.style.minWidth = "0";
+    svg.style.width = `${base * next}px`;
+    viewport.scrollLeft = x;
+    viewport.scrollTop = y;
+    scale = next;
+    reset.setText(`${Math.round(scale * 100)}%`);
+    viewport.setAttribute("data-zoom", String(scale));
+  };
+  const center = () => ({ x: viewport.clientWidth / 2, y: viewport.clientHeight / 2 });
+  minus.addEventListener("click", () => zoomAt(scale / 1.25, center()));
+  plus.addEventListener("click", () => zoomAt(scale * 1.25, center()));
+  reset.addEventListener("click", () => {
+    scale = 1;
+    base = 0;
+    svg.style.width = "";
+    svg.style.minWidth = "";
+    viewport.scrollLeft = viewport.scrollTop = 0;
+    reset.setText("100%");
+    viewport.setAttribute("data-zoom", "1");
+  });
+  viewport.setAttribute("data-zoom", "1");
+  viewport.setAttribute("aria-label", "\u8D44\u4EA7\u6851\u57FA\u56FE\uFF0C\u53CC\u6307\u7F29\u653E\uFF0C\u5355\u6307\u62D6\u52A8");
+  viewport.addEventListener("wheel", (event) => {
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault();
+      const rect = viewport.getBoundingClientRect();
+      zoomAt(scale * Math.exp(-event.deltaY * 2e-3), { x: event.clientX - rect.left, y: event.clientY - rect.top });
+    }
+  }, { passive: false });
+  viewport.addEventListener("pointerdown", (event) => {
+    var _a;
+    if (event.pointerType !== "touch" && event.pointerType !== "pen") return;
+    if (!points.size) {
+      dragged = false;
+      origin = { x: event.clientX, y: event.clientY };
+    }
+    points.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (points.size > 1) {
+      dragged = true;
+      for (const id of points.keys()) (_a = viewport.setPointerCapture) == null ? void 0 : _a.call(viewport, id);
+    }
+  });
+  viewport.addEventListener("pointermove", (event) => {
+    var _a;
+    const previous = points.get(event.pointerId);
+    if (!previous) return;
+    const before = [...points.values()], next = { x: event.clientX, y: event.clientY };
+    points.set(event.pointerId, next);
+    if (before.length > 1) {
+      const after = [...points.values()], distance = (ps) => Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y);
+      const oldDistance = distance(before);
+      if (oldDistance < 2) return;
+      const oldCenter = { x: (before[0].x + before[1].x) / 2, y: (before[0].y + before[1].y) / 2 }, newCenter = { x: (after[0].x + after[1].x) / 2, y: (after[0].y + after[1].y) / 2 };
+      const rect = viewport.getBoundingClientRect();
+      zoomAt(scale * distance(after) / oldDistance, { x: oldCenter.x - rect.left, y: oldCenter.y - rect.top });
+      viewport.scrollLeft -= newCenter.x - oldCenter.x;
+      viewport.scrollTop -= newCenter.y - oldCenter.y;
+      dragged = true;
+      event.preventDefault();
+    } else {
+      const dx = next.x - previous.x, dy = next.y - previous.y;
+      if (dragged || Math.hypot(next.x - origin.x, next.y - origin.y) > 4) {
+        dragged = true;
+        (_a = viewport.setPointerCapture) == null ? void 0 : _a.call(viewport, event.pointerId);
+        viewport.scrollLeft -= dx;
+        viewport.scrollTop -= dy;
+        event.preventDefault();
+      }
+    }
+  });
+  const end = (event) => {
+    if (!points.has(event.pointerId)) return;
+    points.delete(event.pointerId);
+    if (dragged) suppressUntil = Date.now() + 350;
+  };
+  viewport.addEventListener("pointerup", end);
+  viewport.addEventListener("pointercancel", end);
+  viewport.addEventListener("click", (event) => {
+    if (Date.now() < suppressUntil) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+  }, true);
+}
+
 // src/asset-charts.ts
 var NS2 = "http://www.w3.org/2000/svg";
 var COLORS = { cash: "#bb8967", investment: "#8678b0", fixed: "#a6acb6", receivable: "#8a93a4", liability: "#cb8f96" };
-function renderAssetAllocation(parent, snapshot, excludeFixed, hide) {
-  const accounts = snapshot.accounts.filter((a) => a.kind !== "liability" && !(excludeFixed && a.kind === "fixed") && a.cents > 0);
-  const total3 = accounts.reduce((sum3, a) => sum3 + a.cents, 0);
-  if (!total3) {
-    parent.createEl("p", { cls: "ledger-assets-empty", text: "\u6682\u65E0\u6B63\u8D44\u4EA7\uFF0C\u6DFB\u52A0\u8D26\u6237\u6216\u6301\u4ED3\u540E\u663E\u793A\u56FE\u8868\u3002" });
-    return;
-  }
-  const groups = ["cash", "investment", "fixed", "receivable"].map((kind) => ({ kind, cents: accounts.filter((a) => a.kind === kind).reduce((sum3, a) => sum3 + a.cents, 0) })).filter((g) => g.cents > 0);
-  const layout = parent.createDiv({ cls: "ledger-assets-allocation" });
-  const svg = document.createElementNS(NS2, "svg");
-  svg.setAttribute("viewBox", "0 0 240 240");
-  svg.setAttribute("class", "ledger-assets-ring");
-  svg.setAttribute("role", "img");
-  svg.setAttribute("aria-label", hide ? "\u8D44\u4EA7\u7EC4\u6210\uFF0C\u91D1\u989D\u5DF2\u9690\u85CF" : "\u6B63\u8D44\u4EA7\u5206\u7C7B\u5360\u6BD4");
-  layout.appendChild(svg);
-  const radius = 86, circumference = 2 * Math.PI * radius;
-  el2("circle", { cx: 120, cy: 120, r: radius, fill: "none", stroke: "var(--background-modifier-border)", "stroke-width": 24 }, svg);
-  let offset = 0;
-  const legend = layout.createDiv({ cls: "ledger-assets-allocation-legend" });
-  for (const group2 of groups) {
-    const share = group2.cents / total3, length = share * circumference;
-    if (!hide) el2("circle", { cx: 120, cy: 120, r: radius, fill: "none", stroke: COLORS[group2.kind], "stroke-width": 24, "stroke-dasharray": `${length} ${circumference - length}`, "stroke-dashoffset": -offset, transform: "rotate(-90 120 120)" }, svg);
-    offset += length;
-    const row = legend.createDiv({ cls: "ledger-assets-allocation-row" }), dot = row.createSpan({ cls: "ledger-assets-dot" });
-    dot.style.background = COLORS[group2.kind];
-    row.createSpan({ text: ASSET_NAMES[group2.kind] });
-    row.createEl("strong", { text: hide ? "\u2022\u2022\u2022\u2022" : formatCents(group2.cents) });
-    row.createEl("small", { text: hide ? "" : `${(share * 100).toFixed(1)}%` });
-  }
-  label(svg, 120, 110, "\u8D44\u4EA7\u5206\u5E03", 15, "middle");
-  label(svg, 120, 137, hide ? "\u2022\u2022\u2022\u2022" : `${accounts.length}\u4E2A\u8D26\u6237`, 20, "middle");
-  if (snapshot.accounts.some((a) => a.kind !== "liability" && a.cents < 0)) parent.createEl("small", { cls: "ledger-assets-hint", text: "\u5360\u6BD4\u6309\u6B63\u8D44\u4EA7\u8BA1\u7B97\uFF0C\u8D1F\u4F59\u989D\u8BA1\u5165\u603B\u8D44\u4EA7\u3002" });
-}
 function el2(type, attrs, parent) {
   const node = document.createElementNS(NS2, type);
   for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, String(value));
@@ -8155,17 +8254,18 @@ function renderAssetSankey(parent, snapshot, excludeFixed, hide, expanded, onExp
   const kinds = ["cash", "fixed", "investment", "receivable"];
   const groups = kinds.map((kind) => ({ kind, accounts: visible.filter((a) => a.kind === kind) })).filter((g) => g.accounts.length);
   const rows = groups.flatMap((g) => g.accounts.flatMap((a) => {
+    var _a;
     if (!expanded.has(a.id) || a.kind !== "investment") return [{ account: a, id: a.id, name: a.name, cents: a.cents, holding: false }];
-    const cash = a.cents - a.holdings.reduce((sum3, h) => {
-      var _a;
-      return sum3 + ((_a = h.valueCents) != null ? _a : 0);
+    const cash = (_a = a.unallocatedCents) != null ? _a : a.cents - a.holdings.reduce((sum3, h) => {
+      var _a2;
+      return sum3 + ((_a2 = h.valueCents) != null ? _a2 : 0);
     }, 0);
     if (cash < 0) return [{ account: a, id: a.id, name: a.name, cents: a.cents, holding: false }];
     const rows2 = a.holdings.filter((h) => {
-      var _a;
-      return ((_a = h.valueCents) != null ? _a : 0) > 0;
+      var _a2;
+      return ((_a2 = h.valueCents) != null ? _a2 : 0) > 0;
     }).map((h) => ({ account: a, id: h.id, name: h.name, cents: h.valueCents, holding: true }));
-    if (cash > 0) rows2.push({ account: a, id: a.id, name: `${a.name} \xB7 \u73B0\u91D1`, cents: cash, holding: true });
+    if (cash > 0) rows2.push({ account: a, id: `${a.id}-unallocated`, name: a.unallocatedCents === void 0 ? `${a.name} \xB7 \u73B0\u91D1` : "\u5F85\u6DFB\u52A0\u6301\u4ED3", cents: cash, holding: true });
     return rows2;
   }));
   if (!rows.length) {
@@ -8176,7 +8276,7 @@ function renderAssetSankey(parent, snapshot, excludeFixed, hide, expanded, onExp
   const total3 = visible.reduce((sum3, a) => sum3 + a.cents, 0), height = Math.max(360, rows.length * 64 + groups.length * 24 + 100);
   const plotHeight = height - 130 - Math.max(0, rows.length - 1) * rowGap - Math.max(0, groups.length - 1) * 20;
   const scale = plotHeight / total3;
-  const scroll = parent.createDiv({ cls: "ledger-assets-sankey-scroll" });
+  const tools = parent.createDiv({ cls: "ledger-assets-zoom-tools" }), scroll = parent.createDiv({ cls: "ledger-assets-sankey-scroll" });
   scroll.setAttribute("aria-label", "\u8D44\u4EA7\u7EC4\u6210\u6851\u57FA\u56FE\uFF0C\u53EF\u6A2A\u5411\u6ED1\u52A8\u5E76\u70B9\u51FB\u8D26\u6237\u5C55\u5F00");
   const svg = document.createElementNS(NS2, "svg");
   svg.setAttribute("viewBox", `0 0 1240 ${height}`);
@@ -8235,6 +8335,7 @@ function renderAssetSankey(parent, snapshot, excludeFixed, hide, expanded, onExp
     rootCursor += groupHeight;
   }
   if (snapshot.accounts.some((a) => a.cents < 0) || totals.netCents < 0) parent.createEl("p", { cls: "ledger-assets-hint", text: `\u6851\u57FA\u56FE\u5C55\u793A\u6B63\u8D44\u4EA7\uFF1B\u8D1F\u4F59\u989D\u4E0E\u51C0\u8D44\u4EA7\u7F3A\u53E3\u4FDD\u7559\u5728\u603B\u89C8\u53CA\u8D26\u6237\u5217\u8868\u4E2D${hide ? "\u3002" : `\uFF1A${snapshot.accounts.filter((a) => a.cents < 0).map((a) => `${a.name} ${formatCents(a.cents)}`).join("\uFF1B") || formatCents(totals.netCents)}`}` });
+  enableAssetGestures(scroll, svg, tools);
 }
 
 // src/asset-ui.ts
@@ -8261,39 +8362,59 @@ function select(parent, name, choices, value = "") {
   if (value) node.value = value;
   return node;
 }
+function localDateTime(now = /* @__PURE__ */ new Date()) {
+  return `${isoFromDate(now)}T${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+}
+function parseBaseline(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime()) || date.getTime() > Date.now()) throw new Error("\u4F59\u989D\u65F6\u70B9\u65E0\u6548\uFF0C\u4E0D\u80FD\u4F7F\u7528\u672A\u6765\u65F6\u95F4");
+  return date;
+}
 var AssetFormModal = class extends import_obsidian8.Modal {
-  constructor(plugin, title, build) {
+  constructor(plugin, title, build, saveLabel = "\u4FDD\u5B58") {
     super(plugin.app);
     this.title = title;
     this.build = build;
+    this.saveLabel = saveLabel;
+    this.alive = false;
   }
   onOpen() {
+    this.alive = true;
     this.modalEl.addClass("ledger-assets-modal");
     this.setTitle(this.title);
     const body = this.contentEl.createEl("form", { cls: "ledger-assets-form" });
-    const submit = this.build(body), error = body.createDiv({ cls: "ledger-assets-form-error", attr: { role: "alert" } });
+    const submit = this.build(body, () => this.alive), error = body.createDiv({ cls: "ledger-assets-form-error", attr: { role: "alert" } });
     const controls = body.createDiv({ cls: "ledger-assets-actions" });
-    const save = controls.createEl("button", { cls: "ledger-button ledger-assets-primary", text: "\u4FDD\u5B58" });
+    const save = controls.createEl("button", { cls: "ledger-button ledger-assets-primary", text: this.saveLabel });
     save.type = "submit";
     button(controls, "\u53D6\u6D88", () => this.close());
     body.addEventListener("submit", (event) => {
       event.preventDefault();
       if (save.disabled) return;
       save.disabled = true;
-      save.setText("\u4FDD\u5B58\u4E2D\u2026");
       error.setText("");
+      save.setText("\u5904\u7406\u4E2D\u2026");
+      body.setAttribute("aria-busy", "true");
       void submit().then(() => {
-        this.close();
-        new import_obsidian8.Notice("\u8D44\u4EA7\u5DF2\u4FDD\u5B58");
+        if (this.alive) {
+          this.close();
+          new import_obsidian8.Notice(this.saveLabel === "\u5220\u9664" ? "\u5DF2\u5220\u9664" : "\u8D44\u4EA7\u5DF2\u4FDD\u5B58");
+        }
       }).catch((reason) => {
+        if (!this.alive) return;
         error.setText(reason instanceof Error ? reason.message : "\u4FDD\u5B58\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5");
         save.disabled = false;
-        save.setText("\u4FDD\u5B58");
+        save.setText(this.saveLabel);
+        body.setAttribute("aria-busy", "false");
       });
     });
   }
+  close() {
+    this.alive = false;
+    super.close();
+  }
   onClose() {
-    this.contentEl.empty();
+    this.alive = false;
   }
 };
 var AssetPanel = class {
@@ -8305,25 +8426,19 @@ var AssetPanel = class {
     return flattenRecords(this.plugin.repository.files.values());
   }
   render(parent) {
-    var _a;
     const state = this.plugin.settings.assets, snapshot = this.plugin.assetSnapshot(), totals = assetTotals(snapshot, state.excludeFixed);
     const money3 = (cents) => state.hideAmounts ? "\u2022\u2022\u2022\u2022" : formatCents(cents);
-    const root = parent.createDiv({ cls: "ledger-assets" }), top = root.createDiv({ cls: "ledger-assets-title-row" });
-    top.createEl("h2", { text: "\u6211\u7684\u8D44\u4EA7" });
-    const actions = top.createDiv({ cls: "ledger-assets-actions" });
-    button(actions, "\u6DFB\u52A0\u8D26\u6237", () => this.accountForm(), true);
-    button(actions, "\u6DFB\u52A0\u6301\u4ED3", () => this.holdingForm());
-    const refresh = button(actions, "\u5237\u65B0\u884C\u60C5", () => {
-      refresh.disabled = true;
-      void this.plugin.refreshAssetQuotes(true).catch((e) => new import_obsidian8.Notice(e instanceof Error ? e.message : "\u884C\u60C5\u5237\u65B0\u5931\u8D25")).finally(() => {
-        refresh.disabled = false;
-      });
-    });
+    const root = parent.createDiv({ cls: "ledger-assets" });
+    const actions = root.createDiv({ cls: "ledger-assets-actions ledger-assets-main-actions" });
+    button(actions, "\u6DFB\u52A0\u8D26\u6237", () => this.accountForm());
+    button(actions, "\u6DFB\u52A0\u6301\u4ED3", () => this.holdingForm(), true);
+    button(actions, "\u66F4\u591A", () => this.toolsModal());
     const hero = root.createDiv({ cls: "ledger-assets-hero" }), caption = hero.createDiv({ cls: "ledger-assets-caption" });
-    caption.createSpan({ text: totals.missing ? "\u5DF2\u4F30\u503C\u8D44\u4EA7\uFF08\u5143\uFF09\xB7 \u4F30\u503C\u4E0D\u5B8C\u6574" : "\u603B\u8D44\u4EA7\uFF08\u5143\uFF09" });
-    button(caption, state.hideAmounts ? "\u663E\u793A\u91D1\u989D" : "\u9690\u85CF\u91D1\u989D", () => void this.save((s) => {
+    caption.createSpan({ text: totals.missing ? "\u5DF2\u4F30\u503C\u8D44\u4EA7\uFF08\u5143\uFF09" : "\u603B\u8D44\u4EA7\uFF08\u5143\uFF09" });
+    const privacy = button(caption, state.hideAmounts ? "\u25C9" : "\u25CE", () => void this.save((s) => {
       s.hideAmounts = !s.hideAmounts;
     }).catch((e) => new import_obsidian8.Notice(String(e))));
+    privacy.setAttribute("aria-label", state.hideAmounts ? "\u663E\u793A\u91D1\u989D" : "\u9690\u85CF\u91D1\u989D");
     const toggle = caption.createEl("label", { cls: "ledger-assets-toggle" });
     toggle.createSpan({ text: "\u6392\u9664\u56FA\u5B9A\u8D44\u4EA7" });
     const check = toggle.createEl("input", { type: "checkbox" });
@@ -8332,63 +8447,51 @@ var AssetPanel = class {
       s.excludeFixed = check.checked;
     }).catch((e) => new import_obsidian8.Notice(String(e))));
     hero.createDiv({ cls: "ledger-assets-total", text: state.hideAmounts ? "\u2022\u2022\u2022\u2022" : formatCents(totals.assetsCents).replace("\xA5", "") });
-    const latest = [...snapshot.accounts.flatMap((a) => a.holdings.filter((h) => h.valueCents !== null && h.quote && decimal2(h.quote.price).gt(0)).map((h) => {
-      var _a2;
-      return (_a2 = h.quote) == null ? void 0 : _a2.asOf;
-    }).filter((v) => !!v))].sort().reverse()[0];
-    hero.createDiv({ cls: "ledger-assets-updated", text: latest ? `\u884C\u60C5 ${latest.replace("T", " ").slice(0, 16)}` : "\u5F53\u524D\u4F59\u989D" });
     const metrics = hero.createDiv({ cls: "ledger-assets-metrics" });
-    metrics.createSpan({ text: `\u51C0\u8D44\u4EA7 ${money3(totals.netCents)}` });
-    metrics.createSpan({ text: `\u603B\u8D1F\u503A ${money3(totals.liabilitiesCents)}` });
-    metrics.createSpan({ text: `\u8D1F\u503A\u7387 ${state.hideAmounts ? "\u2022\u2022\u2022\u2022" : totals.assetsCents > 0 ? `${(totals.liabilitiesCents / totals.assetsCents * 100).toFixed(2)}%` : "\u2014"}` });
+    for (const [label2, value] of [["\u51C0\u8D44\u4EA7", money3(totals.netCents)], ["\u8D1F\u503A", money3(totals.liabilitiesCents)], ["\u8D1F\u503A\u7387", state.hideAmounts ? "\u2022\u2022\u2022\u2022" : totals.assetsCents > 0 ? `${(totals.liabilitiesCents / totals.assetsCents * 100).toFixed(1)}%` : "\u2014"]]) {
+      const metric2 = metrics.createDiv();
+      metric2.createEl("small", { text: label2 });
+      metric2.createEl("strong", { text: value });
+    }
+    const updates = hero.createDiv({ cls: "ledger-assets-update-row" });
+    const latest = snapshot.accounts.flatMap((a) => a.holdings.filter((h) => h.quote && decimal2(h.quote.price).gt(0)).map((h) => h.quote.asOf)).sort().reverse()[0];
+    updates.createEl("small", { text: latest ? `\u884C\u60C5 ${latest.replace("T", " ").slice(0, 16)}` : "\u5F53\u524D\u4F59\u989D" });
+    const refresh = button(updates, "\u21BB", () => {
+      refresh.disabled = true;
+      void this.plugin.refreshAssetQuotes(true).catch((e) => new import_obsidian8.Notice(String(e))).finally(() => {
+        refresh.disabled = false;
+      });
+    });
+    refresh.setAttribute("aria-label", "\u5237\u65B0\u884C\u60C5");
     this.renderComparison(hero, snapshot);
     if (snapshot.pending.length) {
-      const warning = root.createDiv({ cls: "ledger-assets-warning" });
-      warning.createEl("strong", { text: "\u6709\u8D44\u91D1\u53D8\u52A8\u5F85\u6838\u5BF9" });
-      const details = warning.createEl("details");
-      details.createEl("summary", { text: `${snapshot.pending.length}\u9879\u5F85\u6838\u5BF9` });
-      for (const text2 of snapshot.pending) details.createEl("p", { text: state.hideAmounts ? "\u6D41\u6C34\u5F85\u6838\u5BF9" : text2 });
-      button(warning, "\u6838\u5BF9\u6D41\u6C34", () => this.reviewForm());
-      button(warning, "\u6838\u5BF9\u4EA4\u6613\u5173\u8054", () => this.linkForm());
+      const warning = root.createDiv({ cls: "ledger-assets-warning ledger-assets-compact-warning" });
+      warning.createSpan({ text: `${snapshot.pending.length}\u9879\u53D8\u52A8\u5F85\u6838\u5BF9` });
+      button(warning, "\u67E5\u770B", () => this.toolsModal());
     }
-    const card2 = root.createDiv({ cls: "ledger-assets-card" }), heading = card2.createDiv({ cls: "ledger-assets-title-row" });
+    const card2 = root.createDiv({ cls: "ledger-assets-card ledger-assets-chart-card" }), heading = card2.createDiv({ cls: "ledger-assets-title-row" });
     heading.createEl("h3", { text: "\u8D44\u4EA7\u7EC4\u6210" });
-    button(heading, "\u653E\u5927\u67E5\u770B", () => this.sankeyModal(snapshot));
-    renderAssetAllocation(card2, snapshot, state.excludeFixed, state.hideAmounts);
-    const list = root.createDiv({ cls: "ledger-assets-card" });
-    const listHeader = list.createDiv({ cls: "ledger-assets-title-row" });
-    listHeader.createEl("h3", { text: "\u8D26\u6237\u4E0E\u6301\u4ED3" });
-    if (!state.accounts.length) list.createEl("p", { text: "\u6DFB\u52A0\u8D26\u6237\uFF0C\u5F00\u59CB\u67E5\u770B\u8D44\u4EA7\u3002" });
-    for (const account of snapshot.accounts) {
-      const row = list.createDiv({ cls: "ledger-assets-account" });
-      const info = row.createDiv();
-      info.createEl("strong", { text: account.name });
-      info.createEl("small", { text: `${ASSET_NAMES[account.kind]}${account.id === state.defaultCashId ? " \xB7 \u9ED8\u8BA4\u6D88\u8D39\u6263\u6B3E" : ""}${account.missing ? " \xB7 \u542B\u672A\u4F30\u503C\u6301\u4ED3" : ""}` });
-      row.createEl("strong", { text: money3(account.cents) });
-      button(row, "\u7BA1\u7406", () => this.accountDetails(account.id));
-      const holdingList = account.holdings.length ? list.createEl("details", { cls: "ledger-assets-holding-list" }) : null;
-      holdingList == null ? void 0 : holdingList.createEl("summary", { text: `${account.holdings.length}\u9879\u6301\u4ED3` });
-      for (const holding of account.holdings) {
-        const detail = holdingList.createDiv({ cls: "ledger-assets-holding" });
-        detail.createEl("strong", { text: holding.name });
-        detail.createSpan({ text: `${holding.code}${holding.amountBasisCents !== void 0 ? " \xB7 \u53C2\u8003\u4EFD\u989D" : ""} \xB7 ${state.hideAmounts ? "\u2022\u2022\u2022\u2022" : holding.amountBasisCents !== void 0 && holding.quantity === "0" ? "\u5F85\u6362\u7B97" : decimal2(holding.quantity).toDecimalPlaces(2).toFixed()} ${holding.kind === "stock" ? "\u80A1" : "\u4EFD"}` });
-        detail.createSpan({ text: holding.valueCents === null ? "\u672A\u4F30\u503C" : money3(holding.valueCents) });
-        if (holding.valueCents !== null) detail.createEl("small", { text: `${holding.amountBasisCents !== void 0 ? "\u5F55\u5165\u540E\u53D8\u5316" : "\u6301\u4ED3\u76C8\u4E8F"} ${money3(holding.valueCents - holding.costCents)}` });
-        detail.createEl("small", { text: holding.quote && decimal2(holding.quote.price).gt(0) ? `\u884C\u60C5 ${holding.quote.asOf.replace("T", " ").slice(0, 19)}${holding.quote.error ? " \xB7 \u66F4\u65B0\u5931\u8D25\uFF0C\u4FDD\u7559\u4E0A\u6B21\u503C" : ""}` : ((_a = holding.quote) == null ? void 0 : _a.error) || (holding.amountBasisCents !== void 0 ? "\u6309\u5F55\u5165\u91D1\u989D\u663E\u793A \xB7 \u7B49\u5F85\u884C\u60C5" : "\u7B49\u5F85\u884C\u60C5") });
-        button(detail, "\u6838\u5BF9\u6301\u4ED3", () => this.holdingCorrection(holding));
+    button(heading, "\u2922", () => this.sankeyModal(snapshot)).setAttribute("aria-label", "\u653E\u5927\u67E5\u770B\u6851\u57FA\u56FE");
+    renderAssetSankey(card2, snapshot, state.excludeFixed, state.hideAmounts, this.expanded, (id) => {
+      this.expanded.has(id) ? this.expanded.delete(id) : this.expanded.add(id);
+      this.plugin.refreshAssetViews();
+    }, (id) => this.accountDetails(id));
+    if (snapshot.accounts.length) {
+      const grid = root.createDiv({ cls: "ledger-assets-account-grid" });
+      const maximum = Math.max(1, ...snapshot.accounts.map((a) => Math.abs(a.cents)));
+      for (const account of snapshot.accounts) {
+        const tile = button(grid, "", () => this.accountDetails(account.id));
+        tile.addClass("ledger-assets-account-tile");
+        tile.setAttribute("aria-label", `${account.name}\uFF0C\u7BA1\u7406\u8D26\u6237`);
+        const title = tile.createDiv();
+        title.createSpan({ cls: `ledger-assets-dot is-${account.kind}` });
+        title.createSpan({ text: account.name });
+        tile.createEl("strong", { text: money3(account.cents) });
+        tile.createEl("small", { text: account.missing ? "\u7B49\u5F85\u884C\u60C5" : account.id === state.defaultCashId ? "\u9ED8\u8BA4\u6263\u6B3E" : ASSET_NAMES[account.kind] });
+        const bar = tile.createDiv({ cls: "ledger-assets-account-bar" }), fill = bar.createDiv({ cls: `is-${account.kind}` });
+        fill.style.width = `${state.hideAmounts ? 0 : Math.abs(account.cents) / maximum * 100}%`;
       }
     }
-    const tools = root.createEl("details", { cls: "ledger-assets-card" });
-    tools.createEl("summary", { text: "\u8D44\u4EA7\u7BA1\u7406" });
-    const toolsActions = tools.createDiv({ cls: "ledger-assets-actions" });
-    button(toolsActions, "\u8BB0\u5F55\u4EA4\u6613", () => this.eventForm());
-    button(toolsActions, "\u9ED8\u8BA4\u6263\u6B3E\u8D26\u6237", () => this.defaultForm());
-    button(toolsActions, "\u6838\u5BF9\u6D41\u6C34", () => this.reviewForm());
-    button(toolsActions, "\u4EA4\u6613\u5173\u8054", () => this.linkForm());
-    tools.createEl("p", { cls: "ledger-assets-hint", text: "\u4EFD\u989D\u7531\u5F53\u524D\u91D1\u989D\u548C\u9996\u6B21\u83B7\u53D6\u7684\u884C\u60C5\u4F30\u7B97\u3002\u57FA\u91D1\u51C0\u503C\u53EF\u80FD\u5EF6\u8FDF\uFF1B\u4E70\u5356\u524D\u53EF\u5728\u6301\u4ED3\u8BE6\u60C5\u6838\u5BF9\u5E73\u53F0\u5B9E\u9645\u4EFD\u989D\u4E0E\u6210\u672C\u3002" });
-    const events = tools.createEl("details", { cls: "ledger-assets-card" });
-    events.createEl("summary", { text: `\u8D44\u4EA7\u4EA4\u6613\u8BB0\u5F55\uFF08${state.events.length}\u7B14\uFF09` });
-    for (const event of [...state.events].reverse().slice(0, 100)) events.createDiv({ cls: "ledger-assets-event-row", text: `${event.date} \xB7 ${event.note || EVENT_NAMES[event.kind]} \xB7 ${money3(event.amountCents)}${event.link ? " \xB7 \u5DF2\u5173\u8054\u8D26\u672C" : ""}` });
   }
   save(change) {
     return this.plugin.updateAssets(change);
@@ -8398,12 +8501,10 @@ var AssetPanel = class {
     const title = card2.createDiv({ cls: "ledger-assets-title-row" });
     title.createSpan({ text: previous ? `\u76F8\u6BD4 ${previous.date}` : "\u6682\u65E0\u53EF\u6BD4\u8BB0\u5F55" });
     button(title, "\u8D44\u4EA7\u6708\u5386 \u203A", () => this.calendarModal());
-    if (!previous) {
-      return;
-    }
+    if (!previous) return;
     const before = assetTotals(previous, state.excludeFixed), after = assetTotals(current, state.excludeFixed);
     if (before.missing || after.missing) {
-      card2.createEl("p", { text: "\u672C\u6B21\u6216\u5386\u53F2\u4F30\u503C\u4E0D\u5B8C\u6574\uFF0C\u6682\u4E0D\u5224\u65AD\u8D44\u4EA7\u589E\u51CF\u3002" });
+      card2.createEl("p", { text: "\u4F30\u503C\u5F85\u8865\u5168" });
       return;
     }
     const delta = after.assetsCents - before.assetsCents, debt = after.liabilitiesCents - before.liabilitiesCents;
@@ -8423,104 +8524,120 @@ var AssetPanel = class {
     }
   }
   accountForm(existing) {
-    new AssetFormModal(this.plugin, existing ? "\u7BA1\u7406\u8D26\u6237\u4E0E\u4F59\u989D\u6838\u5BF9" : "\u6DFB\u52A0\u8D44\u4EA7\u8D26\u6237", (body) => {
-      var _a, _b;
+    new AssetFormModal(this.plugin, existing ? "\u7F16\u8F91\u8D26\u6237" : "\u6DFB\u52A0\u8D26\u6237", (body) => {
+      var _a, _b, _c, _d;
       const name = input(body, "\u8D26\u6237\u540D\u79F0", (_a = existing == null ? void 0 : existing.name) != null ? _a : "");
-      const kind = select(body, "\u8D26\u6237\u7C7B\u522B", Object.entries(ASSET_NAMES), (_b = existing == null ? void 0 : existing.kind) != null ? _b : "cash");
+      const kind = select(body, "\u7C7B\u522B", Object.entries(ASSET_NAMES), (_b = existing == null ? void 0 : existing.kind) != null ? _b : "cash");
       kind.disabled = !!existing;
-      const current = existing ? this.plugin.assetSnapshot().accounts.find((a) => a.id === existing.id) : null;
-      const currentBalance = current ? current.cents - ((existing == null ? void 0 : existing.kind) === "investment" ? current.holdings.reduce((sum3, h) => {
-        var _a2;
-        return sum3 + ((_a2 = h.valueCents) != null ? _a2 : 0);
-      }, 0) : 0) : 0;
-      const balance = input(body, "\u5F53\u524D\u4F59\u989D\uFF08\u5143\uFF09", existing ? (currentBalance / 100).toFixed(2) : "0");
-      const balanceLabel = balance.parentElement.querySelector("span");
-      const hint = body.createEl("small", { cls: "ledger-assets-hint" });
+      const valued = existing && this.plugin.assetSnapshot().accounts.find((a) => a.id === existing.id);
+      const initial = existing ? existing.kind === "investment" ? (_c = valued == null ? void 0 : valued.unallocatedCents) != null ? _c : existing.balanceCents : (_d = valued == null ? void 0 : valued.cents) != null ? _d : existing.balanceCents : 0;
+      const balance = input(body, (existing == null ? void 0 : existing.kind) === "investment" ? "\u5F85\u5206\u914D\u91D1\u989D\uFF08\u5143\uFF09" : "\u5F53\u524D\u91D1\u989D\uFF08\u5143\uFF09", (initial / 100).toFixed(2));
+      const allocation = body.createEl("small", { cls: "ledger-assets-hint", text: "\u6DFB\u52A0\u6301\u4ED3\u65F6\uFF0C\u4F1A\u81EA\u52A8\u4ECE\u8FD9\u7B14\u91D1\u989D\u4E2D\u5206\u914D\uFF0C\u907F\u514D\u91CD\u590D\u8BA1\u7B97\u3002" });
+      const useDefault = input(body, "\u4F5C\u4E3A\u9ED8\u8BA4\u6D88\u8D39\u6263\u6B3E\u8D26\u6237", "", "checkbox");
+      useDefault.checked = existing ? existing.id === this.plugin.settings.assets.defaultCashId : !this.plugin.settings.assets.defaultCashId;
       const updateFields = () => {
-        balanceLabel.setText(kind.value === "investment" ? "\u8D26\u6237\u73B0\u91D1\uFF08\u5143\uFF0C\u4E0D\u542B\u6301\u4ED3\uFF09" : kind.value === "liability" ? "\u5C1A\u6B20\u91D1\u989D\uFF08\u5143\uFF09" : "\u5F53\u524D\u4F59\u989D\uFF0F\u4EF7\u503C\uFF08\u5143\uFF09");
-        hint.setText(kind.value === "investment" ? "\u8D26\u6237\u73B0\u91D1\u4E0E\u6301\u4ED3\u5206\u522B\u8BA1\u7B97\uFF1B\u57FA\u91D1\u3001\u80A1\u7968\u91D1\u989D\u8BF7\u7528\u6DFB\u52A0\u6301\u4ED3\u3002" : "\u6309\u5F53\u524D\u4F59\u989D\u4FDD\u5B58\uFF0C\u4E4B\u524D\u7684\u6D41\u6C34\u4E0D\u91CD\u590D\u6263\u6B3E\u3002");
+        allocation.hidden = kind.value !== "investment";
+        useDefault.parentElement.hidden = kind.value !== "cash";
       };
       kind.addEventListener("change", updateFields);
       updateFields();
-      const useDefault = input(body, "\u8BBE\u4E3A\u9ED8\u8BA4\u6D88\u8D39\u6263\u6B3E\u8D26\u6237", "", "checkbox");
-      useDefault.checked = existing ? existing.id === this.plugin.settings.assets.defaultCashId : !this.plugin.settings.assets.defaultCashId;
-      const updateDefault = () => {
-        useDefault.parentElement.hidden = kind.value !== "cash";
-      };
-      kind.addEventListener("change", updateDefault);
-      updateDefault();
+      const advanced = body.createEl("details", { cls: "ledger-assets-advanced" });
+      advanced.createEl("summary", { text: "\u4F59\u989D\u65F6\u70B9" });
+      const at = input(advanced, "\u4F59\u989D\u5BF9\u5E94\u65F6\u70B9", localDateTime(), "datetime-local");
       return async () => {
-        if (!name.value.trim()) throw new Error("\u8BF7\u586B\u5199\u8D26\u6237\u540D\u79F0");
-        const now = /* @__PURE__ */ new Date(), category = kind.value, cents = moneyCents(balance.value, category !== "liability");
+        const category = kind.value, cents = moneyCents(balance.value, category !== "liability");
+        const now = advanced.open ? parseBaseline(at.value) : /* @__PURE__ */ new Date();
         await this.save((state) => {
-          let account = existing && state.accounts.find((a) => a.id === existing.id);
+          let account = existing && state.accounts.find((a) => a.id === existing.id && !a.archived);
+          if (existing && !account) throw new Error("\u8D26\u6237\u5DF2\u5220\u9664");
           if (account) {
-            account.name = name.value.trim();
-            calibrateAccount(state, account.id, cents, this.records(), now);
+            account.name = name.value.trim() || account.name;
+            if (cents !== initial || advanced.open) calibrateAccount(state, account.id, cents, this.records(), now);
           } else {
-            account = { id: assetId(), name: name.value.trim(), kind: category, balanceCents: cents, baselineAt: now.toISOString(), includedRecordIds: baselineRecordIds(this.records(), now), includedEventIds: [] };
+            account = { id: assetId(), name: name.value.trim() || ASSET_NAMES[category], kind: category, balanceCents: cents, baselineAt: now.toISOString(), includedRecordIds: baselineRecordIds(this.records(), now), includedEventIds: [] };
             state.accounts.push(account);
           }
-          if (category === "cash" && useDefault.checked) setDefaultCash(state, account.id, this.records(), existing ? /* @__PURE__ */ new Date() : now);
+          if (category === "cash" && useDefault.checked) setDefaultCash(state, account.id, this.records(), /* @__PURE__ */ new Date());
+          else if (category === "cash" && state.defaultCashId === account.id) {
+            state.defaultCashId = "";
+            for (const epoch of state.epochs) if (!epoch.to && epoch.accountId === account.id) epoch.to = (/* @__PURE__ */ new Date()).toISOString();
+          }
         });
       };
     }).open();
   }
-  holdingForm() {
-    const choices = this.plugin.settings.assets.accounts.filter((a) => a.kind === "investment").map((a) => [a.id, a.name]);
-    if (!choices.length) {
-      new import_obsidian8.Notice("\u8BF7\u5148\u6DFB\u52A0\u4E00\u4E2A\u6295\u8D44\u7406\u8D22\u8D26\u6237");
-      this.accountForm();
-      return;
-    }
-    new AssetFormModal(this.plugin, "\u6DFB\u52A0\u6301\u4ED3", (body) => {
-      const account = select(body, "\u6295\u8D44\u8D26\u6237", choices);
-      if (choices.length === 1) account.parentElement.hidden = true;
+  holdingForm(preferredAccount = "") {
+    const choices = this.plugin.settings.assets.accounts.filter((a) => a.kind === "investment" && !a.archived).map((a) => [a.id, a.name]);
+    new AssetFormModal(this.plugin, "\u6DFB\u52A0\u6301\u4ED3", (body, active) => {
+      const account = choices.length > 1 ? select(body, "\u6295\u8D44\u8D26\u6237", choices, preferredAccount) : null;
       const kind = select(body, "\u7C7B\u578B", [["fund", "\u57FA\u91D1"], ["stock", "\u80A1\u7968"], ["etf", "ETF"]]);
-      const code = input(body, "\u8BC1\u5238\u4EE3\u7801"), amount = input(body, "\u5F53\u524D\u6301\u4ED3\u91D1\u989D\uFF08\u5143\uFF09");
+      const code = input(body, "\u4EE3\u7801"), amount = input(body, "\u5F53\u524D\u91D1\u989D\uFF08\u5143\uFF09");
+      code.placeholder = "\u4F8B\u5982 000001";
       amount.inputMode = "decimal";
-      body.createEl("small", { cls: "ledger-assets-hint", text: "\u65E5\u671F\u9ED8\u8BA4\u4ECA\u5929\uFF0C\u540D\u79F0\u4E0E\u53C2\u8003\u4EFD\u989D\u81EA\u52A8\u67E5\u8BE2\u3002\u884C\u60C5\u66F4\u65B0\u524D\u663E\u793A\u586B\u5199\u91D1\u989D\uFF0C\u4E4B\u540E\u663E\u793A\u4F30\u503C\u53D8\u5316\u3002" });
+      body.createEl("small", { cls: "ledger-assets-hint", text: "\u540D\u79F0\u81EA\u52A8\u83B7\u53D6\uFF0C\u65E5\u671F\u9ED8\u8BA4\u4ECA\u5929\uFF1B\u6309\u6700\u65B0\u53EF\u7528\u884C\u60C5\u4F30\u7B97\u4EFD\u989D\u3002" });
       return async () => {
+        const security = kind.value, normalized = normalizeCode(security, code.value), cents = moneyCents(amount.value);
+        if (cents <= 0) throw new Error("\u5F53\u524D\u91D1\u989D\u987B\u5927\u4E8E\u96F6");
+        const quote = await this.plugin.lookupAssetQuote(security, normalized);
+        if (!active()) throw new Error("\u5DF2\u53D6\u6D88\u6DFB\u52A0");
         await this.save((state) => {
-          addAmountHolding(state, account.value, kind.value, code.value, amount.value);
+          var _a;
+          if (!active()) throw new Error("\u5DF2\u53D6\u6D88\u6DFB\u52A0");
+          let id = (account == null ? void 0 : account.value) || preferredAccount || ((_a = choices[0]) == null ? void 0 : _a[0]);
+          if (!id) {
+            id = assetId();
+            state.accounts.push({ id, name: "\u6295\u8D44\u8D26\u6237", kind: "investment", balanceCents: 0, baselineAt: (/* @__PURE__ */ new Date()).toISOString(), includedEventIds: [], includedRecordIds: [] });
+          }
+          if (state.holdings.some((h) => h.accountId === id && h.kind === security && h.code === normalized)) throw new Error("\u6B64\u8D26\u6237\u5DF2\u6709\u8BE5\u6301\u4ED3\uFF0C\u8BF7\u70B9\u51FB\u8D26\u6237\u4E2D\u7684\u6301\u4ED3\u8C03\u6574\u91D1\u989D");
+          addEstimatedHolding(state, id, security, normalized, cents, quote);
         });
-        void this.plugin.refreshAssetQuotes(true).catch((e) => new import_obsidian8.Notice(e instanceof Error ? e.message : "\u884C\u60C5\u66F4\u65B0\u5931\u8D25\uFF0C\u53EF\u7A0D\u540E\u91CD\u8BD5"));
       };
-    }).open();
+    }, "\u6DFB\u52A0").open();
   }
   holdingCorrection(holding) {
-    new AssetFormModal(this.plugin, "\u6838\u5BF9\u6301\u4ED3\u4FE1\u606F", (body) => {
-      const name = input(body, "\u6301\u4ED3\u540D\u79F0", holding.name), code = input(body, "\u8BC1\u5238\u4EE3\u7801", holding.code), quantity = input(body, "\u5F53\u524D\u5B9E\u9645\u603B\u6570\u91CF\uFF0F\u4EFD\u989D", holding.quantity), cost = input(body, "\u5269\u4F59\u6301\u4ED3\u603B\u6210\u672C\uFF08\u5143\uFF09", (holding.costCents / 100).toFixed(2));
-      body.createEl("p", { text: "\u7528\u4E8E\u7EA0\u6B63\u521D\u59CB\u5F55\u5165\u3001\u5206\u7EA2\u6216\u62C6\u5206\u540E\u7684\u6301\u4ED3\u3002\u6B64\u64CD\u4F5C\u4E0D\u79FB\u52A8\u73B0\u91D1\uFF1B\u5B9E\u9645\u4E70\u5356\u8BF7\u4F7F\u7528\u8BB0\u5F55\u4EA4\u6613\u3002\u5386\u53F2\u5FEB\u7167\u4FDD\u7559\u5F53\u65F6\u6570\u636E\u3002" });
+    new AssetFormModal(this.plugin, holding.name, (body, active) => {
+      var _a;
+      const valued = this.plugin.assetSnapshot().accounts.flatMap((a) => a.holdings).find((h) => h.id === holding.id);
+      const amount = input(body, "\u5F53\u524D\u91D1\u989D\uFF08\u5143\uFF09", (((_a = valued == null ? void 0 : valued.valueCents) != null ? _a : holding.costCents) / 100).toFixed(2));
+      const advanced = body.createEl("details", { cls: "ledger-assets-advanced" });
+      advanced.createEl("summary", { text: "\u4F7F\u7528\u5E73\u53F0\u5B9E\u9645\u4EFD\u989D" });
+      const quantity = input(advanced, "\u5B9E\u9645\u4EFD\u989D\uFF0F\u80A1\u6570", holding.quantity);
       return async () => {
-        const normalized = normalizeCode(holding.kind, code.value), number = decimal2(quantity.value);
-        if (number.lt(0) || holding.kind !== "fund" && !number.isInteger()) throw new Error("\u6570\u91CF\u987B\u4E3A\u975E\u8D1F\u6570\uFF0C\u80A1\u7968\u548CETF\u987B\u4E3A\u6574\u6570");
-        const cents = moneyCents(cost.value);
-        await this.save((s) => {
-          const h = s.holdings.find((h2) => h2.id === holding.id);
-          if (!h) throw new Error("\u6301\u4ED3\u4E0D\u5B58\u5728");
-          h.name = name.value.trim() || normalized;
-          h.code = normalized;
-          h.quantity = number.toFixed();
-          h.costCents = cents;
+        let q, cents, quote;
+        if (advanced.open) {
+          q = validateQuantity(quantity.value, holding.kind);
+          cents = holding.costCents;
+        } else {
+          cents = moneyCents(amount.value);
+          if (cents <= 0) throw new Error("\u5F53\u524D\u91D1\u989D\u987B\u5927\u4E8E\u96F6");
+          quote = await this.plugin.lookupAssetQuote(holding.kind, holding.code);
+          q = decimal2(String(cents)).div(100).div(quote.price).toDecimalPlaces(12).toFixed();
+        }
+        if (!active()) throw new Error("\u5DF2\u53D6\u6D88\u8C03\u6574");
+        await this.save((state) => {
+          if (!active()) throw new Error("\u5DF2\u53D6\u6D88\u8C03\u6574");
+          const h = state.holdings.find((h2) => h2.id === holding.id && state.accounts.some((a) => a.id === h2.accountId && !a.archived));
+          if (!h) throw new Error("\u6301\u4ED3\u6216\u8D26\u6237\u5DF2\u5220\u9664");
+          h.quantity = q;
+          h.estimated = !advanced.open;
           delete h.amountBasisCents;
-        });
-        void this.plugin.refreshAssetQuotes().catch(() => {
+          if (quote) state.quotes[quote.key] = { ...quote };
+          if (!advanced.open && h.costBasisKnown === false) h.costCents = cents;
         });
       };
     }).open();
   }
   eventForm() {
     const state = this.plugin.settings.assets;
-    if (!state.accounts.length) {
+    if (!state.accounts.some((a) => !a.archived)) {
       this.accountForm();
       return;
     }
     new AssetFormModal(this.plugin, "\u8BB0\u5F55\u8D44\u4EA7\u4EA4\u6613", (body) => {
       const type = select(body, "\u4EA4\u6613\u7C7B\u578B", Object.entries(EVENT_NAMES));
-      const account = select(body, "\u6295\u8D44\uFF0F\u8F6C\u51FA\uFF0F\u6536\u5165\uFF0F\u8D1F\u503A\u8D26\u6237", state.accounts.map((a) => [a.id, `${a.name} \xB7 ${ASSET_NAMES[a.kind]}`]));
-      const cash = select(body, "\u6263\u6B3E\uFF0F\u5230\u8D26\uFF0F\u8F6C\u5165\u73B0\u91D1\u8D26\u6237", [["", "\u8BF7\u9009\u62E9"], ...state.accounts.filter((a) => a.kind === "cash").map((a) => [a.id, a.name])], state.defaultCashId);
-      const holding = select(body, "\u6301\u4ED3\uFF08\u4E70\u5356\u3001\u5206\u7EA2\u6216\u4EFD\u989D\u8C03\u6574\u65F6\u5FC5\u9009\uFF09", [["", "\u8BF7\u9009\u62E9"], ...state.holdings.map((h) => {
+      const account = select(body, "\u6295\u8D44\uFF0F\u8F6C\u51FA\uFF0F\u6536\u5165\uFF0F\u8D1F\u503A\u8D26\u6237", state.accounts.filter((a) => !a.archived).map((a) => [a.id, `${a.name} \xB7 ${ASSET_NAMES[a.kind]}`]));
+      const cash = select(body, "\u6263\u6B3E\uFF0F\u5230\u8D26\uFF0F\u8F6C\u5165\u73B0\u91D1\u8D26\u6237", [["", "\u8BF7\u9009\u62E9"], ...state.accounts.filter((a) => a.kind === "cash" && !a.archived).map((a) => [a.id, a.name])], state.defaultCashId);
+      const holding = select(body, "\u6301\u4ED3\uFF08\u4E70\u5356\u3001\u5206\u7EA2\u6216\u4EFD\u989D\u8C03\u6574\u65F6\u5FC5\u9009\uFF09", [["", "\u8BF7\u9009\u62E9"], ...state.holdings.filter((h) => state.accounts.some((a) => a.id === h.accountId && !a.archived)).map((h) => {
         var _a;
         return [h.id, `${h.name} \xB7 ${(_a = state.accounts.find((a) => a.id === h.accountId)) == null ? void 0 : _a.name}`];
       })]);
@@ -8559,7 +8676,7 @@ var AssetPanel = class {
     }).open();
   }
   defaultForm() {
-    const accounts = this.plugin.settings.assets.accounts.filter((a) => a.kind === "cash");
+    const accounts = this.plugin.settings.assets.accounts.filter((a) => a.kind === "cash" && !a.archived);
     if (!accounts.length) {
       this.accountForm();
       return;
@@ -8578,7 +8695,7 @@ var AssetPanel = class {
     }
     new AssetFormModal(this.plugin, "\u6838\u5BF9\u4ED8\u6B3E\u8D26\u6237\u4E0E\u8865\u8BB0", (body) => {
       const record = select(body, "\u6D88\u8D39\u6D41\u6C34", records.map((r) => [r.id, `${r.date} ${r.time} ${formatCents(r.cents)} ${r.note || r.category}`]));
-      const account = select(body, "\u6263\u6B3E\u5F52\u5C5E", [["exclude", "\u5DF2\u5305\u542B\u5728\u57FA\u7EBF\uFF0F\u65E0\u9700\u518D\u6B21\u6263\u6B3E"], ...this.plugin.settings.assets.accounts.filter((a) => a.kind === "cash").map((a) => [a.id, a.name])]);
+      const account = select(body, "\u6263\u6B3E\u5F52\u5C5E", [["exclude", "\u5DF2\u5305\u542B\u5728\u57FA\u7EBF\uFF0F\u65E0\u9700\u518D\u6B21\u6263\u6B3E"], ...this.plugin.settings.assets.accounts.filter((a) => a.kind === "cash" && !a.archived).map((a) => [a.id, a.name])]);
       body.createEl("p", { text: "\u660E\u786E\u6307\u5B9A\u540E\uFF0C\u8FD9\u7B14\u6D41\u6C34\u4E0D\u518D\u6309\u9ED8\u8BA4\u8D26\u6237\u63A8\u7B97\u3002\u4F59\u989D\u6838\u5BF9\u4F1A\u5C06\u5F53\u65F6\u5DF2\u5165\u8D26\u8BB0\u5F55\u7EB3\u5165\u65B0\u57FA\u7EBF\u3002" });
       return () => this.save((s) => {
         const selected = records.find((r) => r.id === record.value);
@@ -8612,8 +8729,73 @@ var AssetPanel = class {
     }).open();
   }
   accountDetails(id) {
-    const account = this.plugin.settings.assets.accounts.find((a) => a.id === id);
-    if (account) this.accountForm(account);
+    const account = this.plugin.settings.assets.accounts.find((a) => a.id === id && !a.archived), valued = this.plugin.assetSnapshot().accounts.find((a) => a.id === id);
+    if (!account || !valued) return;
+    const state = this.plugin.settings.assets, modal = new import_obsidian8.Modal(this.plugin.app);
+    modal.setTitle(account.name);
+    modal.modalEl.addClass("ledger-assets-modal");
+    modal.onOpen = () => {
+      var _a, _b;
+      modal.contentEl.createDiv({ cls: "ledger-assets-dialog-total", text: state.hideAmounts ? "\u2022\u2022\u2022\u2022" : formatCents(valued.cents) });
+      const actions = modal.contentEl.createDiv({ cls: "ledger-assets-actions" });
+      button(actions, "\u7F16\u8F91\u8D26\u6237", () => {
+        modal.close();
+        this.accountForm(account);
+      });
+      if (account.kind === "investment") button(actions, "\u6DFB\u52A0\u6301\u4ED3", () => {
+        modal.close();
+        this.holdingForm(id);
+      }, true);
+      button(actions, "\u5220\u9664\u8D26\u6237", () => {
+        modal.close();
+        this.deleteForm("\u8D26\u6237", account.name, (s) => removeAssetAccount(s, id));
+      }).addClass("ledger-assets-danger");
+      if (account.kind === "investment" && ((_a = valued.unallocatedCents) != null ? _a : 0) !== 0) modal.contentEl.createEl("p", { cls: "ledger-assets-hint", text: `\u5F85\u6DFB\u52A0\u6301\u4ED3 ${state.hideAmounts ? "\u2022\u2022\u2022\u2022" : formatCents(valued.unallocatedCents)}` });
+      for (const h of valued.holdings) {
+        const row = modal.contentEl.createDiv({ cls: "ledger-assets-position-row" }), info = row.createDiv();
+        info.createEl("strong", { text: h.name });
+        info.createEl("small", { text: `${h.code} \xB7 ${h.estimated ? "\u4F30\u7B97\u4EFD\u989D" : "\u5B9E\u9645\u4EFD\u989D"} ${state.hideAmounts ? "\u2022\u2022\u2022\u2022" : decimal2(h.quantity).toDecimalPlaces(h.estimated ? 4 : 12).toFixed()}` });
+        info.createEl("small", { text: ((_b = h.quote) == null ? void 0 : _b.asOf) ? `\u884C\u60C5 ${h.quote.asOf.replace("T", " ").slice(0, 16)}${h.quote.error ? " \xB7 \u66F4\u65B0\u5931\u8D25" : ""}` : "\u5F85\u66F4\u65B0\u884C\u60C5" });
+        row.createEl("strong", { text: h.valueCents === null ? "\u672A\u4F30\u503C" : state.hideAmounts ? "\u2022\u2022\u2022\u2022" : formatCents(h.valueCents) });
+        const controls = row.createDiv({ cls: "ledger-assets-actions" });
+        button(controls, "\u8C03\u6574", () => {
+          modal.close();
+          this.holdingCorrection(h);
+        });
+        const remove = button(controls, "\xD7", () => {
+          modal.close();
+          this.deleteForm("\u6301\u4ED3", h.name, (s) => removeAssetHolding(s, h.id));
+        });
+        remove.setAttribute("aria-label", `\u5220\u9664\u6301\u4ED3 ${h.name}`);
+      }
+    };
+    modal.open();
+  }
+  deleteForm(kind, name, change) {
+    new AssetFormModal(this.plugin, `\u5220\u9664${kind} \xB7 ${name}`, (body) => {
+      body.createEl("p", { text: "\u4ECE\u5F53\u524D\u8D44\u4EA7\u4E2D\u79FB\u9664\uFF0C\u5386\u53F2\u5FEB\u7167\u548C\u5DF2\u8BB0\u5F55\u7684\u73B0\u91D1\u4EA4\u6613\u4FDD\u7559\u3002" });
+      return () => this.save(change);
+    }, "\u5220\u9664").open();
+  }
+  toolsModal() {
+    const modal = new import_obsidian8.Modal(this.plugin.app);
+    modal.setTitle("\u8D44\u4EA7\u7BA1\u7406");
+    modal.modalEl.addClass("ledger-assets-modal");
+    modal.onOpen = () => {
+      const actions = modal.contentEl.createDiv({ cls: "ledger-assets-tool-grid" });
+      for (const [name, action] of [["\u8BB0\u5F55\u4EA4\u6613", () => this.eventForm()], ["\u9ED8\u8BA4\u6263\u6B3E\u8D26\u6237", () => this.defaultForm()], ["\u6838\u5BF9\u6D41\u6C34", () => this.reviewForm()], ["\u4EA4\u6613\u5173\u8054", () => this.linkForm()], ["\u8D44\u4EA7\u6708\u5386", () => this.calendarModal()]]) button(actions, name, () => {
+        modal.close();
+        action();
+      });
+      for (const text2 of this.plugin.assetSnapshot().pending) modal.contentEl.createEl("p", { cls: "ledger-assets-hint", text: this.plugin.settings.assets.hideAmounts ? "\u6709\u8D44\u91D1\u53D8\u52A8\u5F85\u6838\u5BF9" : text2 });
+      const events = this.plugin.settings.assets.events;
+      if (events.length) {
+        const history = modal.contentEl.createEl("details");
+        history.createEl("summary", { text: `\u4EA4\u6613\u8BB0\u5F55 \xB7 ${events.length}\u7B14` });
+        for (const e of [...events].reverse().slice(0, 100)) history.createDiv({ cls: "ledger-assets-event-row", text: `${e.date} \xB7 ${e.note || EVENT_NAMES[e.kind]} \xB7 ${this.plugin.settings.assets.hideAmounts ? "\u2022\u2022\u2022\u2022" : formatCents(e.amountCents)}` });
+      }
+    };
+    modal.open();
   }
   sankeyModal(snapshot) {
     const modal = new import_obsidian8.Modal(this.plugin.app);
@@ -8977,9 +9159,9 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
     var _a, _b;
     const header = root.createDiv({ cls: "ledger-header" });
     const title = header.createDiv();
-    title.createEl("h2", { text: "\u8BB0\u8D26\u7EDF\u8BA1" });
-    title.createDiv({ cls: "ledger-subtitle", text: this.activeView === "assets" ? "\u8D44\u4EA7\u603B\u89C8 \xB7 \u6301\u4ED3\u884C\u60C5\u81EA\u52A8\u66F4\u65B0" : "\u672C\u5730\u53EA\u8BFB \xB7 \u6B63\u6587\u9010\u7B14\u8BB0\u5F55\u4E3A\u7EDF\u8BA1\u6765\u6E90" });
+    title.createEl("h2", { text: this.activeView === "assets" ? "\u8D44\u4EA7" : "\u8BB0\u8D26\u7EDF\u8BA1" });
     if (this.activeView === "assets") return;
+    title.createDiv({ cls: "ledger-subtitle", text: "\u672C\u5730\u53EA\u8BFB \xB7 \u6B63\u6587\u9010\u7B14\u8BB0\u5F55\u4E3A\u7EDF\u8BA1\u6765\u6E90" });
     const selectedScope = this.activeView === "report" ? (_b = (_a = this.plugin.settings.reportPreferences) == null ? void 0 : _a.scope) != null ? _b : "consumption" : this.filter.scope;
     const scope = header.createDiv({ cls: `ledger-scope-badge is-${selectedScope}` });
     scope.setText(selectedScope === "consumption" ? "\u7B5B\u9009\u53E3\u5F84\uFF1A\u6D88\u8D39\u652F\u51FA" : "\u7B5B\u9009\u53E3\u5F84\uFF1A\u5168\u90E8\u652F\u51FA");
@@ -9940,9 +10122,24 @@ var AssetQuoteMonitor = class {
     this.running = null;
     this.rerun = false;
     this.connections = 0;
+    this.inflight = /* @__PURE__ */ new Map();
+    this.failedLookups = /* @__PURE__ */ new Map();
   }
   stop() {
     this.stopped = true;
+  }
+  lookup(kind, input2) {
+    const code = normalizeCode(kind, input2), key = quoteKey(kind, code), now = this.clock();
+    if (this.stopped) return Promise.reject(new Error("\u63D2\u4EF6\u5DF2\u5173\u95ED\uFF0C\u8BF7\u91CD\u65B0\u6253\u5F00\u8D44\u4EA7\u9875"));
+    const failed = this.failedLookups.get(key);
+    if (failed && now.getTime() - failed.at < 15 * 6e4) return Promise.reject(new Error(`${failed.message}\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5`));
+    const cached = this.state().quotes[key];
+    if (cached && decimal2(cached.price).gt(0) && now.getTime() - Date.parse(cached.fetchedAt) < (kind === "fund" ? 6 * 36e5 : 15 * 6e4)) return Promise.resolve({ ...cached });
+    if (!this.inflight.has(key) && this.connections >= 2) return Promise.reject(new Error("\u884C\u60C5\u6B63\u5728\u66F4\u65B0\uFF0C\u8BF7\u7A0D\u540E\u518D\u4FDD\u5B58"));
+    return this.requestQuote(kind, code).catch((error) => {
+      if (!this.stopped) this.failedLookups.set(key, { at: now.getTime(), message: error instanceof Error ? error.message : "\u884C\u60C5\u67E5\u8BE2\u5931\u8D25" });
+      throw error;
+    });
   }
   refresh(force = false) {
     if (this.stopped) return Promise.resolve();
@@ -9962,7 +10159,8 @@ var AssetQuoteMonitor = class {
   }
   async run(force) {
     const state = this.state(), now = this.clock(), unique2 = /* @__PURE__ */ new Map();
-    for (const h of state.holdings) if (quoteDue(h, state.quotes[quoteKey(h.kind, h.code)], now, force)) unique2.set(quoteKey(h.kind, h.code), { ...h });
+    const activeAccounts = new Set(state.accounts.filter((a) => !a.archived).map((a) => a.id));
+    for (const h of state.holdings) if (activeAccounts.has(h.accountId) && quoteDue(h, state.quotes[quoteKey(h.kind, h.code)], now, force)) unique2.set(quoteKey(h.kind, h.code), { ...h });
     const jobs = [...unique2.values()], updates = [];
     let index = 0;
     await Promise.all(Array.from({ length: Math.min(2, jobs.length) }, async () => {
@@ -9970,24 +10168,35 @@ var AssetQuoteMonitor = class {
       while (!this.stopped && this.connections < 2 && index < jobs.length) {
         const h = jobs[index++], key = quoteKey(h.kind, h.code), old = this.state().quotes[key];
         try {
-          const url = h.kind === "fund" ? `https://fund.eastmoney.com/pingzhongdata/${h.code}.js` : `https://qt.gtimg.cn/q=${h.code}`;
-          const response = await this.fetchBounded(url);
-          let text2 = response.text;
-          if (h.kind !== "fund" && response.arrayBuffer) {
-            try {
-              text2 = new TextDecoder("gb18030").decode(response.arrayBuffer);
-            } catch (e) {
-            }
-          }
-          const quote = h.kind === "fund" ? parseFundQuote(h.code, text2, this.clock()) : parseStockQuote(h, text2, this.clock());
-          if (old && Date.parse(quote.asOf) < Date.parse(old.asOf)) throw new Error("\u6570\u636E\u6E90\u8FD4\u56DE\u8F83\u65E7\u884C\u60C5\uFF0C\u5DF2\u4FDD\u7559\u4E0A\u6B21\u62A5\u4EF7");
-          updates.push(quote);
+          updates.push(await this.requestQuote(h.kind, h.code));
         } catch (error) {
           updates.push({ key, name: (_a = old == null ? void 0 : old.name) != null ? _a : h.name, price: (_b = old == null ? void 0 : old.price) != null ? _b : "0", asOf: (_c = old == null ? void 0 : old.asOf) != null ? _c : "", fetchedAt: (_d = old == null ? void 0 : old.fetchedAt) != null ? _d : now.toISOString(), attemptedAt: this.clock().toISOString(), error: error instanceof Error ? error.message : "\u884C\u60C5\u66F4\u65B0\u5931\u8D25" });
         }
       }
     }));
     if (!this.stopped && updates.length) await this.commit(updates);
+  }
+  requestQuote(kind, code) {
+    const key = quoteKey(kind, code), existing = this.inflight.get(key);
+    if (existing) return existing;
+    const request = (async () => {
+      const url = kind === "fund" ? `https://fund.eastmoney.com/pingzhongdata/${code}.js` : `https://qt.gtimg.cn/q=${code}`;
+      const response = await this.fetchBounded(url);
+      if (this.stopped) throw new Error("\u63D2\u4EF6\u5DF2\u5173\u95ED");
+      let source = response.text;
+      if (kind !== "fund" && response.arrayBuffer) {
+        try {
+          source = new TextDecoder("gb18030").decode(response.arrayBuffer);
+        } catch (e) {
+        }
+      }
+      const quote = kind === "fund" ? parseFundQuote(code, source, this.clock()) : parseStockQuote({ kind, code }, source, this.clock());
+      const old = this.state().quotes[key];
+      if (old && Date.parse(quote.asOf) < Date.parse(old.asOf)) throw new Error("\u6570\u636E\u6E90\u8FD4\u56DE\u8F83\u65E7\u884C\u60C5\uFF0C\u5DF2\u4FDD\u7559\u4E0A\u6B21\u62A5\u4EF7");
+      return quote;
+    })().finally(() => this.inflight.delete(key));
+    this.inflight.set(key, request);
+    return request;
   }
   async fetchBounded(url) {
     this.connections++;
@@ -10023,7 +10232,9 @@ var LedgerStatisticsPlugin = class extends import_obsidian10.Plugin {
       const response = await (0, import_obsidian10.requestUrl)({ url, method: "GET", throw: true });
       return { text: response.text, arrayBuffer: response.arrayBuffer };
     }, (quotes) => this.updateAssets((state) => {
-      for (const quote of quotes) applyAssetQuote(state, quote);
+      const active = new Set(state.accounts.filter((a) => !a.archived).map((a) => a.id));
+      const held = new Set(state.holdings.filter((h) => active.has(h.accountId)).map((h) => quoteKey(h.kind, h.code)));
+      for (const quote of quotes) if (held.has(quote.key)) applyAssetQuote(state, quote);
     }));
     this.settings.reportPreferences = normalizeReportPreferences(this.settings.reportPreferences);
     this.settings.reportCaches = normalizeReportCaches(this.settings.reportCaches);
@@ -10130,12 +10341,15 @@ var LedgerStatisticsPlugin = class extends import_obsidian10.Plugin {
   refreshAssetQuotes(force = false) {
     return this.assetQuotes.refresh(force);
   }
+  lookupAssetQuote(kind, code) {
+    return this.assetQuotes.lookup(kind, code);
+  }
   refreshAssetViews() {
     this.refreshViews();
   }
   updateAssets(change) {
     const operation = this.assetQueue.then(async () => {
-      if (this.assetsStopped) return;
+      if (this.assetsStopped) throw new Error("\u63D2\u4EF6\u5DF2\u5173\u95ED\uFF0C\u8BF7\u91CD\u65B0\u6253\u5F00\u8D44\u4EA7\u9875");
       const before = this.settings.assets, next = JSON.parse(JSON.stringify(before));
       change(next);
       storeAssetSnapshot(next, buildAssetSnapshot(next, flattenRecords(this.repository.files.values())));
