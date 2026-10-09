@@ -11,6 +11,22 @@ class Node {
   setPointerCapture() {}
 }
 const pointer = (id, x, y) => ({ pointerId: id, clientX: x, clientY: y, pointerType: 'touch', preventDefault() {} });
+
+test('expanded chart supports fitting, pinch zoom and panning without zoom buttons', () => {
+  const view = new Node(), svg = new Node();
+  enableAssetGestures(view, svg, null, true);
+  assert.equal(svg.style.width, '320px');
+  const initialScale = Number(view.attributes['data-zoom']);
+  view.listeners.pointerdown(pointer(1, 100, 100));
+  view.listeners.pointerdown(pointer(2, 200, 100));
+  view.listeners.pointermove(pointer(2, 300, 100));
+  assert.equal(Number(view.attributes['data-zoom']), initialScale * 2);
+  assert.equal(svg.style.width, '640px');
+  view.listeners.pointerup(pointer(2, 300, 100));
+  const before = view.scrollLeft;
+  view.listeners.pointermove(pointer(1, 80, 100));
+  assert.equal(view.scrollLeft, before + 20);
+});
 test('pinch zoom preserves the touched point, pans and suppresses accidental node activation', () => {
   const view = new Node(), svg = new Node(), controls = new Node(); enableAssetGestures(view, svg, controls);
   view.listeners.pointerdown(pointer(1, 100, 100)); view.listeners.pointerdown(pointer(2, 200, 100));

@@ -3,13 +3,13 @@ export function clampAssetZoom(value: number): number { return Math.max(.1, Math
 export function zoomScrollOffset(scroll: number, anchor: number, previous: number, next: number): number { return (scroll + anchor) * next / previous - anchor; }
 
 /** Chart-local touch gestures: no window listeners, page zoom, or persistent state. */
-export function enableAssetGestures(viewport: HTMLElement, svg: SVGSVGElement, tools: HTMLElement, fit = false): void {
+export function enableAssetGestures(viewport: HTMLElement, svg: SVGSVGElement, tools: HTMLElement | null, fit = false): void {
   let scale = 1, base = 0, baseHeight = 0, fitHeightLimit = 0, homeScale = 1, manuallyZoomed = false, dragged = false, suppressUntil = 0, origin: Point = { x: 0, y: 0 };
   const points = new Map<number, Point>();
-  const minus = tools.createEl("button", { cls: "ledger-button", text: "−", attr: { "aria-label": "缩小桑基图" } });
-  const reset = tools.createEl("button", { cls: "ledger-button ledger-assets-zoom-value", text: "100%", attr: { "aria-label": "重置桑基图缩放" } });
-  const plus = tools.createEl("button", { cls: "ledger-button", text: "+", attr: { "aria-label": "放大桑基图" } });
-  for (const button of [minus, reset, plus]) button.type = "button";
+  const minus = tools?.createEl("button", { cls: "ledger-button", text: "−", attr: { "aria-label": "缩小桑基图" } });
+  const reset = tools?.createEl("button", { cls: "ledger-button ledger-assets-zoom-value", text: "100%", attr: { "aria-label": "重置桑基图缩放" } });
+  const plus = tools?.createEl("button", { cls: "ledger-button", text: "+", attr: { "aria-label": "放大桑基图" } });
+  for (const button of [minus, reset, plus]) if (button) button.type = "button";
   const measure = (): void => {
     if (base) return;
     const rect = svg.getBoundingClientRect?.();
@@ -21,7 +21,7 @@ export function enableAssetGestures(viewport: HTMLElement, svg: SVGSVGElement, t
     measure(); const next = automatic ? Math.max(.01, Math.min(4, value)) : fit ? Math.max(Math.min(.1, homeScale), Math.min(4, value)) : clampAssetZoom(value), x = zoomScrollOffset(viewport.scrollLeft, anchor.x, scale, next), y = zoomScrollOffset(viewport.scrollTop, anchor.y, scale, next);
     svg.style.minWidth = "0"; svg.style.width = `${base * next}px`;
     viewport.scrollLeft = x; viewport.scrollTop = y; scale = next;
-    reset.setText(`${Math.round(scale * 100)}%`); viewport.setAttribute("data-zoom", String(scale));
+    reset?.setText(`${Math.round(scale * 100)}%`); viewport.setAttribute("data-zoom", String(scale));
   };
   const fitChart = (): void => {
     if (!viewport.clientWidth) return;
@@ -36,11 +36,11 @@ export function enableAssetGestures(viewport: HTMLElement, svg: SVGSVGElement, t
     homeScale = target; zoomAt(target, { x: 0, y: 0 }, true); viewport.scrollLeft = viewport.scrollTop = 0;
   };
   const center = (): Point => ({ x: viewport.clientWidth / 2, y: viewport.clientHeight / 2 });
-  minus.addEventListener("click", () => zoomAt(scale / 1.25, center()));
-  plus.addEventListener("click", () => zoomAt(scale * 1.25, center()));
-  reset.addEventListener("click", () => { manuallyZoomed = false; if (fit) { fitChart(); return; } scale = 1; base = 0; svg.style.width = ""; svg.style.minWidth = ""; viewport.scrollLeft = viewport.scrollTop = 0; reset.setText("100%"); viewport.setAttribute("data-zoom", "1"); });
+  minus?.addEventListener("click", () => zoomAt(scale / 1.25, center()));
+  plus?.addEventListener("click", () => zoomAt(scale * 1.25, center()));
+  reset?.addEventListener("click", () => { manuallyZoomed = false; if (fit) { fitChart(); return; } scale = 1; base = 0; svg.style.width = ""; svg.style.minWidth = ""; viewport.scrollLeft = viewport.scrollTop = 0; reset.setText("100%"); viewport.setAttribute("data-zoom", "1"); });
   if (fit) {
-    reset.setAttribute("aria-label", "查看桑基图全图");
+    reset?.setAttribute("aria-label", "查看桑基图全图");
     fitChart();
     if (typeof ResizeObserver !== "undefined") {
       let frame = 0;

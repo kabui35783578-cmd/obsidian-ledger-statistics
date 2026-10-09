@@ -57,7 +57,9 @@ test('reopening, rollover and backfills retain the saved text and original week 
       assert.equal(card.querySelector('.ledger-advisor-refresh').children.length, 0, 'refresh is an icon with no visible caption');
       assert.equal(sidebar.children[3], card.querySelector('.ledger-advisor-categories'));
       assert.equal(card.querySelector('.ledger-advisor-heading').querySelector('.ledger-advisor-refresh'), undefined);
-      assert.ok(card.querySelector('.ledger-advisor-daily-facts'), 'original yesterday spending and budget rows are retained');
+      assert.equal(card.querySelector('.ledger-advisor-daily-facts'), undefined, 'duplicate yesterday facts are removed');
+      assert.equal(card.querySelector('.ledger-advisor-ongoing'), undefined, 'ongoing reminders do not expand the insight');
+      assert.equal(card.querySelector('.ledger-advisor-ai-status'), undefined, 'generation timestamp does not occupy a row');
       assert.ok(card.querySelector('.ledger-advisor-categories'), 'original category references are retained');
       assert.equal(card.hasClass('is-ai-only'), false);
       assert.equal(card.all().some(el => el.textContent === '周预算 · 日预算 × 7' || el.textContent === '有效记账天数'), false);
@@ -132,6 +134,70 @@ function snapshot(data = files(), settings = {}, date = now) {
   v.plugin = { repository: { files: new Map(data.map((f, i) => [i, f])) }, settings: { dailyBudgetCents: 5000, budgetCategory: '', includeStarredInBudget: true, starredRecordIds: [], salaryCents: 600000, excludedCategories: [], fixedExpenses: [], insightHistory: [], ...settings } };
   return v.currentFinanceSnapshot(date);
 }
+
+test('only the visible and returned analysis body stays within 50 Unicode characters, preserving title and advice', async () => {
+  const s = snapshot();
+  const old = { ...ai.parseFinanceAdvice('🙂'.repeat(90), s), headline: '一条过长的洞察标题应当简化显示而不是占满手机屏幕', action: '接下来几天观察这一消费变化是否持续发生，再安排后续采购。', categoryLines: [{ category: '餐饮', text: '重复的分类分析。' }] };
+  const saved = structuredClone(old);
+  const compact = ai.compactFinanceAdvice(old);
+  const count = a => Array.from(a.judgment).length;
+  assert.ok(count(compact) <= 50);
+  assert.ok(!/[\uD800-\uDBFF]$/.test(compact.judgment));
+  assert.equal(compact.headline, old.headline);
+  assert.equal(compact.action, old.action);
+  assert.deepEqual(compact.categoryLines, old.categoryLines);
+  assert.deepEqual(old, saved);
+  const root = new Element();
+  renderFinanceAdvisor(root, s, { status: 'ready', advice: old, message: '', canRefresh: true }, () => {}, false);
+  assert.equal(root.querySelector('.ledger-advisor-judgment').textContent, compact.judgment);
+  let body;
+  global.__ledgerTestRequest = async request => {
+    body = JSON.parse(request.body);
+    return { status: 200, json: { choices: [{ message: { content: JSON.stringify({ headline: old.headline, cause_hypothesis: old.judgment, action: old.action }) } }] } };
+  };
+  try {
+    const result = await ai.requestFinanceAdvice({ endpoint: 'https://example.invalid/v1/chat/completions', model: 'test', apiKey: '' }, s);
+    assert.ok(count(result) <= 50);
+    assert.equal(result.headline, old.headline);
+    assert.equal(result.action, old.action);
+    assert.match(body.messages[0].content, /正文 cause_hypothesis 不得超过 50 字/);
+    assert.equal(body.max_completion_tokens, 600);
+  } finally { delete global.__ledgerTestRequest; }
+});
+
+test('next-day hint only appears for a stale cached analysis and never requests AI automatically', () => {
+  const data = files(), s = snapshot(data);
+  const cache = createFinanceAdviceCache(s, ai.parseFinanceAdvice('本周消费平稳。', s));
+  const v = Object.create(LedgerStatisticsView.prototype);
+  let requests = 0;
+  Object.assign(v, { contentEl: new Element(), financeAdviceError: '', financeAdviceLoading: false,
+    currentFinanceSnapshot: () => s, loadFinanceAdvice: () => requests++,
+    plugin: { repository: { files: new Map(data.map((f, i) => [i, f])) }, settings: { salaryCents: 600000, financeAiEnabled: true, financeAiEndpoint: 'https://example.invalid/v1', financeAiModel: 'test', financeAdviceCache: cache } } });
+  const current = new Element(); v.renderFinanceSection(current, false);
+  assert.equal(current.querySelector('.ledger-advisor-update-hint'), undefined);
+  v.currentFinanceSnapshot = () => snapshot(data, {}, new Date(2026, 9, 6));
+  const stale = new Element(); v.renderFinanceSection(stale, false);
+  assert.equal(stale.querySelector('.ledger-advisor-update-hint').textContent, '可更新');
+  assert.equal(requests, 0);
+  assert.deepEqual(v.plugin.settings.financeAdviceCache, cache);
+  stale.querySelector('.ledger-advisor-update-hint').listeners.click();
+  assert.equal(requests, 1);
+  v.financeAdviceLoading = true;
+  const loading = new Element(); v.renderFinanceSection(loading, false);
+  assert.equal(loading.querySelector('.ledger-advisor-update-hint'), undefined);
+});
+
+test('remaining salary and calibrated balances keep the negative sign after overspending', () => {
+  const s = snapshot([file('2026-10-04', 6100)]);
+  const root = new Element();
+  renderFinanceAdvisor(root, s, { status: 'local', advice: null, canRefresh: false, message: '' }, () => {}, false);
+  const remaining = root.querySelector('.ledger-advisor-remaining');
+  assert.equal(remaining.children[1].textContent, '-¥100.00');
+  assert.equal(remaining.hasClass('is-negative'), true);
+  const calibrated = new Element();
+  renderFinanceAdvisor(calibrated, s, { status: 'local', advice: null, canRefresh: false, message: '' }, () => {}, false, undefined, undefined, undefined, false, undefined, { remainingCents: -50, calibrated: true });
+  assert.equal(calibrated.querySelector('.ledger-advisor-remaining').children[1].textContent, '-¥0.50');
+});
 test('rolling seven days cross the month and compare equal preceding windows with four complete historical weeks', () => {
   const s = snapshot(), w = s.weekly;
   assert.deepEqual(w.range, { start: '2026-09-28', end: '2026-10-04' });

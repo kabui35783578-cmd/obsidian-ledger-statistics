@@ -53,26 +53,34 @@ export class AssetPanel {
     const state = this.plugin.settings.assets, snapshot = this.plugin.assetSnapshot(), totals = assetTotals(snapshot, state.excludeFixed);
     const money = (cents: number): string => state.hideAmounts ? "••••" : formatCents(cents);
     const root = parent.createDiv({ cls: "ledger-assets" });
-    const actions = root.createDiv({ cls: "ledger-assets-actions ledger-assets-main-actions" });
-    button(actions, "添加账户", () => this.accountForm());
+    const pageHeader = root.createDiv({ cls: "ledger-assets-header" });
+    const pageTitle = pageHeader.createDiv();
+    pageTitle.createDiv({ cls: "ledger-assets-badge", text: "ASSETS · LOCAL LEDGER" });
+    pageTitle.createSpan({ cls: "ledger-assets-subtitle", text: `${snapshot.accounts.length} 个账户 · 当前余额与持仓估值` });
+    const actions = pageHeader.createDiv({ cls: "ledger-assets-actions ledger-assets-main-actions" });
     button(actions, "添加持仓", () => this.holdingForm(), true);
     button(actions, "更多", () => this.toolsModal());
-    const hero = root.createDiv({ cls: "ledger-assets-hero" }), caption = hero.createDiv({ cls: "ledger-assets-caption" });
+    const hero = root.createDiv({ cls: "ledger-assets-hero ledger-reveal" });
+    const heroHeading = hero.createDiv({ cls: "ledger-assets-title-row ledger-assets-overview-heading" });
+    heroHeading.createEl("h3", { text: "资产总览" });
+    const toggle = heroHeading.createEl("label", { cls: "ledger-assets-toggle" }); toggle.createSpan({ text: "排除固定资产" });
+    const check = toggle.createEl("input", { type: "checkbox" }); check.checked = state.excludeFixed;
+    check.addEventListener("change", () => void this.save(s => { s.excludeFixed = check.checked; }).catch(e => new Notice(String(e))));
+    const overview = hero.createDiv({ cls: "ledger-assets-overview" });
+    const primary = overview.createDiv({ cls: "ledger-assets-primary-value" });
+    const caption = primary.createDiv({ cls: "ledger-assets-caption" });
     caption.createSpan({ text: totals.missing ? "已估值资产（元）" : "总资产（元）" });
     const privacy = button(caption, "", () => void this.save(s => { s.hideAmounts = !s.hideAmounts; }).catch(e => new Notice(String(e))));
     setIcon(privacy, state.hideAmounts ? "eye-off" : "eye");
     privacy.setAttribute("aria-label", state.hideAmounts ? "显示金额" : "隐藏金额");
-    const toggle = caption.createEl("label", { cls: "ledger-assets-toggle" }); toggle.createSpan({ text: "排除固定资产" });
-    const check = toggle.createEl("input", { type: "checkbox" }); check.checked = state.excludeFixed;
-    check.addEventListener("change", () => void this.save(s => { s.excludeFixed = check.checked; }).catch(e => new Notice(String(e))));
-    hero.createDiv({ cls: "ledger-assets-total", text: state.hideAmounts ? "••••" : formatCents(totals.assetsCents).replace("¥", "") });
-    const metrics = hero.createDiv({ cls: "ledger-assets-metrics" });
+    primary.createDiv({ cls: "ledger-assets-total", text: state.hideAmounts ? "••••" : formatCents(totals.assetsCents).replace("¥", "") });
+    const metrics = overview.createDiv({ cls: "ledger-assets-metrics" });
     for (const [label, value] of [["净资产", money(totals.netCents)], ["负债", money(totals.liabilitiesCents)], ["负债率", state.hideAmounts ? "••••" : totals.assetsCents > 0 ? `${(totals.liabilitiesCents / totals.assetsCents * 100).toFixed(1)}%` : "—"]]) {
       const metric = metrics.createDiv(); metric.createEl("small", { text: label }); if (label === "负债") {
         const debt = button(metric, `${value} ›`, () => this.liabilitiesModal()); debt.addClass("ledger-assets-metric-action"); debt.setAttribute("aria-label", "管理负债与还款");
       } else metric.createEl("strong", { text: value });
     }
-    const updates = hero.createDiv({ cls: "ledger-assets-update-row" });
+    const updates = primary.createDiv({ cls: "ledger-assets-update-row" });
     const latest = snapshot.accounts.flatMap(a => a.holdings.filter(h => h.quote && decimal(h.quote.price).gt(0)).map(h => h.quote!.asOf)).sort().reverse()[0];
     updates.createEl("small", { text: latest ? `行情 ${latest.replace("T", " ").slice(0, 16)}` : "当前余额" });
     const refresh = button(updates, "", () => { refresh.disabled = true; void this.plugin.refreshAssetQuotes(true).catch(e => new Notice(String(e))).finally(() => { refresh.disabled = false; }); });
@@ -82,22 +90,34 @@ export class AssetPanel {
     if (snapshot.pending.length) {
       const warning = root.createDiv({ cls: "ledger-assets-warning ledger-assets-compact-warning" }); warning.createSpan({ text: `${snapshot.pending.length}项变动待核对` }); button(warning, "查看", () => this.toolsModal());
     }
-    const card = root.createDiv({ cls: "ledger-assets-card ledger-assets-chart-card" }), heading = card.createDiv({ cls: "ledger-assets-title-row" });
+    const card = root.createDiv({ cls: "ledger-assets-card ledger-assets-chart-card ledger-reveal" });
+    card.createDiv({ cls: "ledger-assets-badge", text: "01 · COMPOSITION" });
+    const heading = card.createDiv({ cls: "ledger-assets-title-row" });
     heading.createEl("h3", { text: "资产组成" });
     const expand = button(heading, "", () => this.sankeyModal(snapshot)); setIcon(expand, "maximize-2"); expand.setAttribute("aria-label", "放大查看桑基图");
+    card.createDiv({ cls: "ledger-assets-subtitle", text: "带宽对应金额 · 颜色区分类别与持仓 · 点击查看详情" });
     renderAssetSankey(card, snapshot, state.excludeFixed, state.hideAmounts, (id, holdingId) => this.sankeySelect(id, holdingId));
+    card.createDiv({ cls: "ledger-assets-source", text: "CURRENT BALANCES · ACCOUNT & HOLDING VALUES" });
+  }
+  private renderAccounts(parent: HTMLElement, onSelect: (id: string) => void): void {
+    const state = this.plugin.settings.assets, snapshot = this.plugin.assetSnapshot();
+    const money = (cents: number): string => state.hideAmounts ? "••••" : formatCents(cents);
+    const accountSection = parent.createDiv({ cls: "ledger-assets-accounts-section" });
+    const accountHeading = accountSection.createDiv({ cls: "ledger-assets-title-row" });
+    accountHeading.createEl("h3", { text: "账户" });
+    accountHeading.createSpan({ cls: "ledger-assets-subtitle", text: `${snapshot.accounts.length} 个账户 · 点击管理余额与持仓` });
     if (snapshot.accounts.length) {
-      const grid = root.createDiv({ cls: "ledger-assets-account-grid" });
+      const grid = accountSection.createDiv({ cls: "ledger-assets-account-grid" });
       const maximum = Math.max(1, ...snapshot.accounts.map(a => Math.abs(a.cents)));
       for (const account of snapshot.accounts) {
-        const tile = button(grid, "", () => this.accountDetails(account.id)); tile.addClass("ledger-assets-account-tile");
+        const tile = button(grid, "", () => onSelect(account.id)); tile.addClass("ledger-assets-account-tile");
         tile.setAttribute("aria-label", `${account.name}，管理账户`);
         const title = tile.createDiv(); title.createSpan({ cls: `ledger-assets-dot is-${account.kind}` }); title.createSpan({ text: account.name });
         tile.createEl("strong", { text: money(account.cents) });
         tile.createEl("small", { text: account.missing ? "等待行情" : account.kind === "liability" ? `还款 · ${state.accounts.find(a => a.id === state.defaultCashId && !a.archived)?.name ?? "选择扣款账户"}` : account.id === state.defaultCashId ? "默认扣款" : ASSET_NAMES[account.kind] });
         const bar = tile.createDiv({ cls: "ledger-assets-account-bar" }), fill = bar.createDiv({ cls: `is-${account.kind}` }); fill.style.width = `${state.hideAmounts ? 0 : Math.abs(account.cents) / maximum * 100}%`;
       }
-    }
+    } else accountSection.createEl("p", { cls: "ledger-assets-empty", text: "暂无账户，点击添加账户开始记录。" });
   }
   private save(change: (state: LedgerStatisticsPlugin["settings"]["assets"]) => void): Promise<void> { return this.plugin.updateAssets(change); }
   private renderComparison(parent: HTMLElement, current: AssetSnapshot): void {
@@ -334,10 +354,17 @@ export class AssetPanel {
     }, "删除").open();
   }
   private toolsModal(): void {
-    const modal = new Modal(this.plugin.app); modal.setTitle("资产管理"); modal.modalEl.addClass("ledger-assets-modal");
+    const modal = new Modal(this.plugin.app); modal.setTitle("资产管理"); modal.modalEl.addClass("ledger-assets-modal", "ledger-assets-tools-modal");
     modal.onOpen = () => {
+      modal.contentEl.createDiv({ cls: "ledger-assets-badge", text: "MANAGE · LOCAL LEDGER" });
       const actions = modal.contentEl.createDiv({ cls: "ledger-assets-tool-grid" });
-      for (const [name, action] of [["记录交易", () => this.eventForm()], ["默认扣款账户", () => this.defaultForm()], ["核对流水", () => this.reviewForm()], ["交易关联", () => this.linkForm()], ["资产月历", () => this.calendarModal()]] as Array<[string, () => void]>) button(actions, name, () => { modal.close(); action(); });
+      for (const [name, icon, action] of [["添加账户", "wallet", () => this.accountForm()], ["记录交易", "arrow-left-right", () => this.eventForm()], ["默认扣款账户", "credit-card", () => this.defaultForm()], ["核对流水", "list-checks", () => this.reviewForm()], ["交易关联", "link", () => this.linkForm()], ["资产月历", "calendar-days", () => this.calendarModal()]] as Array<[string, string, () => void]>) {
+        const item = button(actions, "", () => { modal.close(); action(); }); item.addClass("ledger-assets-menu-item");
+        setIcon(item.createSpan({ cls: "ledger-assets-menu-icon" }), icon);
+        item.createSpan({ cls: "ledger-assets-menu-label", text: name });
+        setIcon(item.createSpan({ cls: "ledger-assets-menu-chevron" }), "chevron-right");
+      }
+      this.renderAccounts(modal.contentEl, id => { modal.close(); this.accountDetails(id); });
       for (const text of this.plugin.assetSnapshot().pending) modal.contentEl.createEl("p", { cls: "ledger-assets-hint", text: this.plugin.settings.assets.hideAmounts ? "有资金变动待核对" : text });
       const events = this.plugin.settings.assets.events;
       if (events.length) {
@@ -347,9 +374,9 @@ export class AssetPanel {
     }; modal.open();
   }
   private sankeyModal(snapshot: AssetSnapshot): void {
-    const modal = new Modal(this.plugin.app); modal.setTitle(`资产组成 · ${snapshot.date}`); modal.modalEl.addClass("ledger-assets-sankey-modal");
+    const modal = new Modal(this.plugin.app); modal.setTitle(`资产组成 · ${snapshot.date}`); modal.modalEl.addClass("ledger-assets-sankey-modal", "ledger-assets-sankey-expanded");
     const draw = (): void => {
-      modal.contentEl.empty(); renderAssetSankey(modal.contentEl, snapshot, this.plugin.settings.assets.excludeFixed, this.plugin.settings.assets.hideAmounts, (id, holdingId) => { modal.close(); this.sankeySelect(id, holdingId); });
+      modal.contentEl.empty(); renderAssetSankey(modal.contentEl, snapshot, this.plugin.settings.assets.excludeFixed, this.plugin.settings.assets.hideAmounts, (id, holdingId) => { modal.close(); this.sankeySelect(id, holdingId); }, false);
     };
     modal.onOpen = draw; modal.open();
   }

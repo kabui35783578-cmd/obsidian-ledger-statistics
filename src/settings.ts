@@ -13,7 +13,13 @@ import { defaultReportPreferences } from "./report";
 import { DEFAULT_REPORT_OBJECT_RULES, parseObjectRules } from "./report-config";
 import { AssetState, emptyAssets } from "./assets";
 
-export type LedgerViewId = "overview" | "category" | "trend" | "calendar" | "details" | "compare" | "report" | "assets";
+export type LedgerViewId = "overview" | "calendar" | "report" | "assets";
+
+export function normalizeLedgerView(value: unknown): LedgerViewId {
+  if (value === "details") return "calendar";
+  if (value === "calendar" || value === "report" || value === "assets") return value;
+  return "overview";
+}
 export type DefaultDatePreset = "today" | "week" | "month" | "salary" | "year";
 
 export interface LedgerSettings {
@@ -72,12 +78,8 @@ export const DEFAULT_SETTINGS: LedgerSettings = {
 
 const VIEW_NAMES: Record<LedgerViewId, string> = {
   overview: "总览",
-  category: "分类",
-  trend: "趋势",
   calendar: "日历",
-  details: "明细",
-  compare: "对比",
-  report: "支出报告",
+  report: "报告",
   assets: "资产"
 };
 

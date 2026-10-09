@@ -4,7 +4,7 @@ import { sharedRequestGate } from "./request-gate";
 import { flattenRecords, migrateStarredIds, renameStarredIds } from "./core";
 import { LedgerRepository } from "./repository";
 import { isBalanceCalibration } from "./balance";
-import { DEFAULT_SETTINGS, LedgerSettingTab, LedgerSettings } from "./settings";
+import { DEFAULT_SETTINGS, LedgerSettingTab, LedgerSettings, normalizeLedgerView } from "./settings";
 import { LedgerStatisticsView, LEDGER_VIEW_TYPE } from "./view";
 import { normalizeReportPreferences } from "./report";
 import { normalizeReportCaches } from "./report-ai";
@@ -23,6 +23,7 @@ export default class LedgerStatisticsPlugin extends Plugin {
 
   async onload(): Promise<void> {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<LedgerSettings> | null);
+    this.settings.defaultView = normalizeLedgerView(this.settings.defaultView);
     this.settings.assets = normalizeAssets(this.settings.assets);
     this.assetsStopped = false;
     this.assetQuotes = new AssetQuoteMonitor(() => this.settings.assets, async url => {
