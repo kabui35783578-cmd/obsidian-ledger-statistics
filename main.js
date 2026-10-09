@@ -5602,6 +5602,23 @@ function previousMonthSnapshot(state, date) {
   const prefix = isoFromDate(previous).slice(0, 7);
   return state.snapshots.filter((s) => s.date.startsWith(prefix)).sort((a, b) => b.date.localeCompare(a.date))[0];
 }
+function repayAssetLiability(state, liabilityId, cents, options = {}) {
+  var _a, _b, _c;
+  if (!validCents(cents) || cents <= 0) throw new Error("\u8FD8\u6B3E\u672C\u91D1\u987B\u5927\u4E8E\u96F6");
+  const now = (_a = options.now) != null ? _a : /* @__PURE__ */ new Date();
+  addAssetEvent(state, {
+    id: assetId(),
+    kind: "repay",
+    accountId: liabilityId,
+    cashAccountId: (_b = options.cashAccountId) != null ? _b : state.defaultCashId,
+    amountCents: cents,
+    feeCents: (_c = options.feeCents) != null ? _c : 0,
+    date: isoFromDate(now),
+    createdAt: now.toISOString(),
+    note: "\u8FD8\u6B3E",
+    link: options.link
+  });
+}
 function addAssetEvent(state, event) {
   var _a;
   if (state.events.some((e) => e.id === event.id)) throw new Error("\u8FD9\u7B14\u4EA4\u6613\u5DF2\u4FDD\u5B58");
@@ -8115,13 +8132,13 @@ var import_obsidian8 = require("obsidian");
 
 // src/asset-gestures.ts
 function clampAssetZoom(value) {
-  return Math.max(0.3, Math.min(4, value));
+  return Math.max(0.1, Math.min(4, value));
 }
 function zoomScrollOffset(scroll, anchor, previous, next) {
   return (scroll + anchor) * next / previous - anchor;
 }
-function enableAssetGestures(viewport, svg, tools) {
-  let scale = 1, base = 0, dragged = false, suppressUntil = 0, origin = { x: 0, y: 0 };
+function enableAssetGestures(viewport, svg, tools, fit = false) {
+  let scale = 1, base = 0, baseHeight = 0, fitHeightLimit = 0, homeScale = 1, manuallyZoomed = false, dragged = false, suppressUntil = 0, origin = { x: 0, y: 0 };
   const points = /* @__PURE__ */ new Map();
   const minus = tools.createEl("button", { cls: "ledger-button", text: "\u2212", attr: { "aria-label": "\u7F29\u5C0F\u6851\u57FA\u56FE" } });
   const reset = tools.createEl("button", { cls: "ledger-button ledger-assets-zoom-value", text: "100%", attr: { "aria-label": "\u91CD\u7F6E\u6851\u57FA\u56FE\u7F29\u653E" } });
@@ -8129,11 +8146,15 @@ function enableAssetGestures(viewport, svg, tools) {
   for (const button2 of [minus, reset, plus]) button2.type = "button";
   const measure = () => {
     var _a;
-    if (!base) base = ((_a = svg.getBoundingClientRect) == null ? void 0 : _a.call(svg).width) || Math.max(viewport.clientWidth || 0, 1080);
+    if (base) return;
+    const rect = (_a = svg.getBoundingClientRect) == null ? void 0 : _a.call(svg);
+    base = (rect == null ? void 0 : rect.width) || Math.max(viewport.clientWidth || 0, 1080);
+    baseHeight = (rect == null ? void 0 : rect.height) || 0;
   };
-  const zoomAt = (value, anchor) => {
+  const zoomAt = (value, anchor, automatic = false) => {
+    if (!automatic) manuallyZoomed = true;
     measure();
-    const next = clampAssetZoom(value), x = zoomScrollOffset(viewport.scrollLeft, anchor.x, scale, next), y = zoomScrollOffset(viewport.scrollTop, anchor.y, scale, next);
+    const next = automatic ? Math.max(0.01, Math.min(4, value)) : fit ? Math.max(Math.min(0.1, homeScale), Math.min(4, value)) : clampAssetZoom(value), x = zoomScrollOffset(viewport.scrollLeft, anchor.x, scale, next), y = zoomScrollOffset(viewport.scrollTop, anchor.y, scale, next);
     svg.style.minWidth = "0";
     svg.style.width = `${base * next}px`;
     viewport.scrollLeft = x;
@@ -8142,10 +8163,28 @@ function enableAssetGestures(viewport, svg, tools) {
     reset.setText(`${Math.round(scale * 100)}%`);
     viewport.setAttribute("data-zoom", String(scale));
   };
+  const fitChart = () => {
+    var _a;
+    if (!viewport.clientWidth) return;
+    measure();
+    const cap = typeof getComputedStyle === "function" ? getComputedStyle(viewport).maxHeight : "";
+    const pixels = (_a = cap.match(/[\d.]+px/g)) == null ? void 0 : _a.map((value) => parseFloat(value));
+    if ((pixels == null ? void 0 : pixels.length) && !cap.includes("vh")) fitHeightLimit = Math.min(...pixels);
+    else if (!fitHeightLimit) fitHeightLimit = viewport.clientHeight;
+    const target2 = Math.min(1, viewport.clientWidth / base, baseHeight && fitHeightLimit ? fitHeightLimit / baseHeight : 1);
+    homeScale = target2;
+    zoomAt(target2, { x: 0, y: 0 }, true);
+    viewport.scrollLeft = viewport.scrollTop = 0;
+  };
   const center = () => ({ x: viewport.clientWidth / 2, y: viewport.clientHeight / 2 });
   minus.addEventListener("click", () => zoomAt(scale / 1.25, center()));
   plus.addEventListener("click", () => zoomAt(scale * 1.25, center()));
   reset.addEventListener("click", () => {
+    manuallyZoomed = false;
+    if (fit) {
+      fitChart();
+      return;
+    }
     scale = 1;
     base = 0;
     svg.style.width = "";
@@ -8154,7 +8193,27 @@ function enableAssetGestures(viewport, svg, tools) {
     reset.setText("100%");
     viewport.setAttribute("data-zoom", "1");
   });
-  viewport.setAttribute("data-zoom", "1");
+  if (fit) {
+    reset.setAttribute("aria-label", "\u67E5\u770B\u6851\u57FA\u56FE\u5168\u56FE");
+    fitChart();
+    if (typeof ResizeObserver !== "undefined") {
+      let frame = 0;
+      const observer = new ResizeObserver(() => {
+        if (!viewport.isConnected) {
+          observer.disconnect();
+          if (frame) cancelAnimationFrame(frame);
+          return;
+        }
+        if (manuallyZoomed || frame) return;
+        if (typeof requestAnimationFrame === "function") frame = requestAnimationFrame(() => {
+          frame = 0;
+          if (viewport.isConnected && !manuallyZoomed) fitChart();
+        });
+        else fitChart();
+      });
+      observer.observe(viewport);
+    }
+  } else viewport.setAttribute("data-zoom", "1");
   viewport.setAttribute("aria-label", "\u8D44\u4EA7\u6851\u57FA\u56FE\uFF0C\u53CC\u6307\u7F29\u653E\uFF0C\u5355\u6307\u62D6\u52A8");
   viewport.addEventListener("wheel", (event) => {
     if (event.ctrlKey || event.metaKey) {
@@ -8248,14 +8307,14 @@ function interactive(node, text2, action) {
     }
   });
 }
-function renderAssetSankey(parent, snapshot, excludeFixed, hide, expanded, onExpand, onAccount) {
+function renderAssetSankey(parent, snapshot, excludeFixed, hide, onSelect) {
   const amounts = (cents) => hide ? "\u2022\u2022\u2022\u2022" : formatCents(cents);
   const visible = snapshot.accounts.filter((a) => a.kind !== "liability" && !(excludeFixed && a.kind === "fixed") && a.cents > 0);
   const kinds = ["cash", "fixed", "investment", "receivable"];
   const groups = kinds.map((kind) => ({ kind, accounts: visible.filter((a) => a.kind === kind) })).filter((g) => g.accounts.length);
   const rows = groups.flatMap((g) => g.accounts.flatMap((a) => {
     var _a;
-    if (!expanded.has(a.id) || a.kind !== "investment") return [{ account: a, id: a.id, name: a.name, cents: a.cents, holding: false }];
+    if (a.kind !== "investment") return [{ account: a, id: a.id, name: a.name, cents: a.cents, holding: false }];
     const cash = (_a = a.unallocatedCents) != null ? _a : a.cents - a.holdings.reduce((sum3, h) => {
       var _a2;
       return sum3 + ((_a2 = h.valueCents) != null ? _a2 : 0);
@@ -8265,7 +8324,7 @@ function renderAssetSankey(parent, snapshot, excludeFixed, hide, expanded, onExp
       var _a2;
       return ((_a2 = h.valueCents) != null ? _a2 : 0) > 0;
     }).map((h) => ({ account: a, id: h.id, name: h.name, cents: h.valueCents, holding: true }));
-    if (cash > 0) rows2.push({ account: a, id: `${a.id}-unallocated`, name: a.unallocatedCents === void 0 ? `${a.name} \xB7 \u73B0\u91D1` : "\u5F85\u6DFB\u52A0\u6301\u4ED3", cents: cash, holding: true });
+    if (cash > 0) rows2.push({ account: a, id: a.id, name: a.name, cents: cash, holding: false });
     return rows2;
   }));
   if (!rows.length) {
@@ -8277,7 +8336,7 @@ function renderAssetSankey(parent, snapshot, excludeFixed, hide, expanded, onExp
   const plotHeight = height - 130 - Math.max(0, rows.length - 1) * rowGap - Math.max(0, groups.length - 1) * 20;
   const scale = plotHeight / total3;
   const tools = parent.createDiv({ cls: "ledger-assets-zoom-tools" }), scroll = parent.createDiv({ cls: "ledger-assets-sankey-scroll" });
-  scroll.setAttribute("aria-label", "\u8D44\u4EA7\u7EC4\u6210\u6851\u57FA\u56FE\uFF0C\u53EF\u6A2A\u5411\u6ED1\u52A8\u5E76\u70B9\u51FB\u8D26\u6237\u5C55\u5F00");
+  scroll.setAttribute("aria-label", "\u8D44\u4EA7\u7EC4\u6210\u6851\u57FA\u56FE\uFF0C\u76F4\u63A5\u5C55\u793A\u8D26\u6237\u4F59\u989D\u4E0E\u6301\u4ED3");
   const svg = document.createElementNS(NS2, "svg");
   svg.setAttribute("viewBox", `0 0 1240 ${height}`);
   svg.setAttribute("class", "ledger-assets-sankey");
@@ -8326,16 +8385,16 @@ function renderAssetSankey(parent, snapshot, excludeFixed, hide, expanded, onExp
       const node = el2("g", {}, svg), middle = y + h / 2;
       el2("rect", { x: 955, y: middle - 22, width: 282, height: 44, fill: "transparent" }, node);
       const name = row.name.length > 17 ? `${row.name.slice(0, 16)}\u2026` : row.name;
-      label(node, 967, middle - 8, `${name}${row.account.kind === "investment" && !row.holding ? " \u203A" : ""}`, 16);
+      label(node, 967, middle - 8, name, 16);
       label(node, 967, middle + 12, amounts(row.cents), 14);
-      el2("title", {}, node).textContent = `${row.name} ${amounts(row.cents)}`;
-      interactive(node, `${row.name}\uFF0C${amounts(row.cents)}\uFF0C\u67E5\u770B\u8BE6\u60C5`, () => row.account.kind === "investment" && !row.holding ? onExpand(row.account.id) : onAccount(row.account.id));
+      el2("title", {}, node).textContent = `${row.holding ? `${row.account.name} \xB7 ` : ""}${row.name} ${amounts(row.cents)}`;
+      interactive(node, `${row.name}\uFF0C${amounts(row.cents)}${row.holding ? `\uFF0C\u6765\u81EA${row.account.name}` : ""}\uFF0C\u67E5\u770B\u8BE6\u60C5`, () => onSelect(row.account.id, row.holding ? row.id : void 0));
       source += h;
     });
     rootCursor += groupHeight;
   }
   if (snapshot.accounts.some((a) => a.cents < 0) || totals.netCents < 0) parent.createEl("p", { cls: "ledger-assets-hint", text: `\u6851\u57FA\u56FE\u5C55\u793A\u6B63\u8D44\u4EA7\uFF1B\u8D1F\u4F59\u989D\u4E0E\u51C0\u8D44\u4EA7\u7F3A\u53E3\u4FDD\u7559\u5728\u603B\u89C8\u53CA\u8D26\u6237\u5217\u8868\u4E2D${hide ? "\u3002" : `\uFF1A${snapshot.accounts.filter((a) => a.cents < 0).map((a) => `${a.name} ${formatCents(a.cents)}`).join("\uFF1B") || formatCents(totals.netCents)}`}` });
-  enableAssetGestures(scroll, svg, tools);
+  enableAssetGestures(scroll, svg, tools, true);
 }
 
 // src/asset-ui.ts
@@ -8420,12 +8479,12 @@ var AssetFormModal = class extends import_obsidian8.Modal {
 var AssetPanel = class {
   constructor(plugin) {
     this.plugin = plugin;
-    this.expanded = /* @__PURE__ */ new Set();
   }
   records() {
     return flattenRecords(this.plugin.repository.files.values());
   }
   render(parent) {
+    var _a, _b;
     const state = this.plugin.settings.assets, snapshot = this.plugin.assetSnapshot(), totals = assetTotals(snapshot, state.excludeFixed);
     const money3 = (cents) => state.hideAmounts ? "\u2022\u2022\u2022\u2022" : formatCents(cents);
     const root = parent.createDiv({ cls: "ledger-assets" });
@@ -8452,7 +8511,11 @@ var AssetPanel = class {
     for (const [label2, value] of [["\u51C0\u8D44\u4EA7", money3(totals.netCents)], ["\u8D1F\u503A", money3(totals.liabilitiesCents)], ["\u8D1F\u503A\u7387", state.hideAmounts ? "\u2022\u2022\u2022\u2022" : totals.assetsCents > 0 ? `${(totals.liabilitiesCents / totals.assetsCents * 100).toFixed(1)}%` : "\u2014"]]) {
       const metric2 = metrics.createDiv();
       metric2.createEl("small", { text: label2 });
-      metric2.createEl("strong", { text: value });
+      if (label2 === "\u8D1F\u503A") {
+        const debt = button(metric2, `${value} \u203A`, () => this.liabilitiesModal());
+        debt.addClass("ledger-assets-metric-action");
+        debt.setAttribute("aria-label", "\u7BA1\u7406\u8D1F\u503A\u4E0E\u8FD8\u6B3E");
+      } else metric2.createEl("strong", { text: value });
     }
     const updates = hero.createDiv({ cls: "ledger-assets-update-row" });
     const latest = snapshot.accounts.flatMap((a) => a.holdings.filter((h) => h.quote && decimal2(h.quote.price).gt(0)).map((h) => h.quote.asOf)).sort().reverse()[0];
@@ -8476,10 +8539,7 @@ var AssetPanel = class {
     const expand = button(heading, "", () => this.sankeyModal(snapshot));
     (0, import_obsidian8.setIcon)(expand, "maximize-2");
     expand.setAttribute("aria-label", "\u653E\u5927\u67E5\u770B\u6851\u57FA\u56FE");
-    renderAssetSankey(card2, snapshot, state.excludeFixed, state.hideAmounts, this.expanded, (id) => {
-      this.expanded.has(id) ? this.expanded.delete(id) : this.expanded.add(id);
-      this.plugin.refreshAssetViews();
-    }, (id) => this.accountDetails(id));
+    renderAssetSankey(card2, snapshot, state.excludeFixed, state.hideAmounts, (id, holdingId) => this.sankeySelect(id, holdingId));
     if (snapshot.accounts.length) {
       const grid = root.createDiv({ cls: "ledger-assets-account-grid" });
       const maximum = Math.max(1, ...snapshot.accounts.map((a) => Math.abs(a.cents)));
@@ -8491,7 +8551,7 @@ var AssetPanel = class {
         title.createSpan({ cls: `ledger-assets-dot is-${account.kind}` });
         title.createSpan({ text: account.name });
         tile.createEl("strong", { text: money3(account.cents) });
-        tile.createEl("small", { text: account.missing ? "\u7B49\u5F85\u884C\u60C5" : account.id === state.defaultCashId ? "\u9ED8\u8BA4\u6263\u6B3E" : ASSET_NAMES[account.kind] });
+        tile.createEl("small", { text: account.missing ? "\u7B49\u5F85\u884C\u60C5" : account.kind === "liability" ? `\u8FD8\u6B3E \xB7 ${(_b = (_a = state.accounts.find((a) => a.id === state.defaultCashId && !a.archived)) == null ? void 0 : _a.name) != null ? _b : "\u9009\u62E9\u6263\u6B3E\u8D26\u6237"}` : account.id === state.defaultCashId ? "\u9ED8\u8BA4\u6263\u6B3E" : ASSET_NAMES[account.kind] });
         const bar = tile.createDiv({ cls: "ledger-assets-account-bar" }), fill = bar.createDiv({ cls: `is-${account.kind}` });
         fill.style.width = `${state.hideAmounts ? 0 : Math.abs(account.cents) / maximum * 100}%`;
       }
@@ -8527,17 +8587,17 @@ var AssetPanel = class {
       column.createEl("small", { text: ASSET_NAMES[v.kind] });
     }
   }
-  accountForm(existing) {
+  accountForm(existing, preferredKind = "cash") {
     new AssetFormModal(this.plugin, existing ? "\u7F16\u8F91\u8D26\u6237" : "\u6DFB\u52A0\u8D26\u6237", (body) => {
       var _a, _b, _c, _d;
       const name = input(body, "\u8D26\u6237\u540D\u79F0", (_a = existing == null ? void 0 : existing.name) != null ? _a : "");
-      const kind = select(body, "\u7C7B\u522B", Object.entries(ASSET_NAMES), (_b = existing == null ? void 0 : existing.kind) != null ? _b : "cash");
+      const kind = select(body, "\u7C7B\u522B", Object.entries(ASSET_NAMES), (_b = existing == null ? void 0 : existing.kind) != null ? _b : preferredKind);
       kind.disabled = !!existing;
       const valued = existing && this.plugin.assetSnapshot().accounts.find((a) => a.id === existing.id);
       const initial = existing ? existing.kind === "investment" ? (_c = valued == null ? void 0 : valued.unallocatedCents) != null ? _c : existing.balanceCents : (_d = valued == null ? void 0 : valued.cents) != null ? _d : existing.balanceCents : 0;
       const balance = input(body, (existing == null ? void 0 : existing.kind) === "investment" ? "\u5F85\u5206\u914D\u91D1\u989D\uFF08\u5143\uFF09" : "\u5F53\u524D\u91D1\u989D\uFF08\u5143\uFF09", (initial / 100).toFixed(2));
       const allocation = body.createEl("small", { cls: "ledger-assets-hint", text: "\u6DFB\u52A0\u6301\u4ED3\u65F6\uFF0C\u4F1A\u81EA\u52A8\u4ECE\u8FD9\u7B14\u91D1\u989D\u4E2D\u5206\u914D\uFF0C\u907F\u514D\u91CD\u590D\u8BA1\u7B97\u3002" });
-      const useDefault = input(body, "\u4F5C\u4E3A\u9ED8\u8BA4\u6D88\u8D39\u6263\u6B3E\u8D26\u6237", "", "checkbox");
+      const useDefault = input(body, "\u4F5C\u4E3A\u9ED8\u8BA4\u6263\u6B3E\u8D26\u6237", "", "checkbox");
       useDefault.checked = existing ? existing.id === this.plugin.settings.assets.defaultCashId : !this.plugin.settings.assets.defaultCashId;
       const updateFields = () => {
         allocation.hidden = kind.value !== "investment";
@@ -8685,9 +8745,9 @@ var AssetPanel = class {
       this.accountForm();
       return;
     }
-    new AssetFormModal(this.plugin, "\u9ED8\u8BA4\u6D88\u8D39\u6263\u6B3E\u8D26\u6237", (body) => {
+    new AssetFormModal(this.plugin, "\u9ED8\u8BA4\u6263\u6B3E\u8D26\u6237", (body) => {
       const account = select(body, "\u73B0\u91D1\u8D26\u6237", accounts.map((a) => [a.id, a.name]), this.plugin.settings.assets.defaultCashId);
-      body.createEl("p", { text: "\u5207\u6362\u4ECE\u5F53\u524D\u65F6\u70B9\u751F\u6548\uFF0C\u5DF2\u53D1\u751F\u7684\u5386\u53F2\u6D88\u8D39\u7559\u5728\u539F\u8D26\u6237\u3002\u4E4B\u540E\u6240\u6709\u5DF2\u8BB0\u8D26\u652F\u51FA\u9ED8\u8BA4\u6263\u6B64\u8D26\u6237\uFF0C\u4E0E\u6D88\u8D39\u9875\u9762\u7684\u7B5B\u9009\u65E0\u5173\u3002" });
+      body.createEl("p", { text: "\u5207\u6362\u4ECE\u5F53\u524D\u65F6\u70B9\u751F\u6548\uFF0C\u5DF2\u53D1\u751F\u7684\u5386\u53F2\u6D88\u8D39\u7559\u5728\u539F\u8D26\u6237\u3002\u4E4B\u540E\u6240\u6709\u5DF2\u8BB0\u8D26\u652F\u51FA\u548C\u5FEB\u6377\u8FD8\u6B3E\u9ED8\u8BA4\u6263\u6B64\u8D26\u6237\uFF0C\u4E0E\u6D88\u8D39\u9875\u9762\u7684\u7B5B\u9009\u65E0\u5173\u3002" });
       return () => this.save((s) => setDefaultCash(s, account.value, this.records(), /* @__PURE__ */ new Date()));
     }).open();
   }
@@ -8732,6 +8792,71 @@ var AssetPanel = class {
       });
     }).open();
   }
+  sankeySelect(accountId, holdingId) {
+    const holding = holdingId && this.plugin.settings.assets.holdings.find((h) => h.id === holdingId && h.accountId === accountId);
+    if (holding) this.holdingCorrection(holding);
+    else this.accountDetails(accountId);
+  }
+  liabilitiesModal() {
+    const state = this.plugin.settings.assets, liabilities = this.plugin.assetSnapshot().accounts.filter((a) => a.kind === "liability");
+    if (!liabilities.length) {
+      this.accountForm(void 0, "liability");
+      return;
+    }
+    const modal = new import_obsidian8.Modal(this.plugin.app);
+    modal.setTitle("\u8D1F\u503A\u4E0E\u8FD8\u6B3E");
+    modal.modalEl.addClass("ledger-assets-modal");
+    modal.onOpen = () => {
+      for (const account of liabilities) {
+        const row = modal.contentEl.createDiv({ cls: "ledger-assets-position-row" }), info = row.createDiv();
+        info.createEl("strong", { text: account.name });
+        info.createEl("small", { text: state.hideAmounts ? "\u2022\u2022\u2022\u2022" : formatCents(account.cents) });
+        button(row, "\u8FD8\u6B3E", () => {
+          modal.close();
+          this.repaymentForm(account.id);
+        }, true);
+        button(row, "\u7BA1\u7406", () => {
+          modal.close();
+          this.accountDetails(account.id);
+        });
+      }
+      button(modal.contentEl, "\u6DFB\u52A0\u8D1F\u503A", () => {
+        modal.close();
+        this.accountForm(void 0, "liability");
+      });
+    };
+    modal.open();
+  }
+  repaymentForm(liabilityId) {
+    var _a, _b;
+    const state = this.plugin.settings.assets, accounts = state.accounts.filter((a) => a.kind === "cash" && !a.archived);
+    if (!accounts.length) {
+      new import_obsidian8.Notice("\u8BF7\u5148\u6DFB\u52A0\u73B0\u91D1\u8D26\u6237\u7528\u4E8E\u8FD8\u6B3E");
+      this.accountForm();
+      return;
+    }
+    new AssetFormModal(this.plugin, `${(_b = (_a = state.accounts.find((a) => a.id === liabilityId)) == null ? void 0 : _a.name) != null ? _b : "\u8D1F\u503A"} \xB7 \u8FD8\u6B3E`, (body, active) => {
+      var _a2;
+      const defaultId = (_a2 = accounts.find((a) => a.id === state.defaultCashId)) == null ? void 0 : _a2.id;
+      const cash = accounts.length > 1 || !defaultId ? select(body, "\u6263\u6B3E\u8D26\u6237", accounts.map((a) => [a.id, a.name]), defaultId) : null;
+      if (!cash) body.createEl("small", { cls: "ledger-assets-hint", text: `\u6263\u6B3E\u8D26\u6237\uFF1A${accounts[0].name}` });
+      const amount = input(body, "\u8FD8\u6B3E\u672C\u91D1\uFF08\u5143\uFF09");
+      amount.inputMode = "decimal";
+      const extra = body.createEl("details", { cls: "ledger-assets-advanced" });
+      extra.createEl("summary", { text: "\u8D39\u7528\u4E0E\u8D26\u672C\u5173\u8054" });
+      const fee = input(extra, "\u5229\u606F\uFF0F\u624B\u7EED\u8D39\uFF08\u5143\uFF09", "0");
+      const records = this.records(), linked = select(extra, "\u5173\u8054\u5DF2\u8BB0\u8D26\u8FD8\u6B3E", [["", "\u672A\u8BB0\u5728\u8D26\u672C"], ...records.map((r) => [r.id, `${r.date} ${formatCents(r.cents)} ${r.note || r.category}`])]);
+      return async () => {
+        var _a3;
+        const cents = moneyCents(amount.value), feeCents = moneyCents(fee.value), cashAccountId = (_a3 = cash == null ? void 0 : cash.value) != null ? _a3 : defaultId, now = /* @__PURE__ */ new Date();
+        const link = linked.value ? linkRecord(records.find((r) => r.id === linked.value)) : void 0;
+        await this.save((s) => {
+          if (!active()) throw new Error("\u5DF2\u53D6\u6D88\u8FD8\u6B3E");
+          repayAssetLiability(s, liabilityId, cents, { cashAccountId, feeCents, link, now });
+        });
+      };
+    }, "\u786E\u8BA4\u8FD8\u6B3E").open();
+  }
   accountDetails(id) {
     const account = this.plugin.settings.assets.accounts.find((a) => a.id === id && !a.archived), valued = this.plugin.assetSnapshot().accounts.find((a) => a.id === id);
     if (!account || !valued) return;
@@ -8746,6 +8871,10 @@ var AssetPanel = class {
         modal.close();
         this.accountForm(account);
       });
+      if (account.kind === "liability") button(actions, "\u8FD8\u6B3E", () => {
+        modal.close();
+        this.repaymentForm(id);
+      }, true);
       if (account.kind === "investment") button(actions, "\u6DFB\u52A0\u6301\u4ED3", () => {
         modal.close();
         this.holdingForm(id);
@@ -8805,12 +8934,12 @@ var AssetPanel = class {
     const modal = new import_obsidian8.Modal(this.plugin.app);
     modal.setTitle(`\u8D44\u4EA7\u7EC4\u6210 \xB7 ${snapshot.date}`);
     modal.modalEl.addClass("ledger-assets-sankey-modal");
-    const expanded = new Set(this.expanded), draw = () => {
+    const draw = () => {
       modal.contentEl.empty();
-      renderAssetSankey(modal.contentEl, snapshot, this.plugin.settings.assets.excludeFixed, this.plugin.settings.assets.hideAmounts, expanded, (id) => {
-        expanded.has(id) ? expanded.delete(id) : expanded.add(id);
-        draw();
-      }, (id) => this.accountDetails(id));
+      renderAssetSankey(modal.contentEl, snapshot, this.plugin.settings.assets.excludeFixed, this.plugin.settings.assets.hideAmounts, (id, holdingId) => {
+        modal.close();
+        this.sankeySelect(id, holdingId);
+      });
     };
     modal.onOpen = draw;
     modal.open();
@@ -8834,15 +8963,9 @@ var AssetPanel = class {
         const snapshot = snapshots.find((s) => s.date === selected), totals = assetTotals(snapshot, state.excludeFixed);
         detail.createEl("h3", { text: `${snapshot.date} \xB7 ${state.hideAmounts ? "\u2022\u2022\u2022\u2022" : formatCents(totals.assetsCents)}${totals.missing ? " \xB7 \u4F30\u503C\u4E0D\u5B8C\u6574" : ""}` });
         detail.createEl("p", { cls: "ledger-assets-hint", text: `\u4FDD\u5B58\u4E8E ${new Date(snapshot.savedAt).toLocaleString()}\uFF0C\u884C\u60C5\u65E5\u671F\u4FDD\u7559\u5F53\u65F6\u503C\u3002` });
-        const expanded = /* @__PURE__ */ new Set(), chart = detail.createDiv(), render = () => {
-          chart.empty();
-          renderAssetSankey(chart, snapshot, state.excludeFixed, state.hideAmounts, expanded, (id) => {
-            expanded.has(id) ? expanded.delete(id) : expanded.add(id);
-            render();
-          }, () => {
-          });
-        };
-        render();
+        const chart = detail.createDiv();
+        renderAssetSankey(chart, snapshot, state.excludeFixed, state.hideAmounts, () => {
+        });
         for (const a of snapshot.accounts) detail.createEl("p", { text: `${a.name} \xB7 ${state.hideAmounts ? "\u2022\u2022\u2022\u2022" : formatCents(a.cents)}${a.missing ? " \xB7 \u672A\u5B8C\u6574\u4F30\u503C" : ""}` });
       };
       const drawMonth = () => {

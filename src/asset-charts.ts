@@ -48,18 +48,18 @@ function interactive(node: SVGElement, text: string, action: () => void): void {
   node.addEventListener("click", action);
   node.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); action(); } });
 }
-export function renderAssetSankey(parent: HTMLElement, snapshot: AssetSnapshot, excludeFixed: boolean, hide: boolean, expanded: Set<string>, onExpand: (id: string) => void, onAccount: (id: string) => void): void {
+export function renderAssetSankey(parent: HTMLElement, snapshot: AssetSnapshot, excludeFixed: boolean, hide: boolean, onSelect: (accountId: string, holdingId?: string) => void): void {
   const amounts = (cents: number): string => hide ? "••••" : formatCents(cents);
   const visible = snapshot.accounts.filter(a => a.kind !== "liability" && !(excludeFixed && a.kind === "fixed") && a.cents > 0);
   const kinds: AssetKind[] = ["cash", "fixed", "investment", "receivable"];
   const groups = kinds.map(kind => ({ kind, accounts: visible.filter(a => a.kind === kind) })).filter(g => g.accounts.length);
   const rows = groups.flatMap(g => g.accounts.flatMap(a => {
-    if (!expanded.has(a.id) || a.kind !== "investment") return [{ account: a, id: a.id, name: a.name, cents: a.cents, holding: false }];
+    if (a.kind !== "investment") return [{ account: a, id: a.id, name: a.name, cents: a.cents, holding: false }];
     const cash = a.unallocatedCents ?? a.cents - a.holdings.reduce((sum, h) => sum + (h.valueCents ?? 0), 0);
     // Negative cash cannot be a positive flow; retain the aggregate in that case.
     if (cash < 0) return [{ account: a, id: a.id, name: a.name, cents: a.cents, holding: false }];
     const rows = a.holdings.filter(h => (h.valueCents ?? 0) > 0).map(h => ({ account: a, id: h.id, name: h.name, cents: h.valueCents!, holding: true }));
-    if (cash > 0) rows.push({ account: a, id: `${a.id}-unallocated`, name: a.unallocatedCents === undefined ? `${a.name} · 现金` : "待添加持仓", cents: cash, holding: true });
+    if (cash > 0) rows.push({ account: a, id: a.id, name: a.name, cents: cash, holding: false });
     return rows;
   }));
   if (!rows.length) { parent.createEl("p", { cls: "ledger-assets-empty", text: snapshot.accounts.length ? "当前没有可绘制的正资产；未估值持仓、负余额与净资产缺口请查看总览和账户。" : "添加账户和持仓后，这里显示资产组成桑基图。" }); return; }
@@ -68,7 +68,7 @@ export function renderAssetSankey(parent: HTMLElement, snapshot: AssetSnapshot, 
   const plotHeight = height - 130 - Math.max(0, rows.length - 1) * rowGap - Math.max(0, groups.length - 1) * 20;
   const scale = plotHeight / total;
   const tools = parent.createDiv({ cls: "ledger-assets-zoom-tools" }), scroll = parent.createDiv({ cls: "ledger-assets-sankey-scroll" });
-  scroll.setAttribute("aria-label", "资产组成桑基图，可横向滑动并点击账户展开");
+  scroll.setAttribute("aria-label", "资产组成桑基图，直接展示账户余额与持仓");
   const svg = document.createElementNS(NS, "svg");
   svg.setAttribute("viewBox", `0 0 1240 ${height}`); svg.setAttribute("class", "ledger-assets-sankey");
   svg.setAttribute("role", "group"); svg.setAttribute("aria-label", "资产总量、资产类别、账户组成"); scroll.appendChild(svg);
@@ -110,14 +110,14 @@ export function renderAssetSankey(parent: HTMLElement, snapshot: AssetSnapshot, 
       const node = el("g", {}, svg), middle = y + h / 2;
       el("rect", { x: 955, y: middle - 22, width: 282, height: 44, fill: "transparent" }, node);
       const name = row.name.length > 17 ? `${row.name.slice(0, 16)}…` : row.name;
-      label(node, 967, middle - 8, `${name}${row.account.kind === "investment" && !row.holding ? " ›" : ""}`, 16);
+      label(node, 967, middle - 8, name, 16);
       label(node, 967, middle + 12, amounts(row.cents), 14);
-      el("title", {}, node).textContent = `${row.name} ${amounts(row.cents)}`;
-      interactive(node, `${row.name}，${amounts(row.cents)}，查看详情`, () => row.account.kind === "investment" && !row.holding ? onExpand(row.account.id) : onAccount(row.account.id));
+      el("title", {}, node).textContent = `${row.holding ? `${row.account.name} · ` : ""}${row.name} ${amounts(row.cents)}`;
+      interactive(node, `${row.name}，${amounts(row.cents)}${row.holding ? `，来自${row.account.name}` : ""}，查看详情`, () => onSelect(row.account.id, row.holding ? row.id : undefined));
       source += h;
     });
     rootCursor += groupHeight;
   }
   if (snapshot.accounts.some(a => a.cents < 0) || totals.netCents < 0) parent.createEl("p", { cls: "ledger-assets-hint", text: `桑基图展示正资产；负余额与净资产缺口保留在总览及账户列表中${hide ? "。" : `：${snapshot.accounts.filter(a => a.cents < 0).map(a => `${a.name} ${formatCents(a.cents)}`).join("；") || formatCents(totals.netCents)}`}` });
-  enableAssetGestures(scroll, svg, tools);
+  enableAssetGestures(scroll, svg, tools, true);
 }

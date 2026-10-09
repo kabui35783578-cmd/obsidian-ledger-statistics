@@ -376,3 +376,25 @@ test('late quotes do not initialize legacy holdings on deleted accounts', () => 
   a.applyAssetQuote(state,{key:'fund:000001',name:'基金',price:'1',asOf:now.toISOString(),fetchedAt:now.toISOString()});
   assert.equal(h.quantity,'0');
 });
+
+
+test('quick repayments use the current default cash account and persist their original cash leg', () => {
+  const state=fixture();
+  a.repayAssetLiability(state,'loan',10000,{now:at(12),feeCents:100});
+  assert.equal(balances(state).cash,89900);assert.equal(balances(state).loan,40000);
+  a.setDefaultCash(state,'other',[],at(13));
+  a.repayAssetLiability(state,'loan',5000,{now:at(14)});
+  const restored=a.normalizeAssets(clone(state));
+  assert.equal(balances(restored).cash,89900);assert.equal(balances(restored).other,-5000);assert.equal(balances(restored).loan,35000);
+  assert.throws(()=>a.repayAssetLiability(state,'loan',35001),/尚欠/);
+  assert.equal(state.events.length,2);
+});
+
+test('quick repayment links a recorded payment once and requires a valid cash account', () => {
+  const state=fixture(),rs=records('- 10:00 | 债务/还款 | Y10.00 (还款)');
+  a.repayAssetLiability(state,'loan',1000,{now:at(12),link:a.linkRecord(rs[0])});
+  assert.equal(balances(state,rs).cash,99000);assert.equal(balances(state,rs).loan,49000);
+  assert.throws(()=>a.repayAssetLiability(state,'loan',1000,{link:a.linkRecord(rs[0])}),/已关联/);
+  state.defaultCashId='';assert.throws(()=>a.repayAssetLiability(state,'loan',1000),/现金账户/);
+  assert.throws(()=>a.repayAssetLiability(state,'loan',0),/大于零/);
+});

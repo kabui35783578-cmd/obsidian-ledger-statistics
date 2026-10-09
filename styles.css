@@ -3479,3 +3479,7 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
   .ledger-assets-ring { max-width: 220px; justify-self: center; }
   .ledger-assets-allocation-legend { gap: 12px; }
 }
+
+.ledger-assets-metrics .ledger-assets-metric-action { padding: 0; background: transparent; color: inherit; text-align: left; width: fit-content; font-size: 15px; font-weight: 650; }
+.ledger-assets-metrics > div > strong { align-self: center; }
+@media (max-width: 600px) { .ledger-assets-metrics .ledger-assets-metric-action { font-size: 13px; } }

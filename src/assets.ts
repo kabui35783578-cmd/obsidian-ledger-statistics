@@ -268,6 +268,14 @@ export function previousMonthSnapshot(state: AssetState, date: string): AssetSna
   const prefix = isoFromDate(previous).slice(0, 7);
   return state.snapshots.filter(s => s.date.startsWith(prefix)).sort((a, b) => b.date.localeCompare(a.date))[0];
 }
+/** Cash linking is explicit; opening debt balances never invents cash income. */
+export function repayAssetLiability(state: AssetState, liabilityId: string, cents: number, options: { cashAccountId?: string; feeCents?: number; link?: LedgerLink; now?: Date } = {}): void {
+  if (!validCents(cents) || cents <= 0) throw new Error("还款本金须大于零");
+  const now = options.now ?? new Date();
+  addAssetEvent(state, { id: assetId(), kind: "repay", accountId: liabilityId,
+    cashAccountId: options.cashAccountId ?? state.defaultCashId, amountCents: cents, feeCents: options.feeCents ?? 0,
+    date: isoFromDate(now), createdAt: now.toISOString(), note: "还款", link: options.link });
+}
 export function addAssetEvent(state: AssetState, event: AssetEvent): void {
   if (state.events.some(e => e.id === event.id)) throw new Error("这笔交易已保存");
   if (!isValidIsoDate(event.date) || event.date > isoFromDate(new Date())) throw new Error("请填写已确认交易的日期，不能填写未来日期");

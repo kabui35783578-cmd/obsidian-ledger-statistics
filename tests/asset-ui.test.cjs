@@ -62,3 +62,29 @@ test('save failure remains visible and allows retry without claiming success', a
   assert.equal(save.disabled, false); assert.equal(save.textContent, '添加');
   fail = false; await submit(modal); assert.equal(modal.closed, true);
 });
+
+
+test('repayment shortcut preselects default cash and debits only confirmed principal plus fees', async () => {
+  const p=plugin(),state=p.settings.assets,now=new Date();
+  const account=(id,kind,cents)=>({id,name:id,kind,balanceCents:cents,baselineAt:now.toISOString(),includedEventIds:[],includedRecordIds:[]});
+  state.accounts.push(account('cash','cash',100000),account('other','cash',0),account('debt','liability',50000));
+  state.defaultCashId='cash';
+  new AssetPanel(p).repaymentForm('debt');const modal=Modal.last;
+  assert.equal(field(modal,'扣款账户').value,'cash');field(modal,'还款本金（元）').value='100';field(modal,'利息／手续费（元）').value='1';field(modal,'关联已记账还款').value='';
+  await submit(modal);assert.equal(modal.closed,true);
+  const values=Object.fromEntries(p.assetSnapshot().accounts.map(a=>[a.id,a.cents]));
+  assert.equal(values.cash,89900);assert.equal(values.debt,40000);assert.equal(values.other,0);
+});
+
+
+test('cancelling a repayment while persistence is queued prevents both cash and debt changes', async () => {
+  const p=plugin(),state=p.settings.assets,now=new Date();
+  const account=(id,kind,cents)=>({id,name:id,kind,balanceCents:cents,baselineAt:now.toISOString(),includedEventIds:[],includedRecordIds:[]});
+  state.accounts.push(account('cash','cash',100000),account('debt','liability',50000));state.defaultCashId='cash';
+  let flush;
+  p.updateAssets=change=>new Promise((resolve,reject)=>flush=()=>{try{change(state);resolve();}catch(e){reject(e);}});
+  new AssetPanel(p).repaymentForm('debt');const modal=Modal.last;
+  field(modal,'还款本金（元）').value='100';field(modal,'利息／手续费（元）').value='0';field(modal,'关联已记账还款').value='';
+  await submit(modal);modal.close();flush();await new Promise(r=>setImmediate(r));
+  assert.equal(state.events.length,0);assert.equal(state.accounts.find(a=>a.id==='cash').balanceCents,100000);assert.equal(state.accounts.find(a=>a.id==='debt').balanceCents,50000);
+});

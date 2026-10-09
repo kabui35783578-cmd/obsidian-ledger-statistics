@@ -23,7 +23,7 @@ test('pinch zoom preserves the touched point, pans and suppresses accidental nod
   controls.children[1].listeners.click(); assert.equal(view.attributes['data-zoom'], '1'); assert.equal(view.scrollLeft, 0); assert.equal(svg.style.width, '');
 });
 test('buttons, bounds and pointer cancellation keep chart zoom usable', () => {
-  assert.equal(clampAssetZoom(.01), .3); assert.equal(clampAssetZoom(100), 4); assert.equal(zoomScrollOffset(300, 150, 1, 2), 750);
+  assert.equal(clampAssetZoom(.01), .1); assert.equal(clampAssetZoom(100), 4); assert.equal(zoomScrollOffset(300, 150, 1, 2), 750);
   const view = new Node(), svg = new Node(), controls = new Node(); enableAssetGestures(view, svg, controls);
   controls.children[2].listeners.click(); assert.equal(view.attributes['data-zoom'], '1.25');
   controls.children[0].listeners.click(); assert.equal(view.attributes['data-zoom'], '1');
@@ -36,4 +36,57 @@ test('slow finger movement accumulates into panning while an ordinary tap is not
   assert.ok(view.scrollLeft < 300);
   const tap = new Node(); enableAssetGestures(tap, new Node(), new Node()); tap.listeners.pointerdown(pointer(1, 100, 100)); tap.listeners.pointerup(pointer(1, 100, 100));
   tap.listeners.click({ preventDefault() { throw new Error('Tap should be allowed'); } });
+});
+
+
+test('initial fit shows the whole diagram in both dimensions and reset restores global view', () => {
+  const view = new Node(), svg = new Node(), controls = new Node();
+  view.clientWidth=270; view.clientHeight=300;
+  svg.getBoundingClientRect=()=>({left:0,top:0,width:1080,height:1800});
+  enableAssetGestures(view,svg,controls,true);
+  assert.equal(+view.attributes['data-zoom'],1/6);
+  assert.equal(parseFloat(svg.style.width),180);
+  assert.equal(view.scrollLeft,0);assert.equal(view.scrollTop,0);
+  controls.children[2].listeners.click(); assert.ok(+view.attributes['data-zoom']>1/6);
+  controls.children[1].listeners.click(); assert.equal(+view.attributes['data-zoom'],1/6);
+});
+
+test('automatic fit handles resize, preserves manual zoom and disconnects after chart removal', () => {
+  let callback,disconnected=false;
+  global.ResizeObserver=class { constructor(cb){callback=cb;} observe(){} disconnect(){disconnected=true;} };
+  try {
+    const view=new Node(),svg=new Node(),controls=new Node(); view.isConnected=true;
+    enableAssetGestures(view,svg,controls,true);
+    view.clientWidth=500; callback();assert.equal(parseFloat(svg.style.width),500);
+    controls.children[2].listeners.click(); const width=svg.style.width;
+    view.clientWidth=600;callback();assert.equal(svg.style.width,width);
+    controls.children[1].listeners.click();assert.equal(parseFloat(svg.style.width),600);
+    view.isConnected=false;callback();assert.equal(disconnected,true);
+  } finally {delete global.ResizeObserver;}
+});
+
+
+test('resize observations do not feed the already fitted height back into global zoom', () => {
+  let callback;global.ResizeObserver=class {constructor(cb){callback=cb;}observe(){}disconnect(){}};
+  try {
+    const view=new Node(),svg=new Node(),controls=new Node();view.isConnected=true;view.clientWidth=320;view.clientHeight=340;
+    svg.getBoundingClientRect=()=>({left:0,top:0,width:1080,height:700});
+    enableAssetGestures(view,svg,controls,true);const scale=view.attributes['data-zoom'];
+    view.clientHeight=207;callback();view.clientHeight=206;callback();
+    assert.equal(view.attributes['data-zoom'],scale);
+  } finally {delete global.ResizeObserver;}
+});
+
+
+test('browser resize fitting is deferred to the next frame and cancelled on removal', () => {
+  let callback,frameCallback,cancelled=false,requests=0;
+  global.ResizeObserver=class {constructor(cb){callback=cb;}observe(){}disconnect(){}};
+  global.requestAnimationFrame=cb=>{frameCallback=cb;requests++;return 1;};global.cancelAnimationFrame=()=>cancelled=true;
+  try {
+    const view=new Node(),svg=new Node(),controls=new Node();view.isConnected=true;
+    enableAssetGestures(view,svg,controls,true);const width=svg.style.width;
+    view.clientWidth=500;callback();callback();assert.equal(svg.style.width,width);assert.equal(requests,1);
+    frameCallback();assert.equal(parseFloat(svg.style.width),500);
+    view.clientWidth=600;callback();view.isConnected=false;callback();assert.equal(cancelled,true);
+  } finally {delete global.ResizeObserver;delete global.requestAnimationFrame;delete global.cancelAnimationFrame;}
 });
