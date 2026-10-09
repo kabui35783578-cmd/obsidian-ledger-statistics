@@ -1,10 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 class Element {
-  constructor(tag = 'div', options = {}) { this.tag = tag; this.children = []; this.listeners = {}; this.style = {}; this.attributes = {}; this.value = options.value ?? ''; this.textContent = options.text ?? ''; this.disabled = false; }
-  createEl(tag, options) { const child = new Element(tag, options); this.children.push(child); child.parentElement = this; return child; }
+  constructor(tag = 'div', options = {}) { this.tag = tag; this.children = []; this.listeners = {}; this.style = {}; this.attributes = {}; this.value = options.value ?? ''; this.textContent = options.text ?? ''; this.disabled = false; this.classList = { toggle() {} }; }
+  createEl(tag, options) { const child = new Element(tag, options); this.children.push(child); child.parentElement = this; if (this.tag === 'select' && this.children.length === 1) this.value = child.value; return child; }
   createDiv(options) { return this.createEl('div', options); }
   createSpan(options) { return this.createEl('span', options); }
+  appendChild(child) { this.children.push(child); return child; }
   setAttribute(key, value) { this.attributes[key] = value; }
   setText(text) { this.textContent = text; }
   addClass() {}
@@ -29,6 +30,25 @@ function plugin() {
 }
 function field(modal, name) { return modal.contentEl.all().find(e => e.attributes['aria-label'] === name); }
 async function submit(modal) { modal.contentEl.querySelector('form').listeners.submit({ preventDefault() {} }); await new Promise(resolve => setImmediate(resolve)); }
+test('asset calendar shows each daily increase, decline, zero and missing predecessor without exposing hidden amounts', () => {
+  global.document = { createElementNS: (_, tag) => new Element(tag) };
+  try {
+    const p = plugin();
+    const snap = (date, cents) => ({ date, savedAt: `${date}T12:00:00Z`, pending: [], accounts: [{ id: 'c', name: '现金', kind: 'cash', cents, missing: false, holdings: [] }] });
+    p.settings.assets.snapshots = [snap('2026-10-01', 10000), snap('2026-10-02', 10100), snap('2026-10-03', 9900), snap('2026-10-04', 9900), snap('2026-10-06', 11000)];
+    new AssetPanel(p).calendarModal();
+    const cells = Modal.last.contentEl.all().filter(n => n.tag === 'button');
+    assert.ok(cells.some(n => n.attributes['aria-label']?.includes('2026-10-02，相比前一天↑1.00')));
+    assert.ok(cells.some(n => n.attributes['aria-label']?.includes('2026-10-03，相比前一天↓2.00')));
+    assert.ok(cells.some(n => n.attributes['aria-label']?.includes('2026-10-04，相比前一天没有变化')));
+    assert.ok(cells.some(n => n.attributes['aria-label']?.includes('2026-10-06，相比前一天暂无可比记录')));
+    cells.find(n => n.attributes['aria-label']?.startsWith('2026-10-02，')).listeners.click();
+    assert.ok(Modal.last.contentEl.all().some(n => n.textContent === '相比前一天 ↑1.00'));
+    p.settings.assets.hideAmounts = true; new AssetPanel(p).calendarModal();
+    const text = Modal.last.contentEl.all().map(n => `${n.textContent} ${n.attributes['aria-label'] ?? ''}`).join(' ');
+    assert.ok(!/[↑↓]|100\.00|101\.00|99\.00|110\.00/.test(text));
+  } finally { delete global.document; }
+});
 test('holding form needs only code and current value and derives name and shares from quote', async () => {
   const p = plugin(); p.refreshAssetQuotes = () => new Promise(() => {});
   new AssetPanel(p).holdingForm(); const modal = Modal.last;

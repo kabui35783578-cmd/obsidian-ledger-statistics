@@ -268,6 +268,19 @@ export function previousMonthSnapshot(state: AssetState, date: string): AssetSna
   const prefix = isoFromDate(previous).slice(0, 7);
   return state.snapshots.filter(s => s.date.startsWith(prefix)).sort((a, b) => b.date.localeCompare(a.date))[0];
 }
+/** A daily change needs the preceding calendar day, never the last available observation. */
+export function previousDaySnapshot(state: Pick<AssetState, "snapshots">, date: string): AssetSnapshot | undefined {
+  if (!isValidIsoDate(date)) return undefined;
+  const previous = new Date(`${date}T12:00:00`);
+  previous.setDate(previous.getDate() - 1);
+  return state.snapshots.find(s => s.date === isoFromDate(previous));
+}
+export function dailyAssetChange(state: Pick<AssetState, "snapshots">, current: AssetSnapshot, excludeFixed = false): number | null {
+  const previous = previousDaySnapshot(state, current.date);
+  if (!previous) return null;
+  const before = assetTotals(previous, excludeFixed), after = assetTotals(current, excludeFixed);
+  return before.missing || after.missing ? null : after.assetsCents - before.assetsCents;
+}
 /** Cash linking is explicit; opening debt balances never invents cash income. */
 export function repayAssetLiability(state: AssetState, liabilityId: string, cents: number, options: { cashAccountId?: string; feeCents?: number; link?: LedgerLink; now?: Date } = {}): void {
   if (!validCents(cents) || cents <= 0) throw new Error("还款本金须大于零");

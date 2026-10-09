@@ -55,6 +55,56 @@ function interactive(node: SVGElement, text: string, action: () => void): void {
   node.addEventListener("click", action);
   node.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); action(); } });
 }
+/** Home preview follows the reference hierarchy; the expanded chart retains every holding. */
+export function renderAssetOverviewSankey(parent: HTMLElement, snapshot: AssetSnapshot, excludeFixed: boolean, hide: boolean, expand: () => void): void {
+  const totals = assetTotals(snapshot, excludeFixed);
+  const accounts = snapshot.accounts.filter(a => a.kind !== "liability" && !(excludeFixed && a.kind === "fixed") && a.cents > 0);
+  const total = accounts.reduce((sum, a) => sum + a.cents, 0);
+  if (!total) { parent.createEl("p", { cls: "ledger-assets-empty", text: snapshot.accounts.length ? "当前没有可绘制的正资产，请在资产管理中查看余额与持仓。" : "添加账户和持仓后，这里显示资产组成桑基图。" }); return; }
+  const kinds: AssetKind[] = ["cash", "fixed", "investment", "receivable"];
+  const groups = kinds.map(kind => ({ kind, accounts: accounts.filter(a => a.kind === kind) })).filter(g => g.accounts.length);
+  const height = Math.max(480, groups.length * 95 + 180), scale = (height - 170 - (groups.length - 1) * 32) / total;
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", `0 0 800 ${height}`); svg.setAttribute("class", "ledger-assets-overview-sankey");
+  svg.setAttribute("role", "group"); svg.setAttribute("aria-label", hide ? "资产组成，金额已隐藏" : "净资产、总资产与资产类别，点击查看完整组成"); parent.appendChild(svg);
+  const complete = !accounts.some(a => a.cents < 0) && !snapshot.accounts.some(a => a.kind !== "liability" && !(excludeFixed && a.kind === "fixed") && a.cents < 0) && totals.netCents >= 0;
+  const sourceHeight = total * scale;
+  if (complete) {
+    const netHeight = totals.netCents * scale;
+    // Keep the first ribbon green and the total/category ribbons in the existing soft palette.
+    el("rect", { x: 125, y: 115, width: 11, height: netHeight, fill: "#76A69A", "fill-opacity": .72 }, svg);
+    band(svg, 136, 115, 345, 115, netHeight, "#76A69A");
+    label(svg, 25, 115 + netHeight / 2, "净资产", 25);
+    if (totals.liabilitiesCents > 0) {
+      const debtHeight = totals.liabilitiesCents * scale, y = 115 + netHeight + 24;
+      el("rect", { x: 125, y, width: 11, height: debtHeight, fill: COLORS.liability, "fill-opacity": .72 }, svg);
+      band(svg, 136, y, 345, 115 + netHeight, debtHeight, COLORS.liability);
+      label(svg, 25, y + debtHeight / 2, "负债", 25);
+    }
+  } else label(svg, 25, 115 + sourceHeight / 2, totals.netCents < 0 ? "净资产缺口" : "净资产", 22);
+  el("rect", { x: 365, y: 115, width: 20, height: sourceHeight, fill: COLORS.investment, "fill-opacity": .72 }, svg);
+  label(svg, 365, 82, totals.missing || !complete ? "已估值正资产" : "总资产", 27);
+  let cursor = 80, source = 115;
+  for (const group of groups) {
+    const cents = group.accounts.reduce((sum, a) => sum + a.cents, 0), h = cents * scale;
+    band(svg, 385, source, 620, cursor, h, COLORS.investment, COLORS.investment);
+    el("rect", { x: 620, y: cursor, width: 11, height: h, fill: COLORS[group.kind], "fill-opacity": .72 }, svg);
+    // Faint tails hint at the account/holding detail available in the full view.
+    let tail = cursor;
+    for (const account of group.accounts) {
+      const leaves = account.kind === "investment" ? account.holdings.filter(h => (h.valueCents ?? 0) > 0).map(h => h.valueCents!) : [];
+      const remaining = account.cents - leaves.reduce((sum, value) => sum + value, 0);
+      const values = remaining >= 0 ? [...leaves, ...(remaining > 0 ? [remaining] : [])] : [account.cents];
+      for (const value of values) { const size = value * scale; band(svg, 631, tail, 850, tail - 55, size, "var(--mono-grid)"); tail += size; }
+    }
+    const target = el("g", {}, svg);
+    el("rect", { x: 616, y: cursor + h / 2 - 24, width: 182, height: 48, fill: "transparent" }, target);
+    label(target, 639, cursor + h / 2, ASSET_NAMES[group.kind], 25);
+    interactive(target, `${ASSET_NAMES[group.kind]}，${hide ? "金额已隐藏" : formatCents(cents)}，查看完整组成`, expand);
+    cursor += h + 32; source += h;
+  }
+  if (!complete || totals.missing) parent.createEl("small", { cls: "ledger-assets-hint", text: "图中展示已估值正资产，负余额与待核对项请查看总览及资产管理。" });
+}
 export function renderAssetSankey(parent: HTMLElement, snapshot: AssetSnapshot, excludeFixed: boolean, hide: boolean, onSelect: (accountId: string, holdingId?: string) => void, showControls = true): void {
   const amounts = (cents: number): string => hide ? "••••" : formatCents(cents);
   const visible = snapshot.accounts.filter(a => a.kind !== "liability" && !(excludeFixed && a.kind === "fixed") && a.cents > 0);

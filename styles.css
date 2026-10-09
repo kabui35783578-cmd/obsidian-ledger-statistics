@@ -3677,3 +3677,102 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
   .ledger-assets-metrics strong { min-height: 32px; }
   .ledger-assets-metrics .ledger-assets-metric-action { min-height: 32px; font-size: 13px; }
 }
+
+/* Reference layout: one summary panel with an inset comparison, followed by composition.
+   Retain the plugin's paper/ink tokens, typeface and existing soft chart palette. */
+.ledger-assets { gap: 20px; }
+.ledger-assets .ledger-assets-header { order: 3; justify-content: flex-end; }
+.ledger-assets .ledger-assets-hero {
+  container-type: inline-size;
+  border-radius: 24px; background: var(--ledger-panel); padding: 26px 6px 6px;
+}
+.ledger-assets .ledger-assets-overview-heading { margin: 0 24px; flex-wrap: nowrap; gap: 8px; }
+.ledger-assets .ledger-assets-caption { font-size: 14px; color: var(--asset-muted); gap: 8px; flex-wrap: nowrap; }
+.ledger-assets .ledger-assets-caption .ledger-button {
+  width: 24px; min-width: 24px; height: 24px; min-height: 24px; padding: 0;
+  background: transparent; color: inherit; border: 0;
+}
+.ledger-assets .ledger-assets-toggle { font-size: 13px; gap: 8px; white-space: nowrap; }
+.ledger-assets .ledger-assets-toggle input {
+  appearance: none; width: 38px; height: 22px; border: 0; border-radius: 20px;
+  background: var(--mono-grid); position: relative; cursor: pointer; box-shadow: none;
+}
+.ledger-assets .ledger-assets-toggle input::before {
+  content: ""; position: absolute; inset: 3px auto auto 3px; width: 16px; height: 16px;
+  border-radius: 50%; background: var(--mono-paper); transition: transform .15s;
+}
+.ledger-assets .ledger-assets-toggle input:checked { background: var(--mono-ink); }
+.ledger-assets .ledger-assets-toggle input:checked::before { transform: translateX(16px); }
+.ledger-assets .ledger-assets-toggle input:focus-visible { outline: 2px solid var(--mono-ink); outline-offset: 3px; }
+.ledger-assets .ledger-assets-overview { display: block; margin: 0 24px 24px; }
+.ledger-assets .ledger-assets-primary-value { padding: 0; background: transparent; color: var(--mono-ink); border-radius: 0; }
+.ledger-assets .ledger-assets-total {
+  font-size: clamp(28px, 7.6cqi, 58px); font-weight: 700; letter-spacing: -.04em;
+  margin: 6px 0 8px; line-height: 1.1;
+}
+.ledger-assets .ledger-assets-update-row { margin: 0 0 10px; color: var(--asset-muted); gap: 8px; }
+.ledger-assets .ledger-assets-update-row small { font-size: 13px; }
+.ledger-assets .ledger-assets-update-row .ledger-button {
+  min-height: 22px; height: 22px; width: 22px; padding: 0; margin: 0; background: transparent;
+}
+.ledger-assets .ledger-assets-update-row .ledger-button svg { width: 13px; height: 13px; }
+.ledger-assets .ledger-assets-metrics { display: flex; flex-wrap: wrap; gap: 10px 20px; }
+.ledger-assets .ledger-assets-metrics > div { display: flex; gap: 10px; align-items: baseline; padding: 0; min-height: 0; background: transparent; }
+.ledger-assets .ledger-assets-metrics small { font-size: clamp(12px, 3.6cqi, 20px); }
+.ledger-assets .ledger-assets-metrics strong { min-height: 0; font-weight: 650; font-size: clamp(13px, 4cqi, 22px); letter-spacing: -.03em; }
+.ledger-assets .ledger-assets-comparison { margin: 0; padding: 20px 24px; border: 0; border-radius: 22px; background: var(--mono-paper); }
+.ledger-assets .ledger-assets-comparison > .ledger-assets-title-row { font-size: 15px; color: var(--mono-2); gap: 6px; flex-wrap: nowrap; }
+.ledger-assets .ledger-assets-comparison .ledger-button { padding: 0; min-height: 26px; height: auto; font-size: 14px; }
+.ledger-assets .ledger-assets-change-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 16px 0 28px; }
+.ledger-assets-change-item { display: flex; gap: 10px; align-items: center; min-width: 0; }
+.ledger-assets-change-item[role="button"] { cursor: pointer; }
+.ledger-assets-change-item[role="button"]:focus-visible { outline: 2px solid var(--mono-ink); outline-offset: 3px; border-radius: 10px; }
+.ledger-assets-change-icon { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 38px; height: 38px; border-radius: 12px; color: var(--mono-2); background: var(--ledger-panel); }
+.ledger-assets-change-icon svg { width: 21px; height: 21px; }
+.ledger-assets-change-label { display: block; font-size: 15px; color: var(--mono-2); }
+.ledger-assets-change-value { font-size: clamp(13px, 3.7cqi, 23px); line-height: 1.3; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ledger-assets .ledger-assets-change-bars { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; padding-top: 12px; }
+.ledger-assets .ledger-assets-change-column { min-width: 0; }
+.ledger-assets .ledger-assets-change-track { position: relative; height: 58px; margin: 0 0 10px; border-bottom: 1px solid var(--mono-muted); }
+.ledger-assets .ledger-assets-change-fill { background: var(--mono-grid); border-radius: 0; width: 94%; }
+.ledger-assets .ledger-assets-change-fill.is-negative { background: var(--mono-muted); }
+.ledger-assets .ledger-assets-bar-change { position: absolute; left: 0; width: 100%; text-align: center; font-size: clamp(9px, 2.7cqi, 15px); line-height: 1.2; overflow-wrap: anywhere; }
+.ledger-assets .ledger-assets-change-column > small { font-size: clamp(10px, 3cqi, 16px); white-space: normal; color: var(--mono-2); }
+.ledger-assets .is-up, .ledger-assets .is-down,
+.ledger-assets-calendar .is-up, .ledger-assets-calendar .is-down,
+.ledger-assets-day-change.is-up, .ledger-assets-day-change.is-down { color: #c57076; }
+.ledger-assets .is-unchanged { color: var(--asset-muted); }
+.ledger-assets .ledger-assets-chart-card { padding: 22px 20px 0; background: transparent; border: 0; border-radius: 24px; }
+.ledger-assets .ledger-assets-chart-card > .ledger-assets-title-row { padding-right: 0; margin-bottom: 0; min-height: 32px; }
+.ledger-assets .ledger-assets-chart-card > .ledger-assets-title-row h3 { font-size: 20px; }
+.ledger-assets .ledger-assets-chart-card > .ledger-assets-title-row .ledger-button { position: static; height: 32px; min-height: 32px; width: 32px; min-width: 32px; }
+.ledger-assets-overview-sankey { width: 100%; height: auto; display: block; overflow: hidden; color: var(--mono-ink); font-family: inherit; }
+.ledger-assets-overview-sankey [role="button"] { cursor: pointer; }
+.ledger-assets-overview-sankey [role="button"]:focus-visible { outline: 2px solid var(--mono-ink); }
+.ledger-assets-calendar .ledger-button { display: flex; flex-direction: column; gap: 5px; align-items: center; justify-content: center; height: auto; white-space: normal; }
+.ledger-assets-calendar-change { display: block; font-size: 9px; line-height: 1.3; max-width: 100%; overflow-wrap: anywhere; }
+.ledger-assets-calendar .is-selected .ledger-assets-calendar-change { color: inherit; }
+.ledger-assets-day-change { font-size: 14px; margin: 10px 0; }
+@media (max-width: 600px) {
+  .ledger-assets { gap: 14px; }
+  .ledger-assets .ledger-assets-hero { padding-top: 18px; border-radius: 22px; }
+  .ledger-assets .ledger-assets-overview-heading { margin-inline: 14px; }
+  .ledger-assets .ledger-assets-caption { font-size: 12px; gap: 5px; }
+  .ledger-assets .ledger-assets-toggle { font-size: 11px; gap: 6px; min-height: 28px; }
+  .ledger-assets .ledger-assets-overview { margin: 0 14px 16px; }
+  .ledger-assets .ledger-assets-total { margin-block: 4px; }
+  .ledger-assets .ledger-assets-update-row { margin-bottom: 6px; }
+  .ledger-assets .ledger-assets-metrics { gap: 8px 12px; }
+  .ledger-assets .ledger-assets-metrics > div { gap: 6px; line-height: 1.3; }
+  .ledger-assets .ledger-assets-comparison { padding: 12px 14px 14px; border-radius: 20px; }
+  .ledger-assets .ledger-assets-comparison > .ledger-assets-title-row { font-size: 13px; }
+  .ledger-assets .ledger-assets-comparison .ledger-button { font-size: 12px; min-height: 22px; }
+  .ledger-assets .ledger-assets-change-summary { gap: 8px; padding: 12px 0 20px; }
+  .ledger-assets .ledger-assets-change-item { gap: 8px; }
+  .ledger-assets .ledger-assets-change-label { font-size: 13px; }
+  .ledger-assets .ledger-assets-change-icon { width: 32px; height: 32px; border-radius: 10px; }
+  .ledger-assets .ledger-assets-change-icon svg { width: 18px; height: 18px; }
+  .ledger-assets .ledger-assets-change-track { height: 34px; }
+  .ledger-assets .ledger-assets-chart-card { padding: 12px 10px 0; }
+  .ledger-assets .ledger-assets-chart-card > .ledger-assets-title-row h3 { font-size: 18px; }
+}

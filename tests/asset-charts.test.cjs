@@ -1,15 +1,15 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { renderAssetSankey } = require('../dist/asset-charts.cjs');
+const { renderAssetOverviewSankey, renderAssetSankey } = require('../dist/asset-charts.cjs');
 const { AssetPanel } = require('../dist/asset-ui.cjs');
 const { emptyAssets } = require('../dist/assets.cjs');
 
 class Element {
-  constructor(tag = 'div', options = {}) { this.tag = tag; this.textContent = options.text ?? ''; this.children = []; this.attributes = {}; this.listeners = {}; this.style = {}; }
+  constructor(tag = 'div', options = {}) { this.tag = tag; this.className = options.cls ?? ''; this.textContent = options.text ?? ''; this.children = []; this.attributes = {}; this.listeners = {}; this.style = {}; }
   addClass() {}
   setAttribute(name, value) { this.attributes[name] = value; }
   addEventListener(name, listener) { this.listeners[name] = listener; }
-  appendChild(child) { this.children.push(child); return child; }
+  appendChild(child) { if (child.parentElement) child.parentElement.children = child.parentElement.children.filter(e => e !== child); this.children.push(child); child.parentElement = this; return child; }
   createEl(tag, options) { return this.appendChild(new Element(tag, options)); }
   createDiv(options) { return this.createEl('div', options); }
   all() { return [this, ...this.children.flatMap(child => child.all())]; }
@@ -23,6 +23,40 @@ function snapshot() {
   ] };
 }
 function withDocument(action) { global.document = { createElementNS: (_, tag) => new Element(tag) }; try { action(); } finally { delete global.document; } }
+
+test('home hierarchy embeds daily comparisons in the summary and keeps changes truthful and private', () => withDocument(() => {
+  const state = emptyAssets(), current = snapshot();
+  state.snapshots = [{ ...snapshot(), date: '2026-10-07', accounts: snapshot().accounts.map(a => ({ ...a, cents: a.kind === 'cash' ? a.cents - 500 : a.cents })) }];
+  const p = { settings: { assets: state }, repository: { files: new Map() }, assetSnapshot: () => current };
+  let root = new Element(); new AssetPanel(p).render(root);
+  const hero = root.all().find(n => n.className.includes('ledger-assets-hero'));
+  assert.ok(hero.all().some(n => n.className === 'ledger-assets-comparison'));
+  assert.equal(hero.all().filter(n => n.className === 'ledger-assets-change-column').length, 5);
+  assert.ok(hero.all().some(n => n.textContent === '↑5.00' && n.className.includes('is-up')));
+  assert.ok(hero.all().some(n => n.textContent === '相比前一天'));
+  current.accounts[0].cents -= 1000;
+  root = new Element(); new AssetPanel(p).render(root);
+  assert.ok(root.all().some(n => n.textContent === '↓5.00' && n.className.includes('is-down')));
+  current.accounts[0].cents += 500;
+  root = new Element(); new AssetPanel(p).render(root);
+  assert.ok(root.all().some(n => n.textContent === '没有变化'));
+  assert.ok(!root.all().some(n => /^[↑↓]/.test(n.textContent)));
+  state.hideAmounts = true;
+  root = new Element(); new AssetPanel(p).render(root);
+  assert.ok(!root.all().some(n => /^[↑↓]/.test(n.textContent)));
+  assert.ok(root.all().filter(n => n.className.includes('ledger-assets-change-fill')).every(n => n.style.height === '0%'));
+}));
+
+test('home Sankey preserves category proportions and opens the complete chart by keyboard', () => withDocument(() => {
+  const snap = snapshot(); snap.accounts[0].cents = 60000; snap.accounts[1].cents = 30000; snap.accounts[2].cents = 10000;
+  const root = new Element(); let opened = 0;
+  renderAssetOverviewSankey(root, snap, false, true, () => opened++);
+  const bars = root.all().filter(n => n.tag === 'rect' && n.attributes.x === '620');
+  assert.equal(+bars[0].attributes.height / +bars[1].attributes.height, 2);
+  const target = root.all().find(n => n.attributes['aria-label']?.startsWith('流动资金，'));
+  assert.ok(target.attributes['aria-label'].includes('金额已隐藏'));
+  target.listeners.keydown({ key: 'Enter', preventDefault() {} }); assert.equal(opened, 1);
+}));
 
 test('Sankey keeps real proportions for small values and provides touch and keyboard targets', () => withDocument(() => {
   const root = new Element(), expanded = []; renderAssetSankey(root, snapshot(), false, false, (id, holdingId) => expanded.push([id, holdingId]));

@@ -1,8 +1,8 @@
 import { Modal, Notice, setIcon } from "obsidian";
 import type LedgerStatisticsPlugin from "./main";
 import { LedgerRecord, flattenRecords, formatCents, isoFromDate } from "./core";
-import { ASSET_NAMES, AssetAccount, AssetEvent, AssetEventKind, AssetHolding, AssetKind, AssetSnapshot, SecurityKind, addAssetEvent, addEstimatedHolding, assetId, assetTotals, baselineRecordIds, calibrateAccount, decimal, knownRecord, linkRecord, moneyCents, normalizeCode, previousMonthSnapshot, quantityFromAmount, removeAssetAccount, removeAssetHolding, repayAssetLiability, setDefaultCash, validateQuantity } from "./assets";
-import { renderAssetSankey } from "./asset-charts";
+import { ASSET_NAMES, AssetAccount, AssetEvent, AssetEventKind, AssetHolding, AssetKind, AssetSnapshot, SecurityKind, addAssetEvent, addEstimatedHolding, assetId, assetTotals, baselineRecordIds, calibrateAccount, dailyAssetChange, decimal, knownRecord, linkRecord, moneyCents, normalizeCode, previousDaySnapshot, quantityFromAmount, removeAssetAccount, removeAssetHolding, repayAssetLiability, setDefaultCash, validateQuantity } from "./assets";
+import { renderAssetOverviewSankey, renderAssetSankey } from "./asset-charts";
 import type { AssetQuote } from "./assets";
 
 function button(parent: HTMLElement, text: string, action: () => void, primary = false): HTMLButtonElement {
@@ -25,6 +25,14 @@ function parseBaseline(value: string): Date {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime()) || date.getTime() > Date.now()) throw new Error("余额时点无效，不能使用未来时间");
   return date;
+}
+function changeText(cents: number | null, hide: boolean): string {
+  if (hide) return "••••";
+  if (cents === null) return "暂无可比记录";
+  return cents === 0 ? "没有变化" : `${cents > 0 ? "↑" : "↓"}${formatCents(Math.abs(cents)).replace("¥", "")}`;
+}
+function changeClass(cents: number | null, hide: boolean): string {
+  return hide || cents === null || cents === 0 ? "is-unchanged" : cents > 0 ? "is-up" : "is-down";
 }
 export class AssetFormModal extends Modal {
   private alive = false;
@@ -51,21 +59,14 @@ export class AssetPanel {
   private records(): LedgerRecord[] { return flattenRecords(this.plugin.repository.files.values()); }
   render(parent: HTMLElement): void {
     const state = this.plugin.settings.assets, snapshot = this.plugin.assetSnapshot(), totals = assetTotals(snapshot, state.excludeFixed);
-    const money = (cents: number): string => state.hideAmounts ? "••••" : formatCents(cents);
+    const money = (cents: number): string => state.hideAmounts ? "••••" : formatCents(cents).replace("¥", "");
     const root = parent.createDiv({ cls: "ledger-assets" });
     const pageHeader = root.createDiv({ cls: "ledger-assets-header" });
-    const pageTitle = pageHeader.createDiv();
-    pageTitle.createDiv({ cls: "ledger-assets-badge", text: "ASSETS · LOCAL LEDGER" });
-    pageTitle.createSpan({ cls: "ledger-assets-subtitle", text: `${snapshot.accounts.length} 个账户 · 当前余额与持仓估值` });
     const actions = pageHeader.createDiv({ cls: "ledger-assets-actions ledger-assets-main-actions" });
     button(actions, "添加持仓", () => this.holdingForm(), true);
     button(actions, "更多", () => this.toolsModal());
     const hero = root.createDiv({ cls: "ledger-assets-hero ledger-reveal" });
     const heroHeading = hero.createDiv({ cls: "ledger-assets-title-row ledger-assets-overview-heading" });
-    heroHeading.createEl("h3", { text: "资产总览" });
-    const toggle = heroHeading.createEl("label", { cls: "ledger-assets-toggle" }); toggle.createSpan({ text: "排除固定资产" });
-    const check = toggle.createEl("input", { type: "checkbox" }); check.checked = state.excludeFixed;
-    check.addEventListener("change", () => void this.save(s => { s.excludeFixed = check.checked; }).catch(e => new Notice(String(e))));
     const overview = hero.createDiv({ cls: "ledger-assets-overview" });
     const primary = overview.createDiv({ cls: "ledger-assets-primary-value" });
     const caption = primary.createDiv({ cls: "ledger-assets-caption" });
@@ -73,31 +74,31 @@ export class AssetPanel {
     const privacy = button(caption, "", () => void this.save(s => { s.hideAmounts = !s.hideAmounts; }).catch(e => new Notice(String(e))));
     setIcon(privacy, state.hideAmounts ? "eye-off" : "eye");
     privacy.setAttribute("aria-label", state.hideAmounts ? "显示金额" : "隐藏金额");
+    heroHeading.appendChild(caption);
+    const toggle = heroHeading.createEl("label", { cls: "ledger-assets-toggle" }); toggle.createSpan({ text: "排除固定资产" });
+    const check = toggle.createEl("input", { type: "checkbox" }); check.checked = state.excludeFixed;
+    check.setAttribute("aria-label", "排除固定资产"); check.setAttribute("role", "switch");
+    check.addEventListener("change", () => void this.save(s => { s.excludeFixed = check.checked; }).catch(e => new Notice(String(e))));
     primary.createDiv({ cls: "ledger-assets-total", text: state.hideAmounts ? "••••" : formatCents(totals.assetsCents).replace("¥", "") });
-    const metrics = overview.createDiv({ cls: "ledger-assets-metrics" });
-    for (const [label, value] of [["净资产", money(totals.netCents)], ["负债", money(totals.liabilitiesCents)], ["负债率", state.hideAmounts ? "••••" : totals.assetsCents > 0 ? `${(totals.liabilitiesCents / totals.assetsCents * 100).toFixed(1)}%` : "—"]]) {
-      const metric = metrics.createDiv(); metric.createEl("small", { text: label }); if (label === "负债") {
-        const debt = button(metric, `${value} ›`, () => this.liabilitiesModal()); debt.addClass("ledger-assets-metric-action"); debt.setAttribute("aria-label", "管理负债与还款");
-      } else metric.createEl("strong", { text: value });
-    }
     const updates = primary.createDiv({ cls: "ledger-assets-update-row" });
     const latest = snapshot.accounts.flatMap(a => a.holdings.filter(h => h.quote && decimal(h.quote.price).gt(0)).map(h => h.quote!.asOf)).sort().reverse()[0];
-    updates.createEl("small", { text: latest ? `行情 ${latest.replace("T", " ").slice(0, 16)}` : "当前余额" });
+    updates.createEl("small", { text: `${snapshot.date.replace(/-/g, ".")} 更新` });
+    if (latest) updates.setAttribute("title", `最新行情 ${latest.replace("T", " ").slice(0, 16)}`);
     const refresh = button(updates, "", () => { refresh.disabled = true; void this.plugin.refreshAssetQuotes(true).catch(e => new Notice(String(e))).finally(() => { refresh.disabled = false; }); });
-    setIcon(refresh, "refresh-cw");
-    refresh.setAttribute("aria-label", "刷新行情");
+    setIcon(refresh, "refresh-cw"); refresh.setAttribute("aria-label", "刷新行情");
+    const metrics = overview.createDiv({ cls: "ledger-assets-metrics" });
+    for (const [label, value] of [["净资产", money(totals.netCents)], ["负债率", state.hideAmounts ? "••••" : totals.assetsCents > 0 ? `${(totals.liabilitiesCents / totals.assetsCents * 100).toFixed(2)}%` : "—"]]) {
+      const metric = metrics.createDiv(); metric.createEl("small", { text: label }); metric.createEl("strong", { text: value });
+    }
     this.renderComparison(hero, snapshot);
     if (snapshot.pending.length) {
       const warning = root.createDiv({ cls: "ledger-assets-warning ledger-assets-compact-warning" }); warning.createSpan({ text: `${snapshot.pending.length}项变动待核对` }); button(warning, "查看", () => this.toolsModal());
     }
     const card = root.createDiv({ cls: "ledger-assets-card ledger-assets-chart-card ledger-reveal" });
-    card.createDiv({ cls: "ledger-assets-badge", text: "01 · COMPOSITION" });
     const heading = card.createDiv({ cls: "ledger-assets-title-row" });
     heading.createEl("h3", { text: "资产组成" });
     const expand = button(heading, "", () => this.sankeyModal(snapshot)); setIcon(expand, "maximize-2"); expand.setAttribute("aria-label", "放大查看桑基图");
-    card.createDiv({ cls: "ledger-assets-subtitle", text: "带宽对应金额 · 颜色区分类别与持仓 · 点击查看详情" });
-    renderAssetSankey(card, snapshot, state.excludeFixed, state.hideAmounts, (id, holdingId) => this.sankeySelect(id, holdingId));
-    card.createDiv({ cls: "ledger-assets-source", text: "CURRENT BALANCES · ACCOUNT & HOLDING VALUES" });
+    renderAssetOverviewSankey(card, snapshot, state.excludeFixed, state.hideAmounts, () => this.sankeyModal(snapshot));
   }
   private renderAccounts(parent: HTMLElement, onSelect: (id: string) => void): void {
     const state = this.plugin.settings.assets, snapshot = this.plugin.assetSnapshot();
@@ -121,24 +122,32 @@ export class AssetPanel {
   }
   private save(change: (state: LedgerStatisticsPlugin["settings"]["assets"]) => void): Promise<void> { return this.plugin.updateAssets(change); }
   private renderComparison(parent: HTMLElement, current: AssetSnapshot): void {
-    const state = this.plugin.settings.assets, previous = previousMonthSnapshot(state, current.date), card = parent.createDiv({ cls: "ledger-assets-comparison" });
-    const title = card.createDiv({ cls: "ledger-assets-title-row" }); title.createSpan({ text: previous ? `相比 ${previous.date}` : "暂无可比记录" });
+    const state = this.plugin.settings.assets, previous = previousDaySnapshot(state, current.date), card = parent.createDiv({ cls: "ledger-assets-comparison" });
+    const title = card.createDiv({ cls: "ledger-assets-title-row" }); title.createSpan({ text: "相比前一天" });
     button(title, "资产月历 ›", () => this.calendarModal());
-    if (!previous) return;
-    const before = assetTotals(previous, state.excludeFixed), after = assetTotals(current, state.excludeFixed);
-    if (before.missing || after.missing) { card.createEl("p", { text: "估值待补全" }); return; }
-    const delta = after.assetsCents - before.assetsCents, debt = after.liabilitiesCents - before.liabilitiesCents;
+    const before = previous ? assetTotals(previous, state.excludeFixed) : null, after = assetTotals(current, state.excludeFixed);
+    const comparable = !!before && !before.missing && !after.missing;
+    const delta = comparable ? after.assetsCents - before!.assetsCents : null, debt = comparable ? after.liabilitiesCents - before!.liabilitiesCents : null;
     const summary = card.createDiv({ cls: "ledger-assets-change-summary" });
-    summary.createSpan({ text: `总资产 ${state.hideAmounts ? "••••" : `${delta >= 0 ? "+" : "−"}${formatCents(Math.abs(delta))}`}` });
-    summary.createSpan({ text: `总负债 ${state.hideAmounts ? "••••" : debt === 0 ? "没有变化" : `${debt > 0 ? "+" : "−"}${formatCents(Math.abs(debt))}`}` });
-    const values = (["cash", "fixed", "investment", "receivable", "liability"] as AssetKind[]).filter(k => !(state.excludeFixed && k === "fixed")).map(k => ({ kind: k, cents: after.groups[k] - before.groups[k] }));
-    const maximum = Math.max(1, ...values.map(v => Math.abs(v.cents))), bars = card.createDiv({ cls: "ledger-assets-change-bars" });
+    for (const [name, icon, cents] of [["总资产", "wallet", delta], ["总负债", "coins", debt]] as const) {
+      const item = summary.createDiv({ cls: "ledger-assets-change-item" });
+      const symbol = item.createSpan({ cls: `ledger-assets-change-icon${name === "总负债" ? " is-debt" : ""}` }); setIcon(symbol, icon);
+      const content = item.createDiv(); content.createSpan({ cls: "ledger-assets-change-label", text: name });
+      content.createDiv({ cls: `ledger-assets-change-value ${changeClass(cents, state.hideAmounts)}`, text: !state.hideAmounts && previous && !comparable ? "估值待补全" : changeText(cents, state.hideAmounts) });
+      if (name === "总负债") { item.setAttribute("role", "button"); item.setAttribute("tabindex", "0"); item.setAttribute("aria-label", "管理负债与还款"); item.addEventListener("click", () => this.liabilitiesModal()); item.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); this.liabilitiesModal(); } }); }
+    }
+    const values = (["cash", "fixed", "investment", "receivable", "liability"] as AssetKind[]).map(k => ({ kind: k, cents: comparable ? after.groups[k] - before!.groups[k] : null }));
+    const maximum = Math.max(1, ...values.map(v => Math.abs(v.cents ?? 0))), bars = card.createDiv({ cls: "ledger-assets-change-bars" });
     for (const v of values) {
       const column = bars.createDiv({ cls: "ledger-assets-change-column" });
-      const compact = Math.abs(v.cents) >= 1000000 ? `${(Math.abs(v.cents) / 1000000).toFixed(2)}万` : formatCents(Math.abs(v.cents)).replace("¥", "");
-      column.createEl("small", { cls: v.cents > 0 ? "is-up" : "is-down", text: state.hideAmounts ? "••••" : v.cents === 0 ? "没有变化" : `${v.cents > 0 ? "↑" : "↓"}${compact}` });
-      const track = column.createDiv({ cls: "ledger-assets-change-track" }); const fill = track.createDiv({ cls: `ledger-assets-change-fill${v.cents < 0 ? " is-negative" : ""}` });
-      fill.style.height = `${state.hideAmounts ? 0 : Math.abs(v.cents) / maximum * 100}%`; column.createEl("small", { text: ASSET_NAMES[v.kind] });
+      const track = column.createDiv({ cls: "ledger-assets-change-track" });
+      const fill = track.createDiv({ cls: `ledger-assets-change-fill${(v.cents ?? 0) < 0 ? " is-negative" : ""}` });
+      fill.style.height = `${state.hideAmounts ? 0 : Math.abs(v.cents ?? 0) / maximum * 100}%`;
+      const excluded = state.excludeFixed && v.kind === "fixed";
+      const text = state.hideAmounts ? "••••" : excluded ? "已排除" : v.cents === null ? "—" : v.cents === 0 ? (after.groups[v.kind] !== 0 || before?.groups[v.kind] ? "没有变化" : "") : changeText(v.cents, false).replace(/\.00$/, "");
+      const annotation = track.createEl("small", { cls: `ledger-assets-bar-change ${changeClass(excluded ? null : v.cents, state.hideAmounts)}`, text });
+      annotation.style.bottom = `calc(${state.hideAmounts ? 0 : Math.abs(v.cents ?? 0) / maximum * 100}% + 4px)`;
+      column.createEl("small", { text: ASSET_NAMES[v.kind] });
     }
   }
   private accountForm(existing?: AssetAccount, preferredKind: AssetKind = "cash"): void {
@@ -392,6 +401,8 @@ export class AssetPanel {
       const draw = (): void => {
         detail.empty(); const snapshot = snapshots.find(s => s.date === selected)!, totals = assetTotals(snapshot, state.excludeFixed);
         detail.createEl("h3", { text: `${snapshot.date} · ${state.hideAmounts ? "••••" : formatCents(totals.assetsCents)}${totals.missing ? " · 估值不完整" : ""}` });
+        const change = dailyAssetChange(state, snapshot, state.excludeFixed);
+        detail.createDiv({ cls: `ledger-assets-day-change ${changeClass(change, state.hideAmounts)}`, text: `相比前一天 ${changeText(change, state.hideAmounts)}` });
         detail.createEl("p", { cls: "ledger-assets-hint", text: `保存于 ${new Date(snapshot.savedAt).toLocaleString()}，行情日期保留当时值。` });
         const chart = detail.createDiv(); renderAssetSankey(chart, snapshot, state.excludeFixed, state.hideAmounts, () => {});
         for (const a of snapshot.accounts) detail.createEl("p", { text: `${a.name} · ${state.hideAmounts ? "••••" : formatCents(a.cents)}${a.missing ? " · 未完整估值" : ""}` });
@@ -403,9 +414,12 @@ export class AssetPanel {
         const start = new Date(year, monthNumber - 1, 1), days = new Date(year, monthNumber, 0).getDate();
         for (let index = 0; index < (start.getDay() + 6) % 7; index++) calendar.createSpan();
         for (let day = 1; day <= days; day++) {
-          const date = `${month.value}-${String(day).padStart(2, "0")}`, available = snapshots.some(s => s.date === date);
-          const cell = button(calendar, String(day), () => { selected = date; drawMonth(); draw(); });
-          cell.disabled = !available; cell.classList.toggle("is-selected", date === selected); cell.setAttribute("aria-label", `${date}${available ? "，查看资产快照" : "，无快照"}`);
+          const date = `${month.value}-${String(day).padStart(2, "0")}`, snapshot = snapshots.find(s => s.date === date);
+          const change = snapshot ? dailyAssetChange(state, snapshot, state.excludeFixed) : null;
+          const cell = button(calendar, "", () => { selected = date; drawMonth(); draw(); });
+          cell.createSpan({ text: String(day) });
+          if (snapshot) cell.createEl("small", { cls: `ledger-assets-calendar-change ${changeClass(change, state.hideAmounts)}`, text: state.hideAmounts ? "••" : change === null ? "—" : change === 0 ? "持平" : changeText(change, false).replace(/\.00$/, "") });
+          cell.disabled = !snapshot; cell.classList.toggle("is-selected", date === selected); cell.setAttribute("aria-label", `${date}${snapshot ? `，相比前一天${changeText(change, state.hideAmounts)}，查看资产快照` : "，无快照"}`);
         }
       };
       month.addEventListener("change", () => { selected = snapshots.find(s => s.date.startsWith(month.value))!.date; drawMonth(); draw(); }); drawMonth(); draw();
