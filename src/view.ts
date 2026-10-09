@@ -135,6 +135,7 @@ export class LedgerStatisticsView extends ItemView {
   private financeAdviceLoading = false;
   private financeAdviceError = "";
   private advisorDetailsExpanded = false;
+  private advisorReferencesExpanded = false;
   private filtersExpanded = !Platform.isMobile;
   private drillContext: DrillContext | null = null;
   private pullEligible = false;
@@ -531,7 +532,8 @@ export class LedgerStatisticsView extends ItemView {
       financeCoverageReport(files.filter(file => !file.date || file.date <= financeSnapshot.currentRange.end), insightAsOf(now)), (path) => void this.app.workspace.openLinkText(path, "", false),
       () => new FixedExpenseModal(this.plugin).open(), this.advisorDetailsExpanded,
       (expanded) => { this.advisorDetailsExpanded = expanded; },
-      balanceStatus(flattenRecords(files), now, this.plugin.settings.salaryCents, this.plugin.settings.balanceCalibration));
+      balanceStatus(flattenRecords(files), now, this.plugin.settings.salaryCents, this.plugin.settings.balanceCalibration),
+      this.advisorReferencesExpanded, (expanded) => { this.advisorReferencesExpanded = expanded; });
     const ownerDocument = parent.ownerDocument;
     const cardRect = parent.getBoundingClientRect();
     const viewRect = this.contentEl.getBoundingClientRect();
@@ -787,10 +789,11 @@ export class LedgerStatisticsView extends ItemView {
         event.stopPropagation();
         void this.toggleStar(record);
       });
-      card.createDiv({ cls: "ledger-detail-category", text: record.category });
-      if (record.note) card.createDiv({ text: record.note });
+      const description = card.createDiv({ cls: "ledger-detail-card-description" });
+      description.createSpan({ cls: "ledger-detail-category", text: record.category });
+      if (record.note) description.createSpan({ cls: "ledger-detail-note", text: record.note });
       const footer = card.createDiv({ cls: "ledger-detail-card-footer" });
-      const source = footer.createEl("button", { cls: "ledger-link-button ledger-source-button", text: `打开来源 · 第 ${record.line} 行` });
+      const source = footer.createEl("button", { cls: "ledger-link-button ledger-source-button", text: `来源 · ${record.line} 行`, attr: { "aria-label": `打开 ${record.date} 的账本第 ${record.line} 行` } });
       source.addEventListener("click", () => void this.openRecord(record));
     }
   }

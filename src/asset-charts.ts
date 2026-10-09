@@ -129,5 +129,5 @@ export function renderAssetSankey(parent: HTMLElement, snapshot: AssetSnapshot, 
     rootCursor += groupHeight;
   }
   if (snapshot.accounts.some(a => a.cents < 0) || totals.netCents < 0) parent.createEl("p", { cls: "ledger-assets-hint", text: `桑基图展示正资产；负余额与净资产缺口保留在总览及账户列表中${hide ? "。" : `：${snapshot.accounts.filter(a => a.cents < 0).map(a => `${a.name} ${formatCents(a.cents)}`).join("；") || formatCents(totals.netCents)}`}` });
-  enableAssetGestures(scroll, svg, tools, true);
+  enableAssetGestures(scroll, svg, tools, true, !!parent.closest?.(".ledger-assets"));
 }

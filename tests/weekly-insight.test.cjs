@@ -96,6 +96,23 @@ test('category references keep one visible and preserve the original remaining e
   more.open = false; more.listeners.toggle(); assert.equal(expanded, false);
 });
 
+test('reference disclosure starts closed, retains all data and remembers expansion independently of category disclosure', () => {
+  const root = new Element(); let expanded;
+  const state = { status: 'local', advice: null, canRefresh: true, message: '', todayBudget: { date: '2026-10-06', spentCents: 0, budgetCents: 5000, category: '', includeStarred: true } };
+  const render = (parent, open) => renderFinanceAdvisor(parent, snapshot(), state, () => {}, false, undefined, undefined, undefined, false, undefined, undefined, open, value => { expanded = value; });
+  render(root, false);
+  const panel = root.querySelector('.ledger-advisor-references'), toggle = root.querySelector('.ledger-advisor-references-toggle');
+  assert.equal(panel.hasClass('is-open'), false);
+  assert.equal(toggle.attributes['aria-expanded'], 'false');
+  assert.equal(panel.all().filter(el => el.hasClass('ledger-advisor-summary-item')).length, 3);
+  assert.equal(panel.querySelector('.ledger-advisor-budget'), undefined, 'today budget remains outside the folded region');
+  assert.ok(root.querySelector('.ledger-advisor-budget'));
+  toggle.listeners.click(); assert.equal(expanded, true); assert.equal(panel.hasClass('is-open'), true); assert.equal(toggle.attributes['aria-expanded'], 'true');
+  const rerender = new Element(); render(rerender, expanded);
+  assert.equal(rerender.querySelector('.ledger-advisor-references').hasClass('is-open'), true);
+  rerender.querySelector('.ledger-advisor-references-toggle').listeners.click(); assert.equal(expanded, false);
+});
+
 test('inline budget distinguishes normal, overspent and unset budgets without exceeding the track', () => {
   for (const [spent, limit, fill, phrase] of [[1500, 5000, '30', '剩余 ¥35.00'], [7500, 5000, '100', '超出 ¥25.00'], [2000, 0, null, '请在设置中填写每日预算']]) {
     const root = new Element();

@@ -822,6 +822,30 @@ button.ledger-advisor-refresh:disabled svg {
   margin-top: 0;
 }
 
+.ledger-advisor-references { grid-area: advisor-summary; min-width: 0; align-self: start; }
+.ledger-advisor-references-toggle { display: none; }
+
+@container (max-width: 540px) {
+  .ledger-advisor-references > button.ledger-advisor-references-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    min-height: 36px;
+    padding: 8px 12px;
+    border: 1px solid var(--mono-grid);
+    border-radius: 12px;
+    box-shadow: none;
+    background: transparent;
+    color: var(--mono-3);
+    font-size: 11px;
+  }
+  .ledger-advisor-references-toggle::after { content: "+"; font-size: 16px; }
+  .ledger-advisor-references.is-open > .ledger-advisor-references-toggle::after { content: "−"; }
+  .ledger-advisor-card .ledger-advisor-references:not(.is-open) > .ledger-advisor-summary { display: none; }
+  .ledger-advisor-card .ledger-advisor-references.is-open > .ledger-advisor-summary { margin-top: 8px; }
+}
+
 .ledger-advisor-summary-item {
   display: grid;
   gap: 7px;
@@ -2599,30 +2623,42 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
 
   .ledger-detail-cards {
     display: grid;
-    gap: 10px;
+    gap: 8px;
   }
 
   .ledger-detail-card {
-    padding: 16px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 2px 8px;
+    padding: 10px 12px;
     border: 0;
-    border-radius: 20px;
+    border-radius: 14px;
   }
 
   .ledger-detail-card-footer {
-    margin-top: 14px;
-    padding-top: 11px;
+    margin: 0;
+    padding: 0;
+    border: 0;
   }
 
   .ledger-source-button {
-    min-height: 38px;
-    padding: 7px 12px;
+    min-height: 32px;
+    padding: 4px 8px;
     font-size: 11px;
+    box-shadow: none;
   }
 
   .ledger-detail-card-top {
+    grid-column: 1 / -1;
+    gap: 6px;
     justify-content: space-between;
     font-variant-numeric: tabular-nums;
+    font-size: 12px;
   }
+
+  .ledger-detail-card-description { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; min-width: 0; font-size: 12px; line-height: 1.5; }
+  .ledger-detail-note { overflow-wrap: anywhere; }
 
   .ledger-detail-card-amount .ledger-star-toggle {
     width: 32px;
@@ -2630,7 +2666,7 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
   }
 
   .ledger-detail-category {
-    margin: 8px 0 4px;
+    margin: 0;
     color: var(--mono-3);
     font-weight: 700;
   }

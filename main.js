@@ -7207,7 +7207,7 @@ function renderDumbbell(parent, data, currentLabel, previousLabel, onClick) {
 function renderEmpty(parent, message) {
   parent.createDiv({ cls: "ledger-empty", text: message });
 }
-function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true, coverage2, onOpenFile, onManageFixed, detailsExpanded = false, onDetailsExpandedChange, balance) {
+function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true, coverage2, onOpenFile, onManageFixed, detailsExpanded = false, onDetailsExpandedChange, balance, referencesExpanded = false, onReferencesExpandedChange) {
   var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r;
   const card2 = parent.createDiv({ cls: `ledger-advisor-card${animate ? " ledger-reveal" : ""}` });
   card2.setAttribute("aria-busy", String(state.status === "loading"));
@@ -7323,7 +7323,20 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
       for (const problem of coverage2.undated) problemLink(problem.path, problem.reason);
     }
   }
-  const summary = card2.createDiv({ cls: `ledger-advisor-summary${detailsExpanded ? " is-open" : ""}` });
+  const referencesPanel = card2.createDiv({ cls: `ledger-advisor-references${referencesExpanded ? " is-open" : ""}` });
+  const referencesToggle = referencesPanel.createEl("button", {
+    cls: "ledger-advisor-references-toggle",
+    text: referencesExpanded ? "\u6536\u8D77\u53C2\u8003\u6570\u636E" : "\u5C55\u5F00\u53C2\u8003\u6570\u636E",
+    attr: { type: "button", "aria-expanded": String(referencesExpanded), "aria-label": "\u5C55\u5F00\u6216\u6536\u8D77\u5DE5\u8D44\u5468\u671F\u4E0E\u5206\u7C7B\u53C2\u8003\u6570\u636E" }
+  });
+  referencesToggle.addEventListener("click", () => {
+    referencesExpanded = !referencesExpanded;
+    referencesPanel.toggleClass("is-open", referencesExpanded);
+    referencesToggle.setAttribute("aria-expanded", String(referencesExpanded));
+    referencesToggle.setText(referencesExpanded ? "\u6536\u8D77\u53C2\u8003\u6570\u636E" : "\u5C55\u5F00\u53C2\u8003\u6570\u636E");
+    onReferencesExpandedChange == null ? void 0 : onReferencesExpandedChange(referencesExpanded);
+  });
+  const summary = referencesPanel.createDiv({ cls: `ledger-advisor-summary${detailsExpanded ? " is-open" : ""}` });
   const spent = summary.createDiv({ cls: "ledger-advisor-summary-item" });
   spent.createSpan({ text: "\u672C\u6B21\u81EA\u5DE5\u8D44\u65E5\u652F\u51FA" });
   spent.createEl("strong", { text: formatCents(snapshot.currentSpentCents) });
@@ -7637,9 +7650,10 @@ var ReportPanel = class {
     generate.disabled = this.loading || !configured;
     generate.addEventListener("click", () => void this.generate(snapshot));
     actions.createSpan({ cls: "ledger-report-muted", text: cache ? `AI \u62A5\u544A \xB7 ${new Date(cache.generatedAt).toLocaleString("zh-CN")}` : configured ? "\u672C\u5730\u5206\u6790 \xB7 \u70B9\u51FB\u751F\u6210 AI \u62A5\u544A" : "\u672C\u5730\u5206\u6790 \xB7 \u914D\u7F6E\u5E76\u542F\u7528 AI \u540E\u53EF\u751F\u6210\u5B8C\u6574\u62A5\u544A" });
-    if (changed) shell.createEl("p", { cls: "ledger-report-status", text: "\u6570\u636E\u3001\u7B5B\u9009\u6216 AI \u914D\u7F6E\u5DF2\u53D8\u5316\uFF0C\u4ECD\u663E\u793A\u4E0A\u6B21\u624B\u52A8\u751F\u6210\u7684\u62A5\u544A\u3002\u70B9\u51FB\u91CD\u65B0\u751F\u6210\u62A5\u544A\u540E\uFF0C\u624D\u4F1A\u4F7F\u7528\u5F53\u524D\u6570\u636E\u66FF\u6362\u3002" });
+    const missingEvidence = cache && !reportSnapshot;
+    const notice = missingEvidence ? `\u65E7\u62A5\u544A${changed ? "\u53EF\u66F4\u65B0\uFF0C" : "\u65E0\u4F9D\u636E\uFF0C"}\u91CD\u65B0\u751F\u6210\u53EF\u8865\u5168\u4F9D\u636E\u3002` : changed ? "\u62A5\u544A\u53EF\u66F4\u65B0\uFF0C\u5F53\u524D\u4FDD\u7559\u65E7\u7248\u3002" : "";
+    if (notice) shell.createEl("p", { cls: "ledger-report-status", text: notice });
     if (cache && reportSnapshot) shell.createEl("p", { cls: "ledger-report-muted", text: `\u62A5\u544A\u751F\u6210\u8303\u56F4\uFF1A${reportSnapshot.label} \xB7 ${reportSnapshot.range.start} \u81F3 ${reportSnapshot.range.end} \xB7 ${reportSnapshot.preferences.scope === "all" ? "\u5168\u90E8\u652F\u51FA" : "\u6D88\u8D39\u652F\u51FA"} \xB7 ${reportSnapshot.preferences.category || "\u5168\u90E8\u5206\u7C7B"}${reportSnapshot.preferences.keyword ? ` \xB7 \u5173\u952E\u8BCD ${reportSnapshot.preferences.keyword}` : ""}${!reportSnapshot.preferences.includeStarred ? " \xB7 \u6392\u9664\u661F\u6807" : ""}` });
-    if (cache && !reportSnapshot) shell.createEl("p", { cls: "ledger-report-status", text: "\u8FD9\u4EFD\u65E7\u62A5\u544A\u672A\u4FDD\u5B58\u751F\u6210\u65F6\u7684\u4F9D\u636E\uFF0C\u4FDD\u7559\u62A5\u544A\u6587\u5B57\u3002\u91CD\u65B0\u751F\u6210\u540E\u4F1A\u540C\u65F6\u4FDD\u5B58\u4F9D\u636E\u3002" });
     if (this.error) shell.createEl("p", { cls: "ledger-report-status", text: `${this.error}\u3002${cache ? "\u4E0A\u6B21\u751F\u6210\u7684\u62A5\u544A\u4ECD\u4FDD\u7559\u3002" : "\u5F53\u524D\u4ECD\u53EF\u67E5\u770B\u672C\u5730\u5206\u6790\u3002"}` });
     renderReportArticle(shell, (_c = cache == null ? void 0 : cache.report) != null ? _c : localSpendingReport(snapshot), reportSnapshot, (ids) => {
       if (reportSnapshot) new ReportEvidenceModal(this.plugin, reportSnapshot, ids, this.openRecord, cache == null ? void 0 : cache.generatedAt).open();
@@ -8146,7 +8160,7 @@ function clampAssetZoom(value) {
 function zoomScrollOffset(scroll, anchor, previous, next) {
   return (scroll + anchor) * next / previous - anchor;
 }
-function enableAssetGestures(viewport, svg, tools, fit = false) {
+function enableAssetGestures(viewport, svg, tools, fit = false, allowPageScroll = false) {
   let scale = 1, base = 0, baseHeight = 0, fitHeightLimit = 0, homeScale = 1, manuallyZoomed = false, dragged = false, suppressUntil = 0, origin = { x: 0, y: 0 };
   const points = /* @__PURE__ */ new Map();
   const minus = tools == null ? void 0 : tools.createEl("button", { cls: "ledger-button", text: "\u2212", attr: { "aria-label": "\u7F29\u5C0F\u6851\u57FA\u56FE" } });
@@ -8166,6 +8180,7 @@ function enableAssetGestures(viewport, svg, tools, fit = false) {
     const next = automatic ? Math.max(0.01, Math.min(4, value)) : fit ? Math.max(Math.min(0.1, homeScale), Math.min(4, value)) : clampAssetZoom(value), x = zoomScrollOffset(viewport.scrollLeft, anchor.x, scale, next), y = zoomScrollOffset(viewport.scrollTop, anchor.y, scale, next);
     svg.style.minWidth = "0";
     svg.style.width = `${base * next}px`;
+    viewport.style.touchAction = allowPageScroll && base * next <= viewport.clientWidth + 1 && (!baseHeight || baseHeight * next <= viewport.clientHeight + 1) ? "pan-y" : "none";
     viewport.scrollLeft = x;
     viewport.scrollTop = y;
     scale = next;
@@ -8222,8 +8237,22 @@ function enableAssetGestures(viewport, svg, tools, fit = false) {
       });
       observer.observe(viewport);
     }
-  } else viewport.setAttribute("data-zoom", "1");
+  } else {
+    viewport.setAttribute("data-zoom", "1");
+    viewport.style.touchAction = "none";
+  }
   viewport.setAttribute("aria-label", "\u8D44\u4EA7\u6851\u57FA\u56FE\uFF0C\u53CC\u6307\u7F29\u653E\uFF0C\u5355\u6307\u62D6\u52A8");
+  let chartTouch = false;
+  for (const type of ["touchstart", "touchmove", "touchend", "touchcancel"]) {
+    viewport.addEventListener(type, (event) => {
+      if (type === "touchstart") chartTouch = viewport.style.touchAction === "none" || event.touches.length > 1;
+      if (chartTouch || viewport.style.touchAction === "none" || event.touches.length > 1) {
+        event.stopPropagation();
+        if (type === "touchmove" && event.cancelable) event.preventDefault();
+      }
+      if (!event.touches.length) chartTouch = false;
+    }, { passive: false });
+  }
   viewport.addEventListener("wheel", (event) => {
     if (event.ctrlKey || event.metaKey) {
       event.preventDefault();
@@ -8262,7 +8291,7 @@ function enableAssetGestures(viewport, svg, tools, fit = false) {
       dragged = true;
       event.preventDefault();
     } else {
-      const dx = next.x - previous.x, dy = next.y - previous.y;
+      const dx = next.x - (dragged ? previous.x : origin.x), dy = next.y - (dragged ? previous.y : origin.y);
       if (dragged || Math.hypot(next.x - origin.x, next.y - origin.y) > 4) {
         dragged = true;
         (_a = viewport.setPointerCapture) == null ? void 0 : _a.call(viewport, event.pointerId);
@@ -8323,21 +8352,22 @@ function interactive(node, text2, action) {
   });
 }
 function renderAssetSankey(parent, snapshot, excludeFixed, hide, onSelect, showControls = true) {
+  var _a;
   const amounts = (cents) => hide ? "\u2022\u2022\u2022\u2022" : formatCents(cents);
   const visible = snapshot.accounts.filter((a) => a.kind !== "liability" && !(excludeFixed && a.kind === "fixed") && a.cents > 0);
   const kinds = ["cash", "fixed", "investment", "receivable"];
   const groups = kinds.map((kind) => ({ kind, accounts: visible.filter((a) => a.kind === kind) })).filter((g) => g.accounts.length);
   const rows = groups.flatMap((g) => g.accounts.flatMap((a) => {
-    var _a;
+    var _a2;
     if (a.kind !== "investment") return [{ account: a, id: a.id, name: a.name, cents: a.cents, holding: false }];
-    const cash = (_a = a.unallocatedCents) != null ? _a : a.cents - a.holdings.reduce((sum3, h) => {
-      var _a2;
-      return sum3 + ((_a2 = h.valueCents) != null ? _a2 : 0);
+    const cash = (_a2 = a.unallocatedCents) != null ? _a2 : a.cents - a.holdings.reduce((sum3, h) => {
+      var _a3;
+      return sum3 + ((_a3 = h.valueCents) != null ? _a3 : 0);
     }, 0);
     if (cash < 0) return [{ account: a, id: a.id, name: a.name, cents: a.cents, holding: false }];
     const rows2 = a.holdings.filter((h) => {
-      var _a2;
-      return ((_a2 = h.valueCents) != null ? _a2 : 0) > 0;
+      var _a3;
+      return ((_a3 = h.valueCents) != null ? _a3 : 0) > 0;
     }).map((h) => ({ account: a, id: h.id, name: h.name, cents: h.valueCents, holding: true }));
     if (cash > 0) rows2.push({ account: a, id: a.id, name: a.name, cents: cash, holding: false });
     return rows2;
@@ -8411,7 +8441,7 @@ function renderAssetSankey(parent, snapshot, excludeFixed, hide, onSelect, showC
     rootCursor += groupHeight;
   }
   if (snapshot.accounts.some((a) => a.cents < 0) || totals.netCents < 0) parent.createEl("p", { cls: "ledger-assets-hint", text: `\u6851\u57FA\u56FE\u5C55\u793A\u6B63\u8D44\u4EA7\uFF1B\u8D1F\u4F59\u989D\u4E0E\u51C0\u8D44\u4EA7\u7F3A\u53E3\u4FDD\u7559\u5728\u603B\u89C8\u53CA\u8D26\u6237\u5217\u8868\u4E2D${hide ? "\u3002" : `\uFF1A${snapshot.accounts.filter((a) => a.cents < 0).map((a) => `${a.name} ${formatCents(a.cents)}`).join("\uFF1B") || formatCents(totals.netCents)}`}` });
-  enableAssetGestures(scroll, svg, tools, true);
+  enableAssetGestures(scroll, svg, tools, true, !!((_a = parent.closest) == null ? void 0 : _a.call(parent, ".ledger-assets")));
 }
 
 // src/asset-ui.ts
@@ -9188,6 +9218,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
     this.financeAdviceLoading = false;
     this.financeAdviceError = "";
     this.advisorDetailsExpanded = false;
+    this.advisorReferencesExpanded = false;
     this.filtersExpanded = !import_obsidian9.Platform.isMobile;
     this.drillContext = null;
     this.pullEligible = false;
@@ -9603,7 +9634,11 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
       (expanded) => {
         this.advisorDetailsExpanded = expanded;
       },
-      balanceStatus(flattenRecords(files), now, this.plugin.settings.salaryCents, this.plugin.settings.balanceCalibration)
+      balanceStatus(flattenRecords(files), now, this.plugin.settings.salaryCents, this.plugin.settings.balanceCalibration),
+      this.advisorReferencesExpanded,
+      (expanded) => {
+        this.advisorReferencesExpanded = expanded;
+      }
     );
     const ownerDocument = parent.ownerDocument;
     const cardRect = parent.getBoundingClientRect();
@@ -9853,10 +9888,11 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
         event.stopPropagation();
         void this.toggleStar(record);
       });
-      card2.createDiv({ cls: "ledger-detail-category", text: record.category });
-      if (record.note) card2.createDiv({ text: record.note });
+      const description = card2.createDiv({ cls: "ledger-detail-card-description" });
+      description.createSpan({ cls: "ledger-detail-category", text: record.category });
+      if (record.note) description.createSpan({ cls: "ledger-detail-note", text: record.note });
       const footer = card2.createDiv({ cls: "ledger-detail-card-footer" });
-      const source = footer.createEl("button", { cls: "ledger-link-button ledger-source-button", text: `\u6253\u5F00\u6765\u6E90 \xB7 \u7B2C ${record.line} \u884C` });
+      const source = footer.createEl("button", { cls: "ledger-link-button ledger-source-button", text: `\u6765\u6E90 \xB7 ${record.line} \u884C`, attr: { "aria-label": `\u6253\u5F00 ${record.date} \u7684\u8D26\u672C\u7B2C ${record.line} \u884C` } });
       source.addEventListener("click", () => void this.openRecord(record));
     }
   }

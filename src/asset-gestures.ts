@@ -3,7 +3,7 @@ export function clampAssetZoom(value: number): number { return Math.max(.1, Math
 export function zoomScrollOffset(scroll: number, anchor: number, previous: number, next: number): number { return (scroll + anchor) * next / previous - anchor; }
 
 /** Chart-local touch gestures: no window listeners, page zoom, or persistent state. */
-export function enableAssetGestures(viewport: HTMLElement, svg: SVGSVGElement, tools: HTMLElement | null, fit = false): void {
+export function enableAssetGestures(viewport: HTMLElement, svg: SVGSVGElement, tools: HTMLElement | null, fit = false, allowPageScroll = false): void {
   let scale = 1, base = 0, baseHeight = 0, fitHeightLimit = 0, homeScale = 1, manuallyZoomed = false, dragged = false, suppressUntil = 0, origin: Point = { x: 0, y: 0 };
   const points = new Map<number, Point>();
   const minus = tools?.createEl("button", { cls: "ledger-button", text: "−", attr: { "aria-label": "缩小桑基图" } });
@@ -20,6 +20,9 @@ export function enableAssetGestures(viewport: HTMLElement, svg: SVGSVGElement, t
     if (!automatic) manuallyZoomed = true;
     measure(); const next = automatic ? Math.max(.01, Math.min(4, value)) : fit ? Math.max(Math.min(.1, homeScale), Math.min(4, value)) : clampAssetZoom(value), x = zoomScrollOffset(viewport.scrollLeft, anchor.x, scale, next), y = zoomScrollOffset(viewport.scrollTop, anchor.y, scale, next);
     svg.style.minWidth = "0"; svg.style.width = `${base * next}px`;
+    // A zoomed diagram owns its gestures. pan-y lets browsers cancel a diagonal
+    // drag before our pointer handler can pan horizontally (especially on iOS).
+    viewport.style.touchAction = allowPageScroll && base * next <= viewport.clientWidth + 1 && (!baseHeight || baseHeight * next <= viewport.clientHeight + 1) ? "pan-y" : "none";
     viewport.scrollLeft = x; viewport.scrollTop = y; scale = next;
     reset?.setText(`${Math.round(scale * 100)}%`); viewport.setAttribute("data-zoom", String(scale));
   };
@@ -55,8 +58,21 @@ export function enableAssetGestures(viewport: HTMLElement, svg: SVGSVGElement, t
         }); else fitChart();
       }); observer.observe(viewport);
     }
-  } else viewport.setAttribute("data-zoom", "1");
+  } else { viewport.setAttribute("data-zoom", "1"); viewport.style.touchAction = "none"; }
   viewport.setAttribute("aria-label", "资产桑基图，双指缩放，单指拖动");
+  // Keep host-app swipe navigation/pull gestures out of a zoomed chart. Touch
+  // events still bubble even when the matching pointermove was prevented.
+  let chartTouch = false;
+  for (const type of ["touchstart", "touchmove", "touchend", "touchcancel"] as const) {
+    viewport.addEventListener(type, event => {
+      if (type === "touchstart") chartTouch = viewport.style.touchAction === "none" || event.touches.length > 1;
+      if (chartTouch || viewport.style.touchAction === "none" || event.touches.length > 1) {
+        event.stopPropagation();
+        if (type === "touchmove" && event.cancelable) event.preventDefault();
+      }
+      if (!event.touches.length) chartTouch = false;
+    }, { passive: false });
+  }
   viewport.addEventListener("wheel", event => { if (event.ctrlKey || event.metaKey) { event.preventDefault(); const rect = viewport.getBoundingClientRect(); zoomAt(scale * Math.exp(-event.deltaY * .002), { x: event.clientX - rect.left, y: event.clientY - rect.top }); } }, { passive: false });
   viewport.addEventListener("pointerdown", event => {
     if (event.pointerType !== "touch" && event.pointerType !== "pen") return;
@@ -76,7 +92,7 @@ export function enableAssetGestures(viewport: HTMLElement, svg: SVGSVGElement, t
       viewport.scrollLeft -= newCenter.x - oldCenter.x; viewport.scrollTop -= newCenter.y - oldCenter.y;
       dragged = true; event.preventDefault();
     } else {
-      const dx = next.x - previous.x, dy = next.y - previous.y;
+      const dx = next.x - (dragged ? previous.x : origin.x), dy = next.y - (dragged ? previous.y : origin.y);
       if (dragged || Math.hypot(next.x - origin.x, next.y - origin.y) > 4) { dragged = true; viewport.setPointerCapture?.(event.pointerId); viewport.scrollLeft -= dx; viewport.scrollTop -= dy; event.preventDefault(); }
     }
   });

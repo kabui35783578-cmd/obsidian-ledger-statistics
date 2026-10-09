@@ -162,9 +162,10 @@ export class ReportPanel {
     generate.disabled = this.loading || !configured;
     generate.addEventListener("click", () => void this.generate(snapshot));
     actions.createSpan({ cls: "ledger-report-muted", text: cache ? `AI 报告 · ${new Date(cache.generatedAt).toLocaleString("zh-CN")}` : configured ? "本地分析 · 点击生成 AI 报告" : "本地分析 · 配置并启用 AI 后可生成完整报告" });
-    if (changed) shell.createEl("p", { cls: "ledger-report-status", text: "数据、筛选或 AI 配置已变化，仍显示上次手动生成的报告。点击重新生成报告后，才会使用当前数据替换。" });
+    const missingEvidence = cache && !reportSnapshot;
+    const notice = missingEvidence ? `旧报告${changed ? "可更新，" : "无依据，"}重新生成可补全依据。` : changed ? "报告可更新，当前保留旧版。" : "";
+    if (notice) shell.createEl("p", { cls: "ledger-report-status", text: notice });
     if (cache && reportSnapshot) shell.createEl("p", { cls: "ledger-report-muted", text: `报告生成范围：${reportSnapshot.label} · ${reportSnapshot.range.start} 至 ${reportSnapshot.range.end} · ${reportSnapshot.preferences.scope === "all" ? "全部支出" : "消费支出"} · ${reportSnapshot.preferences.category || "全部分类"}${reportSnapshot.preferences.keyword ? ` · 关键词 ${reportSnapshot.preferences.keyword}` : ""}${!reportSnapshot.preferences.includeStarred ? " · 排除星标" : ""}` });
-    if (cache && !reportSnapshot) shell.createEl("p", { cls: "ledger-report-status", text: "这份旧报告未保存生成时的依据，保留报告文字。重新生成后会同时保存依据。" });
     if (this.error) shell.createEl("p", { cls: "ledger-report-status", text: `${this.error}。${cache ? "上次生成的报告仍保留。" : "当前仍可查看本地分析。"}` });
     renderReportArticle(shell, cache?.report ?? localSpendingReport(snapshot), reportSnapshot, ids => {
       if (reportSnapshot) new ReportEvidenceModal(this.plugin, reportSnapshot, ids, this.openRecord, cache?.generatedAt).open();

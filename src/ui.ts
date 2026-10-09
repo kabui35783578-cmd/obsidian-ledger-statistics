@@ -738,7 +738,7 @@ export function renderEmpty(parent: HTMLElement, message: string): void {
   parent.createDiv({ cls: "ledger-empty", text: message });
 }
 
-export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvisorSnapshot, state: FinanceAdviceViewState, onRefresh: () => void, animate = true, coverage?: FinanceCoverageReport, onOpenFile?: (path: string) => void, onManageFixed?: () => void, detailsExpanded = false, onDetailsExpandedChange?: (expanded: boolean) => void, balance?: BalanceStatus): void {
+export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvisorSnapshot, state: FinanceAdviceViewState, onRefresh: () => void, animate = true, coverage?: FinanceCoverageReport, onOpenFile?: (path: string) => void, onManageFixed?: () => void, detailsExpanded = false, onDetailsExpandedChange?: (expanded: boolean) => void, balance?: BalanceStatus, referencesExpanded = false, onReferencesExpandedChange?: (expanded: boolean) => void): void {
   const card = parent.createDiv({ cls: `ledger-advisor-card${animate ? " ledger-reveal" : ""}` });
   card.setAttribute("aria-busy", String(state.status === "loading"));
   const heading = card.createDiv({ cls: "ledger-advisor-heading" });
@@ -858,7 +858,19 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
     }
   }
 
-  const summary = card.createDiv({ cls: `ledger-advisor-summary${detailsExpanded ? " is-open" : ""}` });
+  const referencesPanel = card.createDiv({ cls: `ledger-advisor-references${referencesExpanded ? " is-open" : ""}` });
+  const referencesToggle = referencesPanel.createEl("button", {
+    cls: "ledger-advisor-references-toggle", text: referencesExpanded ? "收起参考数据" : "展开参考数据",
+    attr: { type: "button", "aria-expanded": String(referencesExpanded), "aria-label": "展开或收起工资周期与分类参考数据" }
+  });
+  referencesToggle.addEventListener("click", () => {
+    referencesExpanded = !referencesExpanded;
+    referencesPanel.toggleClass("is-open", referencesExpanded);
+    referencesToggle.setAttribute("aria-expanded", String(referencesExpanded));
+    referencesToggle.setText(referencesExpanded ? "收起参考数据" : "展开参考数据");
+    onReferencesExpandedChange?.(referencesExpanded);
+  });
+  const summary = referencesPanel.createDiv({ cls: `ledger-advisor-summary${detailsExpanded ? " is-open" : ""}` });
   const spent = summary.createDiv({ cls: "ledger-advisor-summary-item" });
   spent.createSpan({ text: "本次自工资日支出" });
   spent.createEl("strong", { text: formatCents(snapshot.currentSpentCents) });

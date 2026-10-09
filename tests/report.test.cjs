@@ -407,7 +407,7 @@ test('manual report persists with frozen evidence across edits, filters, rollove
     for (current of variants) {
       const root = new Element(); panel.render(root);
       assert.ok(root.all().some(e => e.textContent === '手动报告1'));
-      assert.ok(root.all().some(e => e.textContent.includes('仍显示上次手动生成')));
+      assert.ok(root.all().some(e => e.textContent.includes('可更新')));
       assert.ok(root.all().some(e => e.textContent === '重新生成报告'));
       assert.equal(calls, 1);
     }
@@ -458,7 +458,8 @@ test('latest legacy cache remains visible without binding stale prose to current
   const root = new Element(); panel.render(root);
   assert.ok(root.all().some(e => e.textContent === '最近手动报告'));
   assert.ok(!root.all().some(e => e.textContent === '较早但匹配的报告'));
-  assert.ok(root.all().some(e => e.textContent.includes('未保存生成时的依据')));
+  assert.ok(root.all().some(e => e.textContent.includes('重新生成可补全依据')));
+  assert.equal(root.all().filter(e => e.classes.has('ledger-report-status')).length, 1, 'stale data and missing evidence share one compact notice');
   assert.ok(!root.all().some(e => e.classes.has('ledger-report-citation') || e.classes.has('ledger-report-overview-citation') || e.classes.has('ledger-report-progress')));
   panel.dispose();
 });

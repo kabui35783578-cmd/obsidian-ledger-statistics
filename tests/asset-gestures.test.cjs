@@ -12,6 +12,31 @@ class Node {
 }
 const pointer = (id, x, y) => ({ pointerId: id, clientX: x, clientY: y, pointerType: 'touch', preventDefault() {} });
 
+test('inline chart permits page scrolling at fit, owns diagonal drags after zoom, and restores page scrolling on reset', () => {
+  const view = new Node(), svg = new Node(), controls = new Node();
+  enableAssetGestures(view, svg, controls, true, true);
+  assert.equal(view.style.touchAction, 'pan-y');
+  let stopped = 0, prevented = 0;
+  const touch = { touches: [{}], cancelable: true, stopPropagation() { stopped++; }, preventDefault() { prevented++; } };
+  view.listeners.touchstart(touch); view.listeners.touchmove(touch);
+  assert.equal(stopped, 0, 'fitted chart leaves page scrolling alone');
+  controls.children[2].listeners.click();
+  assert.equal(view.style.touchAction, 'none');
+  view.listeners.touchstart(touch); view.listeners.touchmove(touch);
+  assert.equal(stopped, 2, 'zoomed chart does not trigger host swipe navigation');
+  assert.equal(prevented, 1);
+  view.listeners.touchend({ ...touch, touches: [] });
+  const before = view.scrollLeft;
+  view.listeners.pointerdown(pointer(1, 100, 100));
+  view.listeners.pointermove(pointer(1, 98, 101));
+  view.listeners.pointermove(pointer(1, 92, 104));
+  assert.equal(view.scrollLeft, before + 8, 'first drag includes movement below the threshold');
+  view.listeners.pointerup(pointer(1, 92, 104));
+  controls.children[1].listeners.click();
+  assert.equal(view.style.touchAction, 'pan-y');
+  assert.equal(view.scrollLeft, 0);
+});
+
 test('expanded chart supports fitting, pinch zoom and panning without zoom buttons', () => {
   const view = new Node(), svg = new Node();
   enableAssetGestures(view, svg, null, true);
