@@ -11,6 +11,40 @@ class Node {
   setPointerCapture() {}
 }
 const pointer = (id, x, y) => ({ pointerId: id, clientX: x, clientY: y, pointerType: 'touch', preventDefault() {} });
+const nativeTouch = (...xy) => ({ touches: xy.map(([clientX,clientY],identifier)=>({clientX,clientY,identifier})),cancelable:true,preventDefault(){this.prevented=true;},stopPropagation(){this.stopped=true;} });
+
+test('home reference framing leaves horizontal content available and native touch swipes reveal it', () => {
+  const view=new Node(),svg=new Node();view.scrollWidth=496;view.scrollLeft=0;view.scrollTop=0;view.clientHeight=192;
+  svg.getBoundingClientRect=()=>({left:0,top:0,width:496,height:192});
+  enableAssetGestures(view,svg,null,true,true,1240/800);
+  assert.equal(svg.style.width,'496px');assert.equal(view.style.touchAction,'pan-y');
+  view.listeners.touchstart(nativeTouch([200,100]));
+  const swipe=nativeTouch([120,100]);view.listeners.touchmove(swipe);
+  assert.equal(view.scrollLeft,80);assert.ok(swipe.prevented&&swipe.stopped);
+  // Pointer events generated alongside the native touch must not pan twice.
+  view.listeners.pointerdown(pointer(1,200,100));view.listeners.pointermove(pointer(1,120,100));assert.equal(view.scrollLeft,80);
+  view.listeners.touchend(nativeTouch());
+  let clickBlocked=false;view.listeners.click({preventDefault(){clickBlocked=true;},stopImmediatePropagation(){}});assert.ok(clickBlocked);
+});
+
+test('iOS-style touch pinch and subsequent one-finger pan work when pointer events are cancelled', () => {
+  const view=new Node(),svg=new Node();view.scrollWidth=1080;
+  enableAssetGestures(view,svg,null,true,true);
+  const initial=+view.attributes['data-zoom'];
+  const start=nativeTouch([100,100],[200,100]);view.listeners.touchstart(start);assert.ok(start.prevented&&start.stopped);
+  view.listeners.touchmove(nativeTouch([100,100],[300,100]));
+  assert.equal(+view.attributes['data-zoom'],initial*2);assert.equal(view.style.touchAction,'none');
+  view.listeners.touchend(nativeTouch([100,100]));const before=view.scrollLeft;
+  view.listeners.touchmove(nativeTouch([80,100]));assert.equal(view.scrollLeft,before+20);
+  view.listeners.touchend(nativeTouch());
+});
+
+test('a fitted home chart lets vertical touch motion scroll the page', () => {
+  const view=new Node(),svg=new Node();view.scrollWidth=496;view.scrollLeft=0;view.scrollTop=0;
+  enableAssetGestures(view,svg,null,true,true,1240/800);
+  view.listeners.touchstart(nativeTouch([100,100]));const move=nativeTouch([101,40]);view.listeners.touchmove(move);
+  assert.ok(!move.prevented&&!move.stopped);assert.equal(view.scrollLeft,0);assert.equal(view.scrollTop,0);
+});
 
 test('inline chart permits page scrolling at fit, owns diagonal drags after zoom, and restores page scrolling on reset', () => {
   const view = new Node(), svg = new Node(), controls = new Node();

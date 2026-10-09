@@ -92,7 +92,8 @@ test('switching default cash preserves historical attribution and uses a new epo
   a.setDefaultCash(state, 'other', before, at(12));
   const after = records('- 10:00 | 餐饮 | Y10.00\n- 13:00 | 餐饮 | Y20.00');
   assert.deepEqual(balances(state, after), { cash: 99000, other: -2000, funds: 10000, loan: 50000 });
-  assert.equal(a.assetTotals(a.buildAssetSnapshot(state, after, at(18))).assetsCents, 107000);
+  const totals = a.assetTotals(a.buildAssetSnapshot(state, after, at(18)));
+  assert.equal(totals.assetsCents, 109000); assert.equal(totals.liabilitiesCents, 52000); assert.equal(totals.netCents, 57000);
 });
 test('same-minute switching never silently chooses an account', () => {
   const state = fixture(); a.setDefaultCash(state, 'other', [], at(12));
@@ -181,10 +182,27 @@ test('partial failures preserve last price; newer successful prices commit indep
   await monitor.refresh(true); assert.equal(state.quotes['fund:000001'].price, '1'); assert.equal(state.quotes['fund:000001'].error, '断网');
   assert.equal(state.quotes['stock:sh600000'].price, '10'); monitor.stop();
 });
-test('negative cash and negative net assets are retained in numeric totals', () => {
+test('cash overdrafts become liabilities without deducting net assets twice', () => {
   const state = fixture(); state.accounts[0].balanceCents = -10000;
   const totals = a.assetTotals(a.buildAssetSnapshot(state, [], at(18)));
-  assert.equal(totals.assetsCents, 0); assert.equal(totals.netCents, -50000);
+  assert.equal(totals.assetsCents, 10000); assert.equal(totals.liabilitiesCents, 60000); assert.equal(totals.netCents, -50000);
+  assert.equal(totals.groups.cash, 0);
+});
+
+test('default spending overdraft combines with manual debt and clears when the cash balance recovers', () => {
+  const state = fixture(); state.accounts[0].balanceCents = -23000;
+  let snap = a.buildAssetSnapshot(state, [], at(18));
+  const rawNet = snap.accounts.filter(x => x.kind !== 'liability').reduce((s,x) => s+x.cents,0)-snap.accounts.filter(x=>x.kind==='liability').reduce((s,x)=>s+x.cents,0);
+  let totals = a.assetTotals(snap);
+  assert.equal(totals.netCents, rawNet);
+  assert.equal(totals.liabilitiesCents, 73000);
+  assert.equal(snap.accounts.find(x=>x.id===state.defaultCashId).cents,-23000);
+  const restored = a.normalizeAssets(clone(state));
+  assert.deepEqual(a.assetTotals(a.buildAssetSnapshot(restored, [], at(18))),totals);
+  restored.accounts[0].balanceCents=5000;
+  totals=a.assetTotals(a.buildAssetSnapshot(restored, [], at(18)));
+  assert.equal(totals.liabilitiesCents,50000);assert.equal(totals.groups.cash,5000);
+  assert.equal(restored.accounts.filter(x=>x.kind==='liability').length,1,'no derived account is created');
 });
 test('older settings migrate to an empty asset state and malformed saved entries are rejected', () => {
   assert.deepEqual(a.normalizeAssets(undefined), a.emptyAssets());

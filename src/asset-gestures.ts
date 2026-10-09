@@ -3,7 +3,7 @@ export function clampAssetZoom(value: number): number { return Math.max(.1, Math
 export function zoomScrollOffset(scroll: number, anchor: number, previous: number, next: number): number { return (scroll + anchor) * next / previous - anchor; }
 
 /** Chart-local touch gestures: no window listeners, page zoom, or persistent state. */
-export function enableAssetGestures(viewport: HTMLElement, svg: SVGSVGElement, tools: HTMLElement | null, fit = false, allowPageScroll = false): void {
+export function enableAssetGestures(viewport: HTMLElement, svg: SVGSVGElement, tools: HTMLElement | null, fit = false, allowPageScroll = false, fitWidthRatio = 1): void {
   let scale = 1, base = 0, baseHeight = 0, fitHeightLimit = 0, homeScale = 1, manuallyZoomed = false, dragged = false, suppressUntil = 0, origin: Point = { x: 0, y: 0 };
   const points = new Map<number, Point>();
   const minus = tools?.createEl("button", { cls: "ledger-button", text: "−", attr: { "aria-label": "缩小桑基图" } });
@@ -22,7 +22,7 @@ export function enableAssetGestures(viewport: HTMLElement, svg: SVGSVGElement, t
     svg.style.minWidth = "0"; svg.style.width = `${base * next}px`;
     // A zoomed diagram owns its gestures. pan-y lets browsers cancel a diagonal
     // drag before our pointer handler can pan horizontally (especially on iOS).
-    viewport.style.touchAction = allowPageScroll && base * next <= viewport.clientWidth + 1 && (!baseHeight || baseHeight * next <= viewport.clientHeight + 1) ? "pan-y" : "none";
+    viewport.style.touchAction = allowPageScroll && next <= homeScale + .0001 && (!baseHeight || baseHeight * next <= viewport.clientHeight + 1) ? "pan-y" : "none";
     viewport.scrollLeft = x; viewport.scrollTop = y; scale = next;
     reset?.setText(`${Math.round(scale * 100)}%`); viewport.setAttribute("data-zoom", String(scale));
   };
@@ -35,7 +35,7 @@ export function enableAssetGestures(viewport: HTMLElement, svg: SVGSVGElement, t
     const pixels = cap.match(/[\d.]+px/g)?.map(value => parseFloat(value));
     if (pixels?.length && !cap.includes("vh")) fitHeightLimit = Math.min(...pixels);
     else if (!fitHeightLimit) fitHeightLimit = viewport.clientHeight;
-    const target = Math.min(1, viewport.clientWidth / base, baseHeight && fitHeightLimit ? fitHeightLimit / baseHeight : 1);
+    const target = Math.min(1, viewport.clientWidth / base * fitWidthRatio, baseHeight && fitHeightLimit ? fitHeightLimit / baseHeight : 1);
     homeScale = target; zoomAt(target, { x: 0, y: 0 }, true); viewport.scrollLeft = viewport.scrollTop = 0;
   };
   const center = (): Point => ({ x: viewport.clientWidth / 2, y: viewport.clientHeight / 2 });
@@ -62,10 +62,45 @@ export function enableAssetGestures(viewport: HTMLElement, svg: SVGSVGElement, t
   viewport.setAttribute("aria-label", "资产桑基图，双指缩放，单指拖动");
   // Keep host-app swipe navigation/pull gestures out of a zoomed chart. Touch
   // events still bubble even when the matching pointermove was prevented.
-  let chartTouch = false;
+  let chartTouch = false, nativeTouch = false, touchPoints: Point[] = [], touchOrigin: Point = { x: 0, y: 0 };
+  const locations = (event: TouchEvent): Point[] => Array.from(event.touches).map(t => ({ x: t.clientX, y: t.clientY })).filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
   for (const type of ["touchstart", "touchmove", "touchend", "touchcancel"] as const) {
     viewport.addEventListener(type, event => {
-      if (type === "touchstart") chartTouch = viewport.style.touchAction === "none" || event.touches.length > 1;
+      const after = locations(event);
+      if (type === "touchstart") {
+        chartTouch = viewport.style.touchAction === "none" || event.touches.length > 1;
+        if (after.length) {
+          nativeTouch = true; touchPoints = after;
+          if (after.length === 1) { dragged = false; touchOrigin = after[0]; }
+          // iOS may cancel pointer events when it recognizes a native pinch.
+          // Own multi-touch here and perform gestures from TouchEvents directly.
+          if (after.length > 1 && event.cancelable) event.preventDefault();
+        }
+      } else if (type === "touchmove" && nativeTouch && after.length && touchPoints.length) {
+        if (after.length > 1 && touchPoints.length > 1) {
+          const distance = (ps: Point[]): number => Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y);
+          const oldDistance = distance(touchPoints);
+          if (oldDistance >= 2) {
+            const oldCenter = { x: (touchPoints[0].x + touchPoints[1].x) / 2, y: (touchPoints[0].y + touchPoints[1].y) / 2 };
+            const nextCenter = { x: (after[0].x + after[1].x) / 2, y: (after[0].y + after[1].y) / 2 }, rect = viewport.getBoundingClientRect();
+            zoomAt(scale * distance(after) / oldDistance, { x: oldCenter.x - rect.left, y: oldCenter.y - rect.top });
+            viewport.scrollLeft -= nextCenter.x - oldCenter.x; viewport.scrollTop -= nextCenter.y - oldCenter.y;
+            dragged = chartTouch = true;
+          }
+        } else if (after.length === 1 && touchPoints.length === 1) {
+          const totalX = after[0].x - touchOrigin.x, totalY = after[0].y - touchOrigin.y;
+          const ownsDrag = chartTouch || viewport.style.touchAction === "none" || (viewport.scrollWidth > viewport.clientWidth + 1 && Math.abs(totalX) > Math.abs(totalY));
+          if (ownsDrag && (dragged || Math.hypot(totalX, totalY) > 4)) {
+            viewport.scrollLeft -= dragged ? after[0].x - touchPoints[0].x : totalX;
+            viewport.scrollTop -= dragged ? after[0].y - touchPoints[0].y : totalY;
+            dragged = chartTouch = true;
+          }
+        }
+        touchPoints = after;
+      } else if (type === "touchend" || type === "touchcancel") {
+        touchPoints = after; if (after.length === 1) touchOrigin = after[0];
+        if (!after.length) { nativeTouch = false; points.clear(); if (dragged) suppressUntil = Date.now() + 350; }
+      }
       if (chartTouch || viewport.style.touchAction === "none" || event.touches.length > 1) {
         event.stopPropagation();
         if (type === "touchmove" && event.cancelable) event.preventDefault();
@@ -75,12 +110,14 @@ export function enableAssetGestures(viewport: HTMLElement, svg: SVGSVGElement, t
   }
   viewport.addEventListener("wheel", event => { if (event.ctrlKey || event.metaKey) { event.preventDefault(); const rect = viewport.getBoundingClientRect(); zoomAt(scale * Math.exp(-event.deltaY * .002), { x: event.clientX - rect.left, y: event.clientY - rect.top }); } }, { passive: false });
   viewport.addEventListener("pointerdown", event => {
+    if (nativeTouch && event.pointerType === "touch") return;
     if (event.pointerType !== "touch" && event.pointerType !== "pen") return;
     if (!points.size) { dragged = false; origin = { x: event.clientX, y: event.clientY }; }
     points.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (points.size > 1) { dragged = true; for (const id of points.keys()) viewport.setPointerCapture?.(id); }
   });
   viewport.addEventListener("pointermove", event => {
+    if (nativeTouch && event.pointerType === "touch") return;
     const previous = points.get(event.pointerId); if (!previous) return;
     const before = [...points.values()], next = { x: event.clientX, y: event.clientY };
     points.set(event.pointerId, next);

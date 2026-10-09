@@ -39,3 +39,11 @@ test('same-day saved changes replace the current snapshot and survive persistenc
   assert.equal(restored.snapshots.length, 2);
   assert.equal(dailyAssetChange(restored, restored.snapshots[1]), 2000);
 });
+test('crossing zero separates asset spending from new overdraft debt in daily comparisons', () => {
+  const { assetTotals } = require('../dist/assets.cjs');
+  const previous = snapshot('2026-10-09', 10000, 50000), current = snapshot('2026-10-10', -5000, 50000);
+  const before=assetTotals(previous),after=assetTotals(current);
+  assert.equal(dailyAssetChange({snapshots:[previous]},current),-10000);
+  assert.equal(after.liabilitiesCents-before.liabilitiesCents,5000);
+  assert.equal(after.netCents-before.netCents,-15000);
+});

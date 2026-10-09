@@ -5597,7 +5597,8 @@ function assetTotals(snapshot, excludeFixed = false) {
   let missing = snapshot.pending.length > 0;
   for (const a of snapshot.accounts) {
     if (excludeFixed && a.kind === "fixed") continue;
-    groups[a.kind] += a.cents;
+    if (a.kind === "cash" && a.cents < 0) groups.liability -= a.cents;
+    else groups[a.kind] += a.cents;
     missing || (missing = a.missing);
   }
   const assetsCents = groups.cash + groups.investment + groups.fixed + groups.receivable;
@@ -8166,7 +8167,7 @@ function clampAssetZoom(value) {
 function zoomScrollOffset(scroll, anchor, previous, next) {
   return (scroll + anchor) * next / previous - anchor;
 }
-function enableAssetGestures(viewport, svg, tools, fit = false, allowPageScroll = false) {
+function enableAssetGestures(viewport, svg, tools, fit = false, allowPageScroll = false, fitWidthRatio = 1) {
   let scale = 1, base = 0, baseHeight = 0, fitHeightLimit = 0, homeScale = 1, manuallyZoomed = false, dragged = false, suppressUntil = 0, origin = { x: 0, y: 0 };
   const points = /* @__PURE__ */ new Map();
   const minus = tools == null ? void 0 : tools.createEl("button", { cls: "ledger-button", text: "\u2212", attr: { "aria-label": "\u7F29\u5C0F\u6851\u57FA\u56FE" } });
@@ -8186,7 +8187,7 @@ function enableAssetGestures(viewport, svg, tools, fit = false, allowPageScroll 
     const next = automatic ? Math.max(0.01, Math.min(4, value)) : fit ? Math.max(Math.min(0.1, homeScale), Math.min(4, value)) : clampAssetZoom(value), x = zoomScrollOffset(viewport.scrollLeft, anchor.x, scale, next), y = zoomScrollOffset(viewport.scrollTop, anchor.y, scale, next);
     svg.style.minWidth = "0";
     svg.style.width = `${base * next}px`;
-    viewport.style.touchAction = allowPageScroll && base * next <= viewport.clientWidth + 1 && (!baseHeight || baseHeight * next <= viewport.clientHeight + 1) ? "pan-y" : "none";
+    viewport.style.touchAction = allowPageScroll && next <= homeScale + 1e-4 && (!baseHeight || baseHeight * next <= viewport.clientHeight + 1) ? "pan-y" : "none";
     viewport.scrollLeft = x;
     viewport.scrollTop = y;
     scale = next;
@@ -8201,7 +8202,7 @@ function enableAssetGestures(viewport, svg, tools, fit = false, allowPageScroll 
     const pixels = (_a = cap.match(/[\d.]+px/g)) == null ? void 0 : _a.map((value) => parseFloat(value));
     if ((pixels == null ? void 0 : pixels.length) && !cap.includes("vh")) fitHeightLimit = Math.min(...pixels);
     else if (!fitHeightLimit) fitHeightLimit = viewport.clientHeight;
-    const target2 = Math.min(1, viewport.clientWidth / base, baseHeight && fitHeightLimit ? fitHeightLimit / baseHeight : 1);
+    const target2 = Math.min(1, viewport.clientWidth / base * fitWidthRatio, baseHeight && fitHeightLimit ? fitHeightLimit / baseHeight : 1);
     homeScale = target2;
     zoomAt(target2, { x: 0, y: 0 }, true);
     viewport.scrollLeft = viewport.scrollTop = 0;
@@ -8248,10 +8249,53 @@ function enableAssetGestures(viewport, svg, tools, fit = false, allowPageScroll 
     viewport.style.touchAction = "none";
   }
   viewport.setAttribute("aria-label", "\u8D44\u4EA7\u6851\u57FA\u56FE\uFF0C\u53CC\u6307\u7F29\u653E\uFF0C\u5355\u6307\u62D6\u52A8");
-  let chartTouch = false;
+  let chartTouch = false, nativeTouch = false, touchPoints = [], touchOrigin = { x: 0, y: 0 };
+  const locations = (event) => Array.from(event.touches).map((t) => ({ x: t.clientX, y: t.clientY })).filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
   for (const type of ["touchstart", "touchmove", "touchend", "touchcancel"]) {
     viewport.addEventListener(type, (event) => {
-      if (type === "touchstart") chartTouch = viewport.style.touchAction === "none" || event.touches.length > 1;
+      const after = locations(event);
+      if (type === "touchstart") {
+        chartTouch = viewport.style.touchAction === "none" || event.touches.length > 1;
+        if (after.length) {
+          nativeTouch = true;
+          touchPoints = after;
+          if (after.length === 1) {
+            dragged = false;
+            touchOrigin = after[0];
+          }
+          if (after.length > 1 && event.cancelable) event.preventDefault();
+        }
+      } else if (type === "touchmove" && nativeTouch && after.length && touchPoints.length) {
+        if (after.length > 1 && touchPoints.length > 1) {
+          const distance = (ps) => Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y);
+          const oldDistance = distance(touchPoints);
+          if (oldDistance >= 2) {
+            const oldCenter = { x: (touchPoints[0].x + touchPoints[1].x) / 2, y: (touchPoints[0].y + touchPoints[1].y) / 2 };
+            const nextCenter = { x: (after[0].x + after[1].x) / 2, y: (after[0].y + after[1].y) / 2 }, rect = viewport.getBoundingClientRect();
+            zoomAt(scale * distance(after) / oldDistance, { x: oldCenter.x - rect.left, y: oldCenter.y - rect.top });
+            viewport.scrollLeft -= nextCenter.x - oldCenter.x;
+            viewport.scrollTop -= nextCenter.y - oldCenter.y;
+            dragged = chartTouch = true;
+          }
+        } else if (after.length === 1 && touchPoints.length === 1) {
+          const totalX = after[0].x - touchOrigin.x, totalY = after[0].y - touchOrigin.y;
+          const ownsDrag = chartTouch || viewport.style.touchAction === "none" || viewport.scrollWidth > viewport.clientWidth + 1 && Math.abs(totalX) > Math.abs(totalY);
+          if (ownsDrag && (dragged || Math.hypot(totalX, totalY) > 4)) {
+            viewport.scrollLeft -= dragged ? after[0].x - touchPoints[0].x : totalX;
+            viewport.scrollTop -= dragged ? after[0].y - touchPoints[0].y : totalY;
+            dragged = chartTouch = true;
+          }
+        }
+        touchPoints = after;
+      } else if (type === "touchend" || type === "touchcancel") {
+        touchPoints = after;
+        if (after.length === 1) touchOrigin = after[0];
+        if (!after.length) {
+          nativeTouch = false;
+          points.clear();
+          if (dragged) suppressUntil = Date.now() + 350;
+        }
+      }
       if (chartTouch || viewport.style.touchAction === "none" || event.touches.length > 1) {
         event.stopPropagation();
         if (type === "touchmove" && event.cancelable) event.preventDefault();
@@ -8268,6 +8312,7 @@ function enableAssetGestures(viewport, svg, tools, fit = false, allowPageScroll 
   }, { passive: false });
   viewport.addEventListener("pointerdown", (event) => {
     var _a;
+    if (nativeTouch && event.pointerType === "touch") return;
     if (event.pointerType !== "touch" && event.pointerType !== "pen") return;
     if (!points.size) {
       dragged = false;
@@ -8281,6 +8326,7 @@ function enableAssetGestures(viewport, svg, tools, fit = false, allowPageScroll 
   });
   viewport.addEventListener("pointermove", (event) => {
     var _a;
+    if (nativeTouch && event.pointerType === "touch") return;
     const previous = points.get(event.pointerId);
     if (!previous) return;
     const before = [...points.values()], next = { x: event.clientX, y: event.clientY };
@@ -8357,68 +8403,10 @@ function interactive(node, text2, action) {
     }
   });
 }
-function renderAssetOverviewSankey(parent, snapshot, excludeFixed, hide, expand) {
-  const totals = assetTotals(snapshot, excludeFixed);
-  const accounts = snapshot.accounts.filter((a) => a.kind !== "liability" && !(excludeFixed && a.kind === "fixed") && a.cents > 0);
-  const total3 = accounts.reduce((sum3, a) => sum3 + a.cents, 0);
-  if (!total3) {
-    parent.createEl("p", { cls: "ledger-assets-empty", text: snapshot.accounts.length ? "\u5F53\u524D\u6CA1\u6709\u53EF\u7ED8\u5236\u7684\u6B63\u8D44\u4EA7\uFF0C\u8BF7\u5728\u8D44\u4EA7\u7BA1\u7406\u4E2D\u67E5\u770B\u4F59\u989D\u4E0E\u6301\u4ED3\u3002" : "\u6DFB\u52A0\u8D26\u6237\u548C\u6301\u4ED3\u540E\uFF0C\u8FD9\u91CC\u663E\u793A\u8D44\u4EA7\u7EC4\u6210\u6851\u57FA\u56FE\u3002" });
-    return;
-  }
-  const kinds = ["cash", "fixed", "investment", "receivable"];
-  const groups = kinds.map((kind) => ({ kind, accounts: accounts.filter((a) => a.kind === kind) })).filter((g) => g.accounts.length);
-  const height = Math.max(480, groups.length * 95 + 180), scale = (height - 170 - (groups.length - 1) * 32) / total3;
-  const svg = document.createElementNS(NS2, "svg");
-  svg.setAttribute("viewBox", `0 0 800 ${height}`);
-  svg.setAttribute("class", "ledger-assets-overview-sankey");
-  svg.setAttribute("role", "group");
-  svg.setAttribute("aria-label", hide ? "\u8D44\u4EA7\u7EC4\u6210\uFF0C\u91D1\u989D\u5DF2\u9690\u85CF" : "\u51C0\u8D44\u4EA7\u3001\u603B\u8D44\u4EA7\u4E0E\u8D44\u4EA7\u7C7B\u522B\uFF0C\u70B9\u51FB\u67E5\u770B\u5B8C\u6574\u7EC4\u6210");
-  parent.appendChild(svg);
-  const complete = !accounts.some((a) => a.cents < 0) && !snapshot.accounts.some((a) => a.kind !== "liability" && !(excludeFixed && a.kind === "fixed") && a.cents < 0) && totals.netCents >= 0;
-  const sourceHeight = total3 * scale;
-  if (complete) {
-    const netHeight = totals.netCents * scale;
-    el2("rect", { x: 125, y: 115, width: 11, height: netHeight, fill: "#76A69A", "fill-opacity": 0.72 }, svg);
-    band(svg, 136, 115, 345, 115, netHeight, "#76A69A");
-    label(svg, 25, 115 + netHeight / 2, "\u51C0\u8D44\u4EA7", 25);
-    if (totals.liabilitiesCents > 0) {
-      const debtHeight = totals.liabilitiesCents * scale, y = 115 + netHeight + 24;
-      el2("rect", { x: 125, y, width: 11, height: debtHeight, fill: COLORS.liability, "fill-opacity": 0.72 }, svg);
-      band(svg, 136, y, 345, 115 + netHeight, debtHeight, COLORS.liability);
-      label(svg, 25, y + debtHeight / 2, "\u8D1F\u503A", 25);
-    }
-  } else label(svg, 25, 115 + sourceHeight / 2, totals.netCents < 0 ? "\u51C0\u8D44\u4EA7\u7F3A\u53E3" : "\u51C0\u8D44\u4EA7", 22);
-  el2("rect", { x: 365, y: 115, width: 20, height: sourceHeight, fill: COLORS.investment, "fill-opacity": 0.72 }, svg);
-  label(svg, 365, 82, totals.missing || !complete ? "\u5DF2\u4F30\u503C\u6B63\u8D44\u4EA7" : "\u603B\u8D44\u4EA7", 27);
-  let cursor = 80, source = 115;
-  for (const group2 of groups) {
-    const cents = group2.accounts.reduce((sum3, a) => sum3 + a.cents, 0), h = cents * scale;
-    band(svg, 385, source, 620, cursor, h, COLORS.investment, COLORS.investment);
-    el2("rect", { x: 620, y: cursor, width: 11, height: h, fill: COLORS[group2.kind], "fill-opacity": 0.72 }, svg);
-    let tail = cursor;
-    for (const account of group2.accounts) {
-      const leaves = account.kind === "investment" ? account.holdings.filter((h2) => {
-        var _a;
-        return ((_a = h2.valueCents) != null ? _a : 0) > 0;
-      }).map((h2) => h2.valueCents) : [];
-      const remaining = account.cents - leaves.reduce((sum3, value) => sum3 + value, 0);
-      const values = remaining >= 0 ? [...leaves, ...remaining > 0 ? [remaining] : []] : [account.cents];
-      for (const value of values) {
-        const size = value * scale;
-        band(svg, 631, tail, 850, tail - 55, size, "var(--mono-grid)");
-        tail += size;
-      }
-    }
-    const target2 = el2("g", {}, svg);
-    el2("rect", { x: 616, y: cursor + h / 2 - 24, width: 182, height: 48, fill: "transparent" }, target2);
-    label(target2, 639, cursor + h / 2, ASSET_NAMES[group2.kind], 25);
-    interactive(target2, `${ASSET_NAMES[group2.kind]}\uFF0C${hide ? "\u91D1\u989D\u5DF2\u9690\u85CF" : formatCents(cents)}\uFF0C\u67E5\u770B\u5B8C\u6574\u7EC4\u6210`, expand);
-    cursor += h + 32;
-    source += h;
-  }
-  if (!complete || totals.missing) parent.createEl("small", { cls: "ledger-assets-hint", text: "\u56FE\u4E2D\u5C55\u793A\u5DF2\u4F30\u503C\u6B63\u8D44\u4EA7\uFF0C\u8D1F\u4F59\u989D\u4E0E\u5F85\u6838\u5BF9\u9879\u8BF7\u67E5\u770B\u603B\u89C8\u53CA\u8D44\u4EA7\u7BA1\u7406\u3002" });
+function renderAssetOverviewSankey(parent, snapshot, excludeFixed, hide, onSelect) {
+  renderAssetSankey(parent, snapshot, excludeFixed, hide, onSelect, false, true);
 }
-function renderAssetSankey(parent, snapshot, excludeFixed, hide, onSelect, showControls = true) {
+function renderAssetSankey(parent, snapshot, excludeFixed, hide, onSelect, showControls = true, overview = false) {
   var _a;
   const amounts = (cents) => hide ? "\u2022\u2022\u2022\u2022" : formatCents(cents);
   const visible = snapshot.accounts.filter((a) => a.kind !== "liability" && !(excludeFixed && a.kind === "fixed") && a.cents > 0);
@@ -8440,23 +8428,28 @@ function renderAssetSankey(parent, snapshot, excludeFixed, hide, onSelect, showC
     return rows2;
   }));
   if (!rows.length) {
-    parent.createEl("p", { cls: "ledger-assets-empty", text: snapshot.accounts.length ? "\u5F53\u524D\u6CA1\u6709\u53EF\u7ED8\u5236\u7684\u6B63\u8D44\u4EA7\uFF1B\u672A\u4F30\u503C\u6301\u4ED3\u3001\u8D1F\u4F59\u989D\u4E0E\u51C0\u8D44\u4EA7\u7F3A\u53E3\u8BF7\u67E5\u770B\u603B\u89C8\u548C\u8D26\u6237\u3002" : "\u6DFB\u52A0\u8D26\u6237\u548C\u6301\u4ED3\u540E\uFF0C\u8FD9\u91CC\u663E\u793A\u8D44\u4EA7\u7EC4\u6210\u6851\u57FA\u56FE\u3002" });
+    parent.createEl("p", { cls: "ledger-assets-empty", text: snapshot.accounts.length ? "\u6682\u65E0\u8D44\u4EA7\uFF0C\u8D26\u6237\u4F59\u989D\u8BF7\u5728\u8D44\u4EA7\u7BA1\u7406\u4E2D\u67E5\u770B\u3002" : "\u6DFB\u52A0\u8D26\u6237\u548C\u6301\u4ED3\u540E\uFF0C\u8FD9\u91CC\u663E\u793A\u8D44\u4EA7\u7EC4\u6210\u3002" });
     return;
   }
   const rowGap = 44;
-  const total3 = visible.reduce((sum3, a) => sum3 + a.cents, 0), height = Math.max(360, rows.length * 64 + groups.length * 24 + 100);
+  const total3 = visible.reduce((sum3, a) => sum3 + a.cents, 0), height = Math.max(overview ? 480 : 360, rows.length * 64 + groups.length * 24 + 100);
   const plotHeight = height - 130 - Math.max(0, rows.length - 1) * rowGap - Math.max(0, groups.length - 1) * 20;
   const scale = plotHeight / total3;
   const tools = showControls ? parent.createDiv({ cls: "ledger-assets-zoom-tools" }) : null;
-  const scroll = parent.createDiv({ cls: "ledger-assets-sankey-scroll" });
+  const scroll = parent.createDiv({ cls: `ledger-assets-sankey-scroll${overview ? " ledger-assets-overview-scroll" : ""}` });
   scroll.setAttribute("aria-label", "\u8D44\u4EA7\u7EC4\u6210\u6851\u57FA\u56FE\uFF0C\u76F4\u63A5\u5C55\u793A\u8D26\u6237\u4F59\u989D\u4E0E\u6301\u4ED3");
   const svg = document.createElementNS(NS2, "svg");
   svg.setAttribute("viewBox", `0 0 1240 ${height}`);
-  svg.setAttribute("class", "ledger-assets-sankey");
+  svg.setAttribute("class", `ledger-assets-sankey${overview ? " ledger-assets-overview-sankey" : ""}`);
+  if (overview) {
+    svg.style.minWidth = "0";
+    svg.style.width = `${1240 / 800 * 100}%`;
+  }
   svg.setAttribute("role", "group");
   svg.setAttribute("aria-label", "\u8D44\u4EA7\u603B\u91CF\u3001\u8D44\u4EA7\u7C7B\u522B\u3001\u8D26\u6237\u7EC4\u6210");
   scroll.appendChild(svg);
-  const totals = assetTotals(snapshot, excludeFixed), sources = totals.netCents >= 0 && !snapshot.accounts.some((a) => a.cents < 0);
+  const totals = assetTotals(snapshot, excludeFixed), sources = totals.netCents >= 0 && !snapshot.accounts.some((a) => a.kind !== "cash" && a.kind !== "liability" && !(excludeFixed && a.kind === "fixed") && a.cents < 0);
+  const sourceX = overview ? 125 : 80, rootX = overview ? 365 : 310, groupX = overview ? 620 : 675;
   let cursor = 95, rootCursor = 100;
   const groupLayout = [];
   for (const group2 of groups) {
@@ -8470,31 +8463,30 @@ function renderAssetSankey(parent, snapshot, excludeFixed, hide, onSelect, showC
   }
   if (sources) {
     const debt = totals.liabilitiesCents, net = totals.netCents, netHeight = net * scale, debtHeight = debt * scale;
-    el2("rect", { x: 80, y: 100, width: 12, height: netHeight, rx: 3, fill: "#76A69A", "fill-opacity": 0.72 }, svg);
-    band(svg, 92, 100, 310, 100, netHeight, "#76A69A", "#7C9CBF");
-    label(svg, 75, 82, `\u51C0\u8D44\u4EA7 ${amounts(net)}`, 16);
+    el2("rect", { x: sourceX, y: 100, width: 12, height: netHeight, rx: 3, fill: "#76A69A", "fill-opacity": 0.72 }, svg);
+    band(svg, sourceX + 12, 100, rootX - (overview ? 20 : 0), 100, netHeight, "#76A69A", overview ? "#76A69A" : "#7C9CBF");
+    label(svg, overview ? 25 : 75, overview ? 100 + netHeight / 2 : 82, overview ? "\u51C0\u8D44\u4EA7" : `\u51C0\u8D44\u4EA7 ${amounts(net)}`, overview ? 25 : 16);
     if (debt > 0) {
       const y = 100 + netHeight + 28;
-      el2("rect", { x: 80, y, width: 12, height: debtHeight, rx: 3, fill: COLORS.liability }, svg);
-      band(svg, 92, y, 310, 100 + netHeight, debtHeight, COLORS.liability);
-      label(svg, 75, y + debtHeight + 22, `\u8D1F\u503A ${amounts(debt)}`, 15);
+      el2("rect", { x: sourceX, y, width: 12, height: debtHeight, rx: 3, fill: COLORS.liability }, svg);
+      band(svg, sourceX + 12, y, rootX - (overview ? 20 : 0), 100 + netHeight, debtHeight, COLORS.liability);
+      label(svg, overview ? 25 : 75, overview ? y + debtHeight / 2 : y + debtHeight + 22, overview ? "\u8D1F\u503A" : `\u8D1F\u503A ${amounts(debt)}`, overview ? 25 : 15);
     }
   } else {
-    label(svg, 75, 82, `\u51C0\u8D44\u4EA7 ${amounts(totals.netCents)}`, 16);
-    label(svg, 75, 112, "\u7F3A\u53E3\u5355\u72EC\u5217\u793A", 14);
+    label(svg, overview ? 25 : 75, overview ? 100 + total3 * scale / 2 : 82, overview ? "\u51C0\u8D44\u4EA7" : `\u51C0\u8D44\u4EA7 ${amounts(totals.netCents)}`, overview ? 25 : 16);
   }
-  el2("rect", { x: 310, y: 100, width: 13, height: total3 * scale, rx: 3, fill: "#7C9CBF", "fill-opacity": 0.72 }, svg);
-  label(svg, 310, 62, `${totals.missing || !sources ? "\u5DF2\u4F30\u503C\u6B63\u8D44\u4EA7" : "\u603B\u8D44\u4EA7"} ${amounts(total3)}`, 17);
+  el2("rect", { x: rootX, y: 100, width: overview ? 20 : 13, height: total3 * scale, rx: 3, fill: "#7C9CBF", "fill-opacity": 0.72 }, svg);
+  label(svg, rootX, overview ? 68 : 62, overview ? "\u603B\u8D44\u4EA7" : `\u603B\u8D44\u4EA7 ${amounts(totals.assetsCents)}`, overview ? 27 : 17);
   for (const group2 of groupLayout) {
     const color = COLORS[group2.kind], groupHeight = group2.cents * scale, groupRows = rows.filter((r) => r.account.kind === group2.kind);
-    band(svg, 323, rootCursor, 675, group2.y, groupHeight, color);
-    el2("rect", { x: 675, y: group2.y, width: 12, height: groupHeight, rx: 3, fill: color, "fill-opacity": 0.72 }, svg);
-    label(svg, 660, group2.y + groupHeight / 2, `${ASSET_NAMES[group2.kind]} ${amounts(group2.cents)}`, 15, "end");
+    band(svg, rootX + (overview ? 20 : 13), rootCursor, groupX, group2.y, groupHeight, overview ? COLORS.investment : color);
+    el2("rect", { x: groupX, y: group2.y, width: 12, height: groupHeight, rx: 3, fill: color, "fill-opacity": 0.72 }, svg);
+    label(svg, overview ? groupX + 19 : groupX - 15, group2.y + groupHeight / 2, overview ? ASSET_NAMES[group2.kind] : `${ASSET_NAMES[group2.kind]} ${amounts(group2.cents)}`, overview ? 25 : 15, overview ? "start" : "end");
     let source = group2.y;
     groupRows.forEach((row, index) => {
       const y = group2.rowYs[index], h = row.cents * scale;
       const leafColor = row.holding ? HOLDING_COLORS[row.account.holdings.findIndex((holding) => holding.id === row.id) % HOLDING_COLORS.length] : row.account.kind === "investment" ? "#D69B89" : color;
-      band(svg, 687, source, 945, y, h, color, leafColor);
+      band(svg, groupX + 12, source, 945, y, h, overview ? "var(--mono-grid)" : color, overview ? "var(--mono-grid)" : leafColor);
       el2("rect", { x: 945, y, width: 8, height: h, rx: 3, fill: leafColor, "fill-opacity": 0.72 }, svg);
       const node = el2("g", {}, svg), middle = y + h / 2;
       el2("rect", { x: 955, y: middle - 22, width: 282, height: 44, fill: "transparent" }, node);
@@ -8507,8 +8499,9 @@ function renderAssetSankey(parent, snapshot, excludeFixed, hide, onSelect, showC
     });
     rootCursor += groupHeight;
   }
-  if (snapshot.accounts.some((a) => a.cents < 0) || totals.netCents < 0) parent.createEl("p", { cls: "ledger-assets-hint", text: `\u6851\u57FA\u56FE\u5C55\u793A\u6B63\u8D44\u4EA7\uFF1B\u8D1F\u4F59\u989D\u4E0E\u51C0\u8D44\u4EA7\u7F3A\u53E3\u4FDD\u7559\u5728\u603B\u89C8\u53CA\u8D26\u6237\u5217\u8868\u4E2D${hide ? "\u3002" : `\uFF1A${snapshot.accounts.filter((a) => a.cents < 0).map((a) => `${a.name} ${formatCents(a.cents)}`).join("\uFF1B") || formatCents(totals.netCents)}`}` });
-  enableAssetGestures(scroll, svg, tools, true, !!((_a = parent.closest) == null ? void 0 : _a.call(parent, ".ledger-assets")));
+  if (totals.missing) parent.createEl("small", { cls: "ledger-assets-hint", text: "\u90E8\u5206\u8D26\u6237\u91D1\u989D\u5F85\u8865\u5168" });
+  if (totals.netCents < 0) parent.createEl("small", { cls: "ledger-assets-hint", text: hide ? "\u51C0\u8D44\u4EA7\u91D1\u989D\u5DF2\u9690\u85CF" : `\u51C0\u8D44\u4EA7 ${amounts(totals.netCents)}` });
+  enableAssetGestures(scroll, svg, tools, true, overview || !!((_a = parent.closest) == null ? void 0 : _a.call(parent, ".ledger-assets")), overview ? 1240 / 800 : 1);
 }
 
 // src/asset-ui.ts
@@ -8618,7 +8611,7 @@ var AssetPanel = class {
     const overview = hero.createDiv({ cls: "ledger-assets-overview" });
     const primary = overview.createDiv({ cls: "ledger-assets-primary-value" });
     const caption = primary.createDiv({ cls: "ledger-assets-caption" });
-    caption.createSpan({ text: totals.missing ? "\u5DF2\u4F30\u503C\u8D44\u4EA7\uFF08\u5143\uFF09" : "\u603B\u8D44\u4EA7\uFF08\u5143\uFF09" });
+    caption.createSpan({ text: "\u603B\u8D44\u4EA7\uFF08\u5143\uFF09" });
     const privacy = button(caption, "", () => void this.save((s) => {
       s.hideAmounts = !s.hideAmounts;
     }).catch((e) => new import_obsidian8.Notice(String(e))));
@@ -8665,7 +8658,7 @@ var AssetPanel = class {
     const expand = button(heading, "", () => this.sankeyModal(snapshot));
     (0, import_obsidian8.setIcon)(expand, "maximize-2");
     expand.setAttribute("aria-label", "\u653E\u5927\u67E5\u770B\u6851\u57FA\u56FE");
-    renderAssetOverviewSankey(card2, snapshot, state.excludeFixed, state.hideAmounts, () => this.sankeyModal(snapshot));
+    renderAssetOverviewSankey(card2, snapshot, state.excludeFixed, state.hideAmounts, (id, holdingId) => this.sankeySelect(id, holdingId));
   }
   renderAccounts(parent, onSelect) {
     var _a, _b;
@@ -8711,7 +8704,7 @@ var AssetPanel = class {
       (0, import_obsidian8.setIcon)(symbol, icon);
       const content = item.createDiv();
       content.createSpan({ cls: "ledger-assets-change-label", text: name });
-      content.createDiv({ cls: `ledger-assets-change-value ${changeClass(cents, state.hideAmounts)}`, text: !state.hideAmounts && previous && !comparable ? "\u4F30\u503C\u5F85\u8865\u5168" : changeText(cents, state.hideAmounts) });
+      content.createDiv({ cls: `ledger-assets-change-value ${changeClass(cents, state.hideAmounts)}`, text: !state.hideAmounts && previous && !comparable ? "\u91D1\u989D\u5F85\u8865\u5168" : changeText(cents, state.hideAmounts) });
       if (name === "\u603B\u8D1F\u503A") {
         item.setAttribute("role", "button");
         item.setAttribute("tabindex", "0");
@@ -8953,7 +8946,7 @@ var AssetPanel = class {
     else this.accountDetails(accountId);
   }
   liabilitiesModal() {
-    const state = this.plugin.settings.assets, liabilities = this.plugin.assetSnapshot().accounts.filter((a) => a.kind === "liability");
+    const state = this.plugin.settings.assets, liabilities = this.plugin.assetSnapshot().accounts.filter((a) => a.kind === "liability" || a.kind === "cash" && a.cents < 0);
     if (!liabilities.length) {
       this.accountForm(void 0, "liability");
       return;
@@ -8965,8 +8958,9 @@ var AssetPanel = class {
       for (const account of liabilities) {
         const row = modal.contentEl.createDiv({ cls: "ledger-assets-position-row" }), info = row.createDiv();
         info.createEl("strong", { text: account.name });
-        info.createEl("small", { text: state.hideAmounts ? "\u2022\u2022\u2022\u2022" : formatCents(account.cents) });
-        button(row, "\u8FD8\u6B3E", () => {
+        info.createEl("small", { text: state.hideAmounts ? "\u2022\u2022\u2022\u2022" : formatCents(Math.abs(account.cents)) });
+        if (account.kind === "cash") info.createEl("small", { text: "\u652F\u51FA\u8D26\u6237\u8D1F\u4F59\u989D\uFF0C\u5DF2\u8BA1\u5165\u8D1F\u503A" });
+        else button(row, "\u8FD8\u6B3E", () => {
           modal.close();
           this.repaymentForm(account.id);
         }, true);
@@ -9044,7 +9038,7 @@ var AssetPanel = class {
         info.createEl("strong", { text: h.name });
         info.createEl("small", { text: `${h.code} \xB7 ${h.estimated ? "\u4F30\u7B97\u4EFD\u989D" : "\u5B9E\u9645\u4EFD\u989D"} ${state.hideAmounts ? "\u2022\u2022\u2022\u2022" : decimal2(h.quantity).toDecimalPlaces(h.estimated ? 4 : 12).toFixed()}` });
         info.createEl("small", { text: ((_b = h.quote) == null ? void 0 : _b.asOf) ? `\u884C\u60C5 ${h.quote.asOf.replace("T", " ").slice(0, 16)}${h.quote.error ? " \xB7 \u66F4\u65B0\u5931\u8D25" : ""}` : "\u5F85\u66F4\u65B0\u884C\u60C5" });
-        row.createEl("strong", { text: h.valueCents === null ? "\u672A\u4F30\u503C" : state.hideAmounts ? "\u2022\u2022\u2022\u2022" : formatCents(h.valueCents) });
+        row.createEl("strong", { text: h.valueCents === null ? "\u91D1\u989D\u5F85\u8865\u5168" : state.hideAmounts ? "\u2022\u2022\u2022\u2022" : formatCents(h.valueCents) });
         const controls = row.createDiv({ cls: "ledger-assets-actions" });
         button(controls, "\u8C03\u6574", () => {
           modal.close();
@@ -9127,14 +9121,14 @@ var AssetPanel = class {
       const draw = () => {
         detail.empty();
         const snapshot = snapshots.find((s) => s.date === selected), totals = assetTotals(snapshot, state.excludeFixed);
-        detail.createEl("h3", { text: `${snapshot.date} \xB7 ${state.hideAmounts ? "\u2022\u2022\u2022\u2022" : formatCents(totals.assetsCents)}${totals.missing ? " \xB7 \u4F30\u503C\u4E0D\u5B8C\u6574" : ""}` });
+        detail.createEl("h3", { text: `${snapshot.date} \xB7 ${state.hideAmounts ? "\u2022\u2022\u2022\u2022" : formatCents(totals.assetsCents)}${totals.missing ? " \xB7 \u91D1\u989D\u5F85\u8865\u5168" : ""}` });
         const change = dailyAssetChange(state, snapshot, state.excludeFixed);
         detail.createDiv({ cls: `ledger-assets-day-change ${changeClass(change, state.hideAmounts)}`, text: `\u76F8\u6BD4\u524D\u4E00\u5929 ${changeText(change, state.hideAmounts)}` });
         detail.createEl("p", { cls: "ledger-assets-hint", text: `\u4FDD\u5B58\u4E8E ${new Date(snapshot.savedAt).toLocaleString()}\uFF0C\u884C\u60C5\u65E5\u671F\u4FDD\u7559\u5F53\u65F6\u503C\u3002` });
         const chart = detail.createDiv();
         renderAssetSankey(chart, snapshot, state.excludeFixed, state.hideAmounts, () => {
         });
-        for (const a of snapshot.accounts) detail.createEl("p", { text: `${a.name} \xB7 ${state.hideAmounts ? "\u2022\u2022\u2022\u2022" : formatCents(a.cents)}${a.missing ? " \xB7 \u672A\u5B8C\u6574\u4F30\u503C" : ""}` });
+        for (const a of snapshot.accounts) detail.createEl("p", { text: `${a.name} \xB7 ${state.hideAmounts ? "\u2022\u2022\u2022\u2022" : formatCents(a.cents)}${a.missing ? " \xB7 \u91D1\u989D\u5F85\u8865\u5168" : ""}` });
       };
       const drawMonth = () => {
         calendar.empty();

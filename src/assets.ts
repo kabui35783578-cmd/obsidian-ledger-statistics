@@ -249,7 +249,10 @@ export function assetTotals(snapshot: AssetSnapshot, excludeFixed = false): Asse
   let missing = snapshot.pending.length > 0;
   for (const a of snapshot.accounts) {
     if (excludeFixed && a.kind === "fixed") continue;
-    groups[a.kind] += a.cents; missing ||= a.missing;
+    // Cash below zero is an overdraft: reclassify it, never deduct it twice.
+    if (a.kind === "cash" && a.cents < 0) groups.liability -= a.cents;
+    else groups[a.kind] += a.cents;
+    missing ||= a.missing;
   }
   const assetsCents = groups.cash + groups.investment + groups.fixed + groups.receivable;
   return { assetsCents, liabilitiesCents: groups.liability, netCents: assetsCents - groups.liability, groups, missing };

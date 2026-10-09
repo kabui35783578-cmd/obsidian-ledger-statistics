@@ -49,6 +49,17 @@ test('asset calendar shows each daily increase, decline, zero and missing predec
     assert.ok(!/[↑↓]|100\.00|101\.00|99\.00|110\.00/.test(text));
   } finally { delete global.document; }
 });
+test('negative default spending balance is listed as automatic debt without creating another account', () => {
+  const p=plugin(),state=p.settings.assets;
+  state.accounts.push({id:'cash',name:'支出账户',kind:'cash',balanceCents:-23000,baselineAt:new Date().toISOString(),includedEventIds:[],includedRecordIds:[]});state.defaultCashId='cash';
+  new AssetPanel(p).liabilitiesModal();
+  const text=Modal.last.contentEl.all().map(n=>n.textContent).join(' ');
+  assert.match(text,/支出账户/);assert.match(text,/¥230.00/);assert.match(text,/已计入负债/);
+  assert.ok(!Modal.last.contentEl.querySelector('form'));assert.equal(state.accounts.length,2);
+  assert.ok(!Modal.last.contentEl.all().some(n=>n.textContent==='还款'));
+  state.hideAmounts=true;new AssetPanel(p).liabilitiesModal();
+  assert.ok(!Modal.last.contentEl.all().some(n=>n.textContent.includes('230')));
+});
 test('holding form needs only code and current value and derives name and shares from quote', async () => {
   const p = plugin(); p.refreshAssetQuotes = () => new Promise(() => {});
   new AssetPanel(p).holdingForm(); const modal = Modal.last;

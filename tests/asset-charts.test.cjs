@@ -47,15 +47,28 @@ test('home hierarchy embeds daily comparisons in the summary and keeps changes t
   assert.ok(root.all().filter(n => n.className.includes('ledger-assets-change-fill')).every(n => n.style.height === '0%'));
 }));
 
-test('home Sankey preserves category proportions and opens the complete chart by keyboard', () => withDocument(() => {
+test('home Sankey preserves category proportions, includes actual holdings and installs gestures directly', () => withDocument(() => {
   const snap = snapshot(); snap.accounts[0].cents = 60000; snap.accounts[1].cents = 30000; snap.accounts[2].cents = 10000;
   const root = new Element(); let opened = 0;
   renderAssetOverviewSankey(root, snap, false, true, () => opened++);
   const bars = root.all().filter(n => n.tag === 'rect' && n.attributes.x === '620');
   assert.equal(+bars[0].attributes.height / +bars[1].attributes.height, 2);
-  const target = root.all().find(n => n.attributes['aria-label']?.startsWith('流动资金，'));
-  assert.ok(target.attributes['aria-label'].includes('金额已隐藏'));
+  const target = root.all().find(n => n.attributes['aria-label']?.startsWith('银行卡，'));
+  assert.ok(target.attributes['aria-label'].includes('••••'));
   target.listeners.keydown({ key: 'Enter', preventDefault() {} }); assert.equal(opened, 1);
+  const viewport = root.all().find(n=>n.className.includes('ledger-assets-overview-scroll'));
+  assert.ok(viewport.listeners.touchstart && viewport.listeners.touchmove && viewport.listeners.pointermove);
+  assert.ok(root.all().some(n=>n.attributes['aria-label']?.startsWith('小额基金，')));
+}));
+
+test('home overdraft uses the reference names and renders net assets plus debt as sources', () => withDocument(() => {
+  const snap = snapshot(); snap.accounts[0].cents=-23000;snap.accounts[1].cents=650000;snap.accounts[2].cents=0;
+  const root=new Element();renderAssetOverviewSankey(root,snap,false,false,()=>{});
+  const text=root.all().map(n=>n.textContent).join(' ');
+  assert.ok(text.includes('总资产')&&text.includes('净资产')&&text.includes('负债'));
+  assert.ok(!/已估值|正资产|缺口/.test(text));
+  const sources=root.all().filter(n=>n.tag==='rect'&&n.attributes.x==='125');
+  assert.equal(sources.length,2);assert.ok(+sources[0].attributes.height>0);assert.ok(+sources[1].attributes.height>0);
 }));
 
 test('Sankey keeps real proportions for small values and provides touch and keyboard targets', () => withDocument(() => {
@@ -73,7 +86,7 @@ test('Sankey hides numeric text including accessible names and retains negative 
   const root = new Element(), snap = snapshot(); snap.accounts[0].cents = -123456; snap.accounts[2].cents = 500000;
   renderAssetSankey(root, snap, false, true, () => {});
   const nodes = root.all();
-  assert.ok(nodes.some(n => n.textContent.includes('缺口')));
+  assert.ok(nodes.some(n => n.textContent.includes('净资产')));
   assert.ok(nodes.every(n => n.tag !== 'rect' || +n.attributes.height >= 0));
   const text = nodes.map(n => `${n.textContent} ${n.attributes['aria-label'] ?? ''}`).join(' ');
   assert.ok(!text.includes('1,234.56')); assert.ok(!text.includes('5,000')); assert.ok(text.includes('••••'));
