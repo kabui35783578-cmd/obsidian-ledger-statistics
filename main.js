@@ -8428,7 +8428,7 @@ function interactive(node, text2, action) {
 function renderAssetOverviewSankey(parent, snapshot, excludeFixed, hide, onSelect) {
   renderAssetSankey(parent, snapshot, excludeFixed, hide, onSelect, false, true);
 }
-function renderAssetSankey(parent, snapshot, excludeFixed, hide, onSelect, showControls = true, overview = false) {
+function renderAssetSankey(parent, snapshot, excludeFixed, hide, onSelect, showControls = true, overview = false, expanded = false) {
   var _a;
   const amounts = (cents) => hide ? "\u2022\u2022\u2022\u2022" : formatCents(cents);
   const visible = snapshot.accounts.filter((a) => a.kind !== "liability" && !(excludeFixed && a.kind === "fixed") && a.cents > 0);
@@ -8454,7 +8454,7 @@ function renderAssetSankey(parent, snapshot, excludeFixed, hide, onSelect, showC
     return;
   }
   const rowGap = 44;
-  const total3 = visible.reduce((sum3, a) => sum3 + a.cents, 0), height = Math.max(overview ? 480 : 360, rows.length * 64 + groups.length * 24 + 100);
+  const total3 = visible.reduce((sum3, a) => sum3 + a.cents, 0), height = Math.max(overview ? 480 : expanded ? 640 : 360, rows.length * 64 + groups.length * 24 + 100);
   const plotHeight = height - 130 - Math.max(0, rows.length - 1) * rowGap - Math.max(0, groups.length - 1) * 20;
   const scale = plotHeight / total3;
   const tools = showControls ? parent.createDiv({ cls: "ledger-assets-zoom-tools" }) : null;
@@ -8462,7 +8462,7 @@ function renderAssetSankey(parent, snapshot, excludeFixed, hide, onSelect, showC
   scroll.setAttribute("aria-label", "\u8D44\u4EA7\u7EC4\u6210\u6851\u57FA\u56FE\uFF0C\u76F4\u63A5\u5C55\u793A\u8D26\u6237\u4F59\u989D\u4E0E\u6301\u4ED3");
   const svg = document.createElementNS(NS2, "svg");
   svg.setAttribute("viewBox", `0 0 1240 ${height}`);
-  svg.setAttribute("class", `ledger-assets-sankey${overview ? " ledger-assets-overview-sankey" : ""}`);
+  svg.setAttribute("class", `ledger-assets-sankey${overview ? " ledger-assets-overview-sankey" : ""}${expanded ? " ledger-assets-expanded-sankey" : ""}`);
   if (overview) {
     svg.style.minWidth = "0";
     svg.style.width = `${1240 / 800 * 100}%`;
@@ -8471,7 +8471,8 @@ function renderAssetSankey(parent, snapshot, excludeFixed, hide, onSelect, showC
   svg.setAttribute("aria-label", "\u8D44\u4EA7\u603B\u91CF\u3001\u8D44\u4EA7\u7C7B\u522B\u3001\u8D26\u6237\u7EC4\u6210");
   scroll.appendChild(svg);
   const totals = assetTotals(snapshot, excludeFixed), sources = totals.netCents >= 0 && !snapshot.accounts.some((a) => a.kind !== "cash" && a.kind !== "liability" && !(excludeFixed && a.kind === "fixed") && a.cents < 0);
-  const sourceX = overview ? 125 : 80, rootX = overview ? 365 : 310, groupX = overview ? 620 : 675;
+  const sourceX = overview ? 125 : expanded ? 10 : 80, sourceLabelX = overview ? 25 : expanded ? 5 : 75;
+  const rootX = overview ? 365 : 310, groupX = overview ? 620 : 675;
   let cursor = 95, rootCursor = 100;
   const groupLayout = [];
   for (const group2 of groups) {
@@ -8487,15 +8488,15 @@ function renderAssetSankey(parent, snapshot, excludeFixed, hide, onSelect, showC
     const debt = totals.liabilitiesCents, net = totals.netCents, netHeight = net * scale, debtHeight = debt * scale;
     el2("rect", { x: sourceX, y: 100, width: 12, height: netHeight, rx: 3, fill: "#76A69A", "fill-opacity": 0.72 }, svg);
     band(svg, sourceX + 12, 100, rootX - (overview ? 20 : 0), 100, netHeight, "#76A69A", overview ? "#76A69A" : "#7C9CBF");
-    label(svg, overview ? 25 : 75, overview ? 100 + netHeight / 2 : 82, overview ? "\u51C0\u8D44\u4EA7" : `\u51C0\u8D44\u4EA7 ${amounts(net)}`, overview ? 25 : 16);
+    label(svg, sourceLabelX, overview ? 100 + netHeight / 2 : 82, overview ? "\u51C0\u8D44\u4EA7" : `\u51C0\u8D44\u4EA7 ${amounts(net)}`, overview ? 25 : 16);
     if (debt > 0) {
       const y = 100 + netHeight + 28;
       el2("rect", { x: sourceX, y, width: 12, height: debtHeight, rx: 3, fill: COLORS.liability }, svg);
       band(svg, sourceX + 12, y, rootX - (overview ? 20 : 0), 100 + netHeight, debtHeight, COLORS.liability);
-      label(svg, overview ? 25 : 75, overview ? y + debtHeight / 2 : y + debtHeight + 22, overview ? "\u8D1F\u503A" : `\u8D1F\u503A ${amounts(debt)}`, overview ? 25 : 15);
+      label(svg, sourceLabelX, overview ? y + debtHeight / 2 : y + debtHeight + 22, overview ? "\u8D1F\u503A" : `\u8D1F\u503A ${amounts(debt)}`, overview ? 25 : 15);
     }
   } else {
-    label(svg, overview ? 25 : 75, overview ? 100 + total3 * scale / 2 : 82, overview ? "\u51C0\u8D44\u4EA7" : `\u51C0\u8D44\u4EA7 ${amounts(totals.netCents)}`, overview ? 25 : 16);
+    label(svg, sourceLabelX, overview ? 100 + total3 * scale / 2 : 82, overview ? "\u51C0\u8D44\u4EA7" : `\u51C0\u8D44\u4EA7 ${amounts(totals.netCents)}`, overview ? 25 : 16);
   }
   el2("rect", { x: rootX, y: 100, width: overview ? 20 : 13, height: total3 * scale, rx: 3, fill: "#7C9CBF", "fill-opacity": 0.72 }, svg);
   label(svg, rootX, overview ? 68 : 62, overview ? "\u603B\u8D44\u4EA7" : `\u603B\u8D44\u4EA7 ${amounts(totals.assetsCents)}`, overview ? 27 : 17);
@@ -8512,7 +8513,8 @@ function renderAssetSankey(parent, snapshot, excludeFixed, hide, onSelect, showC
       el2("rect", { x: 945, y, width: 8, height: h, rx: 3, fill: leafColor, "fill-opacity": 0.72 }, svg);
       const node = el2("g", {}, svg), middle = y + h / 2;
       el2("rect", { x: 955, y: middle - 22, width: 282, height: 44, fill: "transparent" }, node);
-      const name = row.name.length > 17 ? `${row.name.slice(0, 16)}\u2026` : row.name;
+      const limit = expanded ? 12 : 17;
+      const name = row.name.length > limit ? `${row.name.slice(0, limit - 1)}\u2026` : row.name;
       label(node, 967, middle - 8, name, 14);
       label(node, 967, middle + 12, amounts(row.cents), 14);
       el2("title", {}, node).textContent = `${row.holding ? `${row.account.name} \xB7 ` : ""}${row.name} ${amounts(row.cents)}`;
@@ -8523,7 +8525,7 @@ function renderAssetSankey(parent, snapshot, excludeFixed, hide, onSelect, showC
   }
   if (totals.missing) parent.createEl("small", { cls: "ledger-assets-hint", text: "\u90E8\u5206\u8D26\u6237\u91D1\u989D\u5F85\u8865\u5168" });
   if (totals.netCents < 0) parent.createEl("small", { cls: "ledger-assets-hint", text: hide ? "\u51C0\u8D44\u4EA7\u91D1\u989D\u5DF2\u9690\u85CF" : `\u51C0\u8D44\u4EA7 ${amounts(totals.netCents)}` });
-  enableAssetGestures(scroll, svg, tools, true, overview || !!((_a = parent.closest) == null ? void 0 : _a.call(parent, ".ledger-assets")), overview ? 1240 / 800 : 1);
+  enableAssetGestures(scroll, svg, tools, true, overview || !!((_a = parent.closest) == null ? void 0 : _a.call(parent, ".ledger-assets")), overview || expanded ? 1240 / 800 : 1);
 }
 
 // src/asset-ui.ts
@@ -8682,18 +8684,19 @@ var AssetPanel = class {
     expand.setAttribute("aria-label", "\u653E\u5927\u67E5\u770B\u6851\u57FA\u56FE");
     renderAssetOverviewSankey(card2, snapshot, state.excludeFixed, state.hideAmounts, (id, holdingId) => this.sankeySelect(id, holdingId));
   }
-  renderAccounts(parent, onSelect) {
+  renderAccounts(parent, onSelect, kind) {
     var _a, _b;
     const state = this.plugin.settings.assets, snapshot = this.plugin.assetSnapshot();
+    const accounts = snapshot.accounts.filter((a) => !kind || a.kind === kind);
     const money3 = (cents) => state.hideAmounts ? "\u2022\u2022\u2022\u2022" : formatCents(cents);
     const accountSection = parent.createDiv({ cls: "ledger-assets-accounts-section" });
     const accountHeading = accountSection.createDiv({ cls: "ledger-assets-title-row" });
     accountHeading.createEl("h3", { text: "\u8D26\u6237" });
-    accountHeading.createSpan({ cls: "ledger-assets-subtitle", text: `${snapshot.accounts.length} \u4E2A\u8D26\u6237 \xB7 \u70B9\u51FB\u7BA1\u7406\u4F59\u989D\u4E0E\u6301\u4ED3` });
-    if (snapshot.accounts.length) {
+    accountHeading.createSpan({ cls: "ledger-assets-subtitle", text: `${accounts.length} \u4E2A\u8D26\u6237 \xB7 \u70B9\u51FB\u7BA1\u7406\u4F59\u989D\u4E0E\u6301\u4ED3` });
+    if (accounts.length) {
       const grid = accountSection.createDiv({ cls: "ledger-assets-account-grid" });
-      const maximum = Math.max(1, ...snapshot.accounts.map((a) => Math.abs(a.cents)));
-      for (const account of snapshot.accounts) {
+      const maximum = Math.max(1, ...accounts.map((a) => Math.abs(a.cents)));
+      for (const account of accounts) {
         const tile = button(grid, "", () => onSelect(account.id));
         tile.addClass("ledger-assets-account-tile");
         tile.setAttribute("aria-label", `${account.name}\uFF0C\u7BA1\u7406\u8D26\u6237`);
@@ -8705,7 +8708,27 @@ var AssetPanel = class {
         const bar = tile.createDiv({ cls: "ledger-assets-account-bar" }), fill = bar.createDiv({ cls: `is-${account.kind}` });
         fill.style.width = `${state.hideAmounts ? 0 : Math.abs(account.cents) / maximum * 100}%`;
       }
-    } else accountSection.createEl("p", { cls: "ledger-assets-empty", text: "\u6682\u65E0\u8D26\u6237\uFF0C\u70B9\u51FB\u6DFB\u52A0\u8D26\u6237\u5F00\u59CB\u8BB0\u5F55\u3002" });
+    } else accountSection.createEl("p", { cls: "ledger-assets-empty", text: kind ? `\u6682\u65E0${ASSET_NAMES[kind]}\u8D26\u6237\u3002` : "\u6682\u65E0\u8D26\u6237\uFF0C\u70B9\u51FB\u6DFB\u52A0\u8D26\u6237\u5F00\u59CB\u8BB0\u5F55\u3002" });
+  }
+  categoryModal(kind) {
+    if (kind === "liability") {
+      this.liabilitiesModal();
+      return;
+    }
+    const modal = new import_obsidian8.Modal(this.plugin.app);
+    modal.setTitle(`${ASSET_NAMES[kind]} \xB7 \u8D26\u6237\u660E\u7EC6`);
+    modal.modalEl.addClass("ledger-assets-modal");
+    modal.onOpen = () => {
+      this.renderAccounts(modal.contentEl, (id) => {
+        modal.close();
+        this.accountDetails(id);
+      }, kind);
+      button(modal.contentEl, `\u6DFB\u52A0${ASSET_NAMES[kind]}\u8D26\u6237`, () => {
+        modal.close();
+        this.accountForm(void 0, kind);
+      });
+    };
+    modal.open();
   }
   save(change) {
     return this.plugin.updateAssets(change);
@@ -8747,6 +8770,16 @@ var AssetPanel = class {
     })), bars = card2.createDiv({ cls: "ledger-assets-change-bars" });
     for (const v of values) {
       const column = bars.createDiv({ cls: "ledger-assets-change-column" });
+      column.setAttribute("role", "button");
+      column.setAttribute("tabindex", "0");
+      column.setAttribute("aria-label", `\u67E5\u770B${ASSET_NAMES[v.kind]}\u8D26\u6237\u660E\u7EC6`);
+      column.addEventListener("click", () => this.categoryModal(v.kind));
+      column.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          this.categoryModal(v.kind);
+        }
+      });
       const track = column.createDiv({ cls: "ledger-assets-change-track" });
       const fill = track.createDiv({ cls: `ledger-assets-change-fill${((_a = v.cents) != null ? _a : 0) < 0 ? " is-negative" : ""}` });
       fill.style.height = `${state.hideAmounts ? 0 : Math.abs((_b = v.cents) != null ? _b : 0) / maximum * 100}%`;
@@ -9118,10 +9151,11 @@ var AssetPanel = class {
     modal.modalEl.addClass("ledger-assets-sankey-modal", "ledger-assets-sankey-expanded");
     const draw = () => {
       modal.contentEl.empty();
+      modal.contentEl.createEl("small", { cls: "ledger-assets-sankey-help", text: "\u5DE6\u53F3\u62D6\u52A8 \xB7 \u53CC\u6307\u7F29\u653E" });
       renderAssetSankey(modal.contentEl, snapshot, this.plugin.settings.assets.excludeFixed, this.plugin.settings.assets.hideAmounts, (id, holdingId) => {
         modal.close();
         this.sankeySelect(id, holdingId);
-      }, false);
+      }, false, false, true);
     };
     modal.onOpen = draw;
     modal.open();

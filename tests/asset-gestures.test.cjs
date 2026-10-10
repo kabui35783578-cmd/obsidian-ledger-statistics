@@ -86,6 +86,21 @@ test('expanded chart supports fitting, pinch zoom and panning without zoom butto
   view.listeners.pointermove(pointer(1, 80, 100));
   assert.equal(view.scrollLeft, before + 20);
 });
+
+test('expanded mobile chart keeps readable width while leaving panning and pinch available', () => {
+  const view = new Node(), svg = new Node(); view.clientWidth = 360; view.clientHeight = 650; view.scrollWidth = 558;
+  svg.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1080, height: 558 });
+  enableAssetGestures(view, svg, null, true, false, 1240/800);
+  assert.ok(Math.abs(parseFloat(svg.style.width) - 558) < .01);
+  assert.equal(view.style.touchAction, 'none');
+  view.listeners.touchstart(nativeTouch([200,100])); view.listeners.touchmove(nativeTouch([100,100]));
+  assert.equal(view.scrollLeft, 100);
+  view.listeners.touchend(nativeTouch());
+  const initial = +view.attributes['data-zoom'];
+  view.listeners.touchstart(nativeTouch([100,100],[200,100]));
+  view.listeners.touchmove(nativeTouch([100,100],[250,100]));
+  assert.equal(+view.attributes['data-zoom'], initial * 1.5);
+});
 test('pinch zoom preserves the touched point, pans and suppresses accidental node activation', () => {
   const view = new Node(), svg = new Node(), controls = new Node(); enableAssetGestures(view, svg, controls);
   view.listeners.pointerdown(pointer(1, 100, 100)); view.listeners.pointerdown(pointer(2, 200, 100));

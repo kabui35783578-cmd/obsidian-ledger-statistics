@@ -47,6 +47,24 @@ test('home hierarchy embeds daily comparisons in the summary and keeps changes t
   assert.ok(root.all().filter(n => n.className.includes('ledger-assets-change-fill')).every(n => n.style.height === '0%'));
 }));
 
+test('all five home columns open their own category by click or keyboard even with no daily comparison', () => withDocument(() => {
+  const state = emptyAssets(), current = snapshot(), opened = [];
+  const panel = new AssetPanel({ settings: { assets: state }, repository: { files: new Map() }, assetSnapshot: () => current });
+  panel.categoryModal = kind => opened.push(kind);
+  const root = new Element(); panel.render(root);
+  const columns = root.all().filter(n => n.className === 'ledger-assets-change-column');
+  for (const column of columns) {
+    assert.equal(column.attributes.role, 'button');
+    assert.equal(column.attributes.tabindex, '0');
+    assert.match(column.attributes['aria-label'], /账户明细/);
+    column.listeners.click();
+    let prevented = false;
+    column.listeners.keydown({ key: ' ', preventDefault() { prevented = true; } });
+    assert.equal(prevented, true);
+  }
+  assert.deepEqual(opened, ['cash','cash','fixed','fixed','investment','investment','receivable','receivable','liability','liability']);
+}));
+
 test('home Sankey preserves category proportions, includes actual holdings and installs gestures directly', () => withDocument(() => {
   const snap = snapshot(); snap.accounts[0].cents = 60000; snap.accounts[1].cents = 30000; snap.accounts[2].cents = 10000;
   const root = new Element(); let opened = 0;

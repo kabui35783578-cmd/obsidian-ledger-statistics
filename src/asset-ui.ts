@@ -100,17 +100,18 @@ export class AssetPanel {
     const expand = button(heading, "", () => this.sankeyModal(snapshot)); setIcon(expand, "maximize-2"); expand.setAttribute("aria-label", "放大查看桑基图");
     renderAssetOverviewSankey(card, snapshot, state.excludeFixed, state.hideAmounts, (id, holdingId) => this.sankeySelect(id, holdingId));
   }
-  private renderAccounts(parent: HTMLElement, onSelect: (id: string) => void): void {
+  private renderAccounts(parent: HTMLElement, onSelect: (id: string) => void, kind?: AssetKind): void {
     const state = this.plugin.settings.assets, snapshot = this.plugin.assetSnapshot();
+    const accounts = snapshot.accounts.filter(a => !kind || a.kind === kind);
     const money = (cents: number): string => state.hideAmounts ? "••••" : formatCents(cents);
     const accountSection = parent.createDiv({ cls: "ledger-assets-accounts-section" });
     const accountHeading = accountSection.createDiv({ cls: "ledger-assets-title-row" });
     accountHeading.createEl("h3", { text: "账户" });
-    accountHeading.createSpan({ cls: "ledger-assets-subtitle", text: `${snapshot.accounts.length} 个账户 · 点击管理余额与持仓` });
-    if (snapshot.accounts.length) {
+    accountHeading.createSpan({ cls: "ledger-assets-subtitle", text: `${accounts.length} 个账户 · 点击管理余额与持仓` });
+    if (accounts.length) {
       const grid = accountSection.createDiv({ cls: "ledger-assets-account-grid" });
-      const maximum = Math.max(1, ...snapshot.accounts.map(a => Math.abs(a.cents)));
-      for (const account of snapshot.accounts) {
+      const maximum = Math.max(1, ...accounts.map(a => Math.abs(a.cents)));
+      for (const account of accounts) {
         const tile = button(grid, "", () => onSelect(account.id)); tile.addClass("ledger-assets-account-tile");
         tile.setAttribute("aria-label", `${account.name}，管理账户`);
         const title = tile.createDiv(); title.createSpan({ cls: `ledger-assets-dot is-${account.kind}` }); title.createSpan({ text: account.name });
@@ -118,7 +119,15 @@ export class AssetPanel {
         tile.createEl("small", { text: account.missing ? "等待行情" : account.kind === "liability" ? `还款 · ${state.accounts.find(a => a.id === state.defaultCashId && !a.archived)?.name ?? "选择扣款账户"}` : account.id === state.defaultCashId ? "默认扣款" : ASSET_NAMES[account.kind] });
         const bar = tile.createDiv({ cls: "ledger-assets-account-bar" }), fill = bar.createDiv({ cls: `is-${account.kind}` }); fill.style.width = `${state.hideAmounts ? 0 : Math.abs(account.cents) / maximum * 100}%`;
       }
-    } else accountSection.createEl("p", { cls: "ledger-assets-empty", text: "暂无账户，点击添加账户开始记录。" });
+    } else accountSection.createEl("p", { cls: "ledger-assets-empty", text: kind ? `暂无${ASSET_NAMES[kind]}账户。` : "暂无账户，点击添加账户开始记录。" });
+  }
+  private categoryModal(kind: AssetKind): void {
+    if (kind === "liability") { this.liabilitiesModal(); return; }
+    const modal = new Modal(this.plugin.app); modal.setTitle(`${ASSET_NAMES[kind]} · 账户明细`); modal.modalEl.addClass("ledger-assets-modal");
+    modal.onOpen = () => {
+      this.renderAccounts(modal.contentEl, id => { modal.close(); this.accountDetails(id); }, kind);
+      button(modal.contentEl, `添加${ASSET_NAMES[kind]}账户`, () => { modal.close(); this.accountForm(undefined, kind); });
+    }; modal.open();
   }
   private save(change: (state: LedgerStatisticsPlugin["settings"]["assets"]) => void): Promise<void> { return this.plugin.updateAssets(change); }
   private renderComparison(parent: HTMLElement, current: AssetSnapshot): void {
@@ -140,6 +149,10 @@ export class AssetPanel {
     const maximum = Math.max(1, ...values.map(v => Math.abs(v.cents ?? 0))), bars = card.createDiv({ cls: "ledger-assets-change-bars" });
     for (const v of values) {
       const column = bars.createDiv({ cls: "ledger-assets-change-column" });
+      column.setAttribute("role", "button"); column.setAttribute("tabindex", "0");
+      column.setAttribute("aria-label", `查看${ASSET_NAMES[v.kind]}账户明细`);
+      column.addEventListener("click", () => this.categoryModal(v.kind));
+      column.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); this.categoryModal(v.kind); } });
       const track = column.createDiv({ cls: "ledger-assets-change-track" });
       const fill = track.createDiv({ cls: `ledger-assets-change-fill${(v.cents ?? 0) < 0 ? " is-negative" : ""}` });
       fill.style.height = `${state.hideAmounts ? 0 : Math.abs(v.cents ?? 0) / maximum * 100}%`;
@@ -386,7 +399,9 @@ export class AssetPanel {
   private sankeyModal(snapshot: AssetSnapshot): void {
     const modal = new Modal(this.plugin.app); modal.setTitle(`资产组成 · ${snapshot.date}`); modal.modalEl.addClass("ledger-assets-sankey-modal", "ledger-assets-sankey-expanded");
     const draw = (): void => {
-      modal.contentEl.empty(); renderAssetSankey(modal.contentEl, snapshot, this.plugin.settings.assets.excludeFixed, this.plugin.settings.assets.hideAmounts, (id, holdingId) => { modal.close(); this.sankeySelect(id, holdingId); }, false);
+      modal.contentEl.empty();
+      modal.contentEl.createEl("small", { cls: "ledger-assets-sankey-help", text: "左右拖动 · 双指缩放" });
+      renderAssetSankey(modal.contentEl, snapshot, this.plugin.settings.assets.excludeFixed, this.plugin.settings.assets.hideAmounts, (id, holdingId) => { modal.close(); this.sankeySelect(id, holdingId); }, false, false, true);
     };
     modal.onOpen = draw; modal.open();
   }

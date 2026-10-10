@@ -3601,9 +3601,8 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
 .ledger-assets-modal [hidden] { display: none !important; }
 .ledger-assets-sankey-modal { width: min(1400px, 96vw); max-width: 96vw; }
 .ledger-assets-sankey-expanded {
-  --asset-dialog-size: min(900px, 92vw, 86dvh);
-  width: var(--asset-dialog-size); height: var(--asset-dialog-size);
-  max-width: var(--asset-dialog-size); max-height: var(--asset-dialog-size);
+  width: min(1400px, calc(100vw - 16px)); height: min(900px, 90dvh);
+  max-width: calc(100vw - 16px); max-height: 90dvh;
   box-sizing: border-box; display: flex; flex-direction: column;
   background: var(--mono-paper);
 }
@@ -3615,6 +3614,8 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
   display: flex; align-items: safe center;
 }
 .ledger-assets-sankey-expanded .ledger-assets-sankey { flex-shrink: 0; }
+.ledger-assets-expanded-sankey text { font-size: 22px; }
+.ledger-assets-sankey-help { color: var(--asset-muted); font-size: 12px; margin-bottom: 8px; }
 .ledger-assets-calendar { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; max-width: 560px; margin: 18px 0; text-align: center; }
 .ledger-assets-calendar .ledger-button { min-width: 0; padding: 4px; min-height: 44px; }
 .ledger-assets-calendar .ledger-button.is-selected { background: var(--mono-ink); color: var(--mono-paper); }
@@ -3630,6 +3631,8 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
 .is-mobile .ledger-assets { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
 @media (max-width: 600px) {
   .modal.ledger-assets-modal, .modal.ledger-assets-sankey-modal { padding: 20px 16px; border-radius: 20px; }
+  .modal.ledger-assets-sankey-expanded { width: calc(100vw - 12px); max-width: calc(100vw - 12px); height: 90dvh; max-height: 90dvh; padding: 16px 8px; }
+  .ledger-assets-sankey-expanded .modal-content { padding: 0; margin: 0; }
   .ledger-assets-modal .modal-title, .ledger-assets-sankey-modal .modal-title { font-size: 18px; }
   .ledger-assets-tool-grid { grid-template-columns: 1fr; gap: 6px; }
   .ledger-assets-modal .ledger-assets-account-grid { grid-template-columns: 1fr; }
@@ -3733,6 +3736,8 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
 .ledger-assets-change-value { font-size: clamp(13px, 3.7cqi, 23px); line-height: 1.3; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .ledger-assets .ledger-assets-change-bars { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; padding-top: 12px; }
 .ledger-assets .ledger-assets-change-column { min-width: 0; }
+.ledger-assets .ledger-assets-change-column[role="button"] { cursor: pointer; min-height: 44px; }
+.ledger-assets .ledger-assets-change-column[role="button"]:focus-visible { outline: 2px solid var(--mono-ink); outline-offset: 2px; border-radius: 4px; }
 .ledger-assets .ledger-assets-change-track { position: relative; height: 58px; margin: 0 0 10px; border-bottom: 1px solid var(--mono-muted); }
 .ledger-assets .ledger-assets-change-fill { background: var(--mono-grid); border-radius: 0; width: 94%; }
 .ledger-assets .ledger-assets-change-fill.is-negative { background: var(--mono-muted); }

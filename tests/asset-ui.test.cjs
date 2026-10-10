@@ -18,6 +18,7 @@ class Modal {
   constructor() { this.modalEl = new Element(); this.contentEl = new Element(); Modal.last = this; }
   setTitle(title) { this.title = title; }
   open() { this.onOpen(); }
+  onClose() {}
   close() { this.closed = true; this.onClose(); }
 }
 global.__ledgerTestModal = Modal;
@@ -59,6 +60,26 @@ test('negative default spending balance is listed as automatic debt without crea
   assert.ok(!Modal.last.contentEl.all().some(n=>n.textContent==='还款'));
   state.hideAmounts=true;new AssetPanel(p).liabilitiesModal();
   assert.ok(!Modal.last.contentEl.all().some(n=>n.textContent.includes('230')));
+});
+
+test('category drilldown lists only matching accounts including zero balances and preserves privacy', () => {
+  const p = plugin(), state = p.settings.assets, panel = new AssetPanel(p), now = new Date().toISOString();
+  for (const [id, kind, cents] of [['应收甲','receivable',8000],['应收乙','receivable',0],['银行卡','cash',5000]]) {
+    state.accounts.push({ id, name: id, kind, balanceCents: cents, baselineAt: now, includedEventIds: [], includedRecordIds: [] });
+  }
+  panel.categoryModal('receivable');
+  const modal = Modal.last, text = modal.contentEl.all().map(n => n.textContent).join(' ');
+  assert.equal(modal.title, '应收款 · 账户明细');
+  assert.match(text, /应收甲/); assert.match(text, /应收乙/); assert.match(text, /¥80.00/);
+  assert.ok(!text.includes('银行卡') && !text.includes('投资'));
+  let selected;
+  panel.accountDetails = id => { selected = id; };
+  modal.contentEl.all().find(n => n.attributes['aria-label'] === '应收甲，管理账户').listeners.click();
+  assert.equal(selected, '应收甲'); assert.equal(modal.closed, true);
+  state.hideAmounts = true; panel.categoryModal('receivable');
+  assert.ok(!Modal.last.contentEl.all().some(n => n.textContent.includes('80.00')));
+  panel.categoryModal('fixed');
+  assert.ok(Modal.last.contentEl.all().some(n => n.textContent === '暂无固定资产账户。'));
 });
 test('holding form needs only code and current value and derives name and shares from quote', async () => {
   const p = plugin(); p.refreshAssetQuotes = () => new Promise(() => {});
