@@ -1,7 +1,7 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type LedgerStatisticsPlugin from "./main";
 import { flattenRecords, formatCents, parseMoneyToCents, salaryDayRange } from "./core";
-import { BalanceCalibration, balanceStatus, createBalanceCalibration } from "./balance";
+import { BalanceCalibration, balanceStatus, createBalanceCalibration, parseBalanceToCents } from "./balance";
 import type { FinanceAdviceCache } from "./ai";
 import { testFinanceConnection } from "./ai";
 import { sharedRequestGate } from "./request-gate";
@@ -233,18 +233,18 @@ export class LedgerSettingTab extends PluginSettingTab {
 
     const calibrationSetting = new Setting(balancePanel)
       .setName("校准当前余额")
-      .setDesc("填写此刻实际还剩的金额，再点击“校准”。仅对当前工资周期生效；之后新发生的记账消费继续扣减。校准前的补记不会重复扣款。")
+      .setDesc("填写此刻实际余额，负数表示负债（例如 -230），再点击“校准”。仅对当前工资周期生效；之后新记账消费继续扣减，校准前的补记不会重复扣款。")
       .addText((text) => {
-        text.setPlaceholder("例如 3500");
-        text.inputEl.setAttribute("inputmode", "decimal");
+        text.setPlaceholder("例如 3500 或 -230");
+        text.inputEl.setAttribute("inputmode", "text");
         text.inputEl.setAttribute("aria-label", "当前实际余额");
         return text;
       });
     const calibrationInput = calibrationSetting.controlEl.querySelector("input")!;
     calibrationSetting.addButton((button) => button.setButtonText("校准余额").setCta().onClick(async () => {
-      const cents = parseMoneyToCents(calibrationInput.value);
+      const cents = parseBalanceToCents(calibrationInput.value);
       if (cents === null) {
-        calibrationSetting.setDesc("请输入有效的非负金额，最多两位小数；输入 0 也可以校准。");
+        calibrationSetting.setDesc("请输入有效金额，最多两位小数；支持负数（表示负债）和 0。");
         return;
       }
       this.plugin.settings.balanceCalibration = createBalanceCalibration(flattenRecords(this.plugin.repository.files.values()), new Date(), cents);
@@ -289,7 +289,7 @@ export class LedgerSettingTab extends PluginSettingTab {
       };
       addRow("到账工资", this.plugin.settings.salaryCents);
       addRow("已记账支出", status.recordedSpentCents);
-      addRow(status.calibrated ? "当前余额 · 已校准" : "当前余额 · 账面推算", status.remainingCents);
+      addRow(status.calibrated ? status.remainingCents < 0 ? "当前余额 · 负债 · 已校准" : "当前余额 · 已校准" : "当前余额 · 账面推算", status.remainingCents);
       if (status.calibrated) {
         addRow("未记账净差额", status.unrecordedNetCents);
         balanceSummary.createEl("small", { text: status.unrecordedNetCents >= 0

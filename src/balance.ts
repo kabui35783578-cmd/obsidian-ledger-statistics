@@ -1,4 +1,12 @@
-import { LedgerRecord, salaryDayRange } from "./core";
+import { LedgerRecord, parseMoneyToCents, salaryDayRange } from "./core";
+
+/** Signed amounts are for balance calibration only; expense and salary inputs stay nonnegative. */
+export function parseBalanceToCents(value: string): number | null {
+  const normalized = value.trim().replace(/^[−－]/, "-");
+  const negative = normalized.startsWith("-");
+  const cents = parseMoneyToCents(negative ? normalized.slice(1) : normalized);
+  return cents === null ? null : negative && cents !== 0 ? -cents : cents;
+}
 
 export interface BalanceCalibration {
   cycleStart: string;
@@ -20,7 +28,7 @@ export function isBalanceCalibration(value: unknown): value is BalanceCalibratio
   const item = value as Partial<BalanceCalibration>;
   return typeof item.cycleStart === "string" && /^\d{4}-\d{2}-15$/.test(item.cycleStart)
     && typeof item.calibratedAt === "string" && Number.isFinite(Date.parse(item.calibratedAt))
-    && typeof item.balanceCents === "number" && Number.isSafeInteger(item.balanceCents) && item.balanceCents >= 0
+    && typeof item.balanceCents === "number" && Number.isSafeInteger(item.balanceCents)
     && typeof item.postAnchorSpentCents === "number" && Number.isSafeInteger(item.postAnchorSpentCents) && item.postAnchorSpentCents >= 0;
 }
 

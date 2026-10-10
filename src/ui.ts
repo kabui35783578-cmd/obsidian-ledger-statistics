@@ -760,7 +760,7 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
 
   const remainingCents = balance?.remainingCents ?? snapshot.remainingSalaryCents;
   const remaining = heading.createDiv({ cls: `ledger-advisor-remaining${remainingCents < 0 ? " is-negative" : ""}` });
-  remaining.createSpan({ text: snapshot.salaryCents <= 0 ? "工资尚未设置" : balance?.calibrated ? "目前还剩 · 已校准" : "目前还剩" });
+  remaining.createSpan({ text: snapshot.salaryCents <= 0 ? "工资尚未设置" : balance?.calibrated ? remainingCents < 0 ? "当前负债 · 已校准" : "目前还剩 · 已校准" : "目前还剩" });
   remaining.createEl("strong", { text: snapshot.salaryCents > 0 ? formatCents(remainingCents) : "昨日简报可用" });
 
   const event = snapshot.events.find((item) => item.id === state.advice?.primaryEventId) ?? snapshot.events[0];

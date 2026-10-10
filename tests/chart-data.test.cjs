@@ -58,6 +58,17 @@ test('calibration can add back a negative gap and disappears when the cycle is n
   assert.equal(nominal.at(-1).toCents, 499882);
 });
 
+test('negative calibrated waterfall crosses zero and keeps debt separate from recorded spending', () => {
+  const steps = salaryWaterfall([record('2026-09-20', '餐饮', 10000)], { start: '2026-09-15', end: '2026-09-23' }, 600000,
+    { calibrated: true, remainingCents: -23000, recordedSpentCents: 10000, unrecordedNetCents: 613000 });
+  assert.equal(steps.at(-2).fromCents, 590000);
+  assert.equal(steps.at(-2).deltaCents, -613000);
+  assert.equal(steps.at(-2).toCents, -23000);
+  assert.equal(steps.at(-1).label, '实际余额');
+  assert.equal(steps.at(-1).toCents, -23000);
+  assert.equal(steps.filter(step => step.kind === 'expense').reduce((sum, step) => sum - step.deltaCents, 0), 10000);
+});
+
 test('box reference uses the two completed salary cycles preceding selected range', () => {
   const amounts = [100, 110, 120, 130, 140, 150, 160, 500];
   const history = amounts.map((cents, index) => record(index < 4 ? '2026-08-20' : '2026-07-20', '餐饮', cents, `h${index}`));

@@ -54,7 +54,40 @@ test('new salary cycle ignores old calibration and invalid calibration is reject
   const next = balance.balanceStatus([record('2026-10-15', '13:00', 10000)], new Date(2026, 9, 15, 14), 600000, saved);
   assert.equal(next.calibrated, false);
   assert.equal(next.remainingCents, 590000);
-  assert.equal(balance.isBalanceCalibration({ ...saved, balanceCents: -1 }), false);
+  assert.equal(balance.isBalanceCalibration({ ...saved, balanceCents: -1 }), true);
+  assert.equal(balance.isBalanceCalibration({ ...saved, balanceCents: -1.5 }), false);
+  assert.equal(balance.isBalanceCalibration({ ...saved, balanceCents: -Infinity }), false);
+  assert.equal(balance.isBalanceCalibration({ ...saved, balanceCents: -Number.MAX_SAFE_INTEGER - 1 }), false);
+  assert.equal(balance.isBalanceCalibration({ ...saved, postAnchorSpentCents: -1 }), false);
   assert.equal(balance.isBalanceCalibration({ ...saved, postAnchorSpentCents: '0' }), false);
-  assert.equal(balance.balanceStatus([], new Date(2026, 8, 23, 14), 600000, { ...saved, balanceCents: -1 }).remainingCents, 600000);
+  assert.equal(balance.balanceStatus([], new Date(2026, 8, 23, 14), 600000, { ...saved, balanceCents: -1.5 }).remainingCents, 600000);
+});
+
+test('signed calibration input accepts debt precisely without allowing negative expenses or salary', () => {
+  for (const [input, expected] of [['-230', -23000], [' -1,017.05 ', -101705], ['−0.01', -1], ['－２３０．５０', -23050], ['-0', 0], ['0', 0], ['3500.10', 350010]]) {
+    assert.equal(balance.parseBalanceToCents(input), expected, input);
+  }
+  for (const input of ['', '-', '--1', '-1.234', 'NaN', 'Infinity', '-90071992547410', '1e3', '230-']) {
+    assert.equal(balance.parseBalanceToCents(input), null, input);
+  }
+  assert.equal(core.parseMoneyToCents('-230'), null);
+});
+
+test('negative calibration survives persistence and new expenses increase debt without double-counting backfills', () => {
+  const now = new Date(2026, 8, 23, 12);
+  const baseline = [record('2026-09-20', '11:00', 200000)];
+  const original = core.buildFinanceAdvisorSnapshot(baseline, now, 600000, []);
+  const saved = JSON.parse(JSON.stringify(balance.createBalanceCalibration(baseline, now, -23000)));
+  assert.equal(balance.isBalanceCalibration(saved), true);
+  assert.equal(balance.balanceStatus(baseline, now, 600000, saved).remainingCents, -23000);
+  const later = [...baseline, record('2026-09-23', '13:00', 1000, 2), record('2026-09-21', '补记', 5000, 3)];
+  const status = balance.balanceStatus(later, new Date(2026, 8, 23, 14), 600000, saved);
+  assert.equal(status.calibrated, true);
+  assert.equal(status.remainingCents, -24000);
+  assert.equal(status.recordedSpentCents, 206000);
+  assert.equal(status.unrecordedNetCents, 418000);
+  assert.deepEqual(core.buildFinanceAdvisorSnapshot(baseline, now, 600000, []), original);
+  const next = balance.balanceStatus([], new Date(2026, 9, 15, 14), 600000, saved);
+  assert.equal(next.calibrated, false);
+  assert.equal(next.remainingCents, 600000);
 });

@@ -958,10 +958,16 @@ var LedgerRepository = class {
 };
 
 // src/balance.ts
+function parseBalanceToCents(value) {
+  const normalized = value.trim().replace(/^[−－]/, "-");
+  const negative = normalized.startsWith("-");
+  const cents = parseMoneyToCents(negative ? normalized.slice(1) : normalized);
+  return cents === null ? null : negative && cents !== 0 ? -cents : cents;
+}
 function isBalanceCalibration(value) {
   if (!value || typeof value !== "object") return false;
   const item = value;
-  return typeof item.cycleStart === "string" && /^\d{4}-\d{2}-15$/.test(item.cycleStart) && typeof item.calibratedAt === "string" && Number.isFinite(Date.parse(item.calibratedAt)) && typeof item.balanceCents === "number" && Number.isSafeInteger(item.balanceCents) && item.balanceCents >= 0 && typeof item.postAnchorSpentCents === "number" && Number.isSafeInteger(item.postAnchorSpentCents) && item.postAnchorSpentCents >= 0;
+  return typeof item.cycleStart === "string" && /^\d{4}-\d{2}-15$/.test(item.cycleStart) && typeof item.calibratedAt === "string" && Number.isFinite(Date.parse(item.calibratedAt)) && typeof item.balanceCents === "number" && Number.isSafeInteger(item.balanceCents) && typeof item.postAnchorSpentCents === "number" && Number.isSafeInteger(item.postAnchorSpentCents) && item.postAnchorSpentCents >= 0;
 }
 function afterCalibration(record, calibratedAt) {
   const date = new Date(calibratedAt);
@@ -5868,17 +5874,17 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
       text2.inputEl.setAttribute("inputmode", "decimal");
       return text2;
     });
-    const calibrationSetting = new import_obsidian4.Setting(balancePanel).setName("\u6821\u51C6\u5F53\u524D\u4F59\u989D").setDesc("\u586B\u5199\u6B64\u523B\u5B9E\u9645\u8FD8\u5269\u7684\u91D1\u989D\uFF0C\u518D\u70B9\u51FB\u201C\u6821\u51C6\u201D\u3002\u4EC5\u5BF9\u5F53\u524D\u5DE5\u8D44\u5468\u671F\u751F\u6548\uFF1B\u4E4B\u540E\u65B0\u53D1\u751F\u7684\u8BB0\u8D26\u6D88\u8D39\u7EE7\u7EED\u6263\u51CF\u3002\u6821\u51C6\u524D\u7684\u8865\u8BB0\u4E0D\u4F1A\u91CD\u590D\u6263\u6B3E\u3002").addText((text2) => {
-      text2.setPlaceholder("\u4F8B\u5982 3500");
-      text2.inputEl.setAttribute("inputmode", "decimal");
+    const calibrationSetting = new import_obsidian4.Setting(balancePanel).setName("\u6821\u51C6\u5F53\u524D\u4F59\u989D").setDesc("\u586B\u5199\u6B64\u523B\u5B9E\u9645\u4F59\u989D\uFF0C\u8D1F\u6570\u8868\u793A\u8D1F\u503A\uFF08\u4F8B\u5982 -230\uFF09\uFF0C\u518D\u70B9\u51FB\u201C\u6821\u51C6\u201D\u3002\u4EC5\u5BF9\u5F53\u524D\u5DE5\u8D44\u5468\u671F\u751F\u6548\uFF1B\u4E4B\u540E\u65B0\u8BB0\u8D26\u6D88\u8D39\u7EE7\u7EED\u6263\u51CF\uFF0C\u6821\u51C6\u524D\u7684\u8865\u8BB0\u4E0D\u4F1A\u91CD\u590D\u6263\u6B3E\u3002").addText((text2) => {
+      text2.setPlaceholder("\u4F8B\u5982 3500 \u6216 -230");
+      text2.inputEl.setAttribute("inputmode", "text");
       text2.inputEl.setAttribute("aria-label", "\u5F53\u524D\u5B9E\u9645\u4F59\u989D");
       return text2;
     });
     const calibrationInput = calibrationSetting.controlEl.querySelector("input");
     calibrationSetting.addButton((button2) => button2.setButtonText("\u6821\u51C6\u4F59\u989D").setCta().onClick(async () => {
-      const cents = parseMoneyToCents(calibrationInput.value);
+      const cents = parseBalanceToCents(calibrationInput.value);
       if (cents === null) {
-        calibrationSetting.setDesc("\u8BF7\u8F93\u5165\u6709\u6548\u7684\u975E\u8D1F\u91D1\u989D\uFF0C\u6700\u591A\u4E24\u4F4D\u5C0F\u6570\uFF1B\u8F93\u5165 0 \u4E5F\u53EF\u4EE5\u6821\u51C6\u3002");
+        calibrationSetting.setDesc("\u8BF7\u8F93\u5165\u6709\u6548\u91D1\u989D\uFF0C\u6700\u591A\u4E24\u4F4D\u5C0F\u6570\uFF1B\u652F\u6301\u8D1F\u6570\uFF08\u8868\u793A\u8D1F\u503A\uFF09\u548C 0\u3002");
         return;
       }
       this.plugin.settings.balanceCalibration = createBalanceCalibration(flattenRecords(this.plugin.repository.files.values()), /* @__PURE__ */ new Date(), cents);
@@ -5916,7 +5922,7 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
       };
       addRow("\u5230\u8D26\u5DE5\u8D44", this.plugin.settings.salaryCents);
       addRow("\u5DF2\u8BB0\u8D26\u652F\u51FA", status.recordedSpentCents);
-      addRow(status.calibrated ? "\u5F53\u524D\u4F59\u989D \xB7 \u5DF2\u6821\u51C6" : "\u5F53\u524D\u4F59\u989D \xB7 \u8D26\u9762\u63A8\u7B97", status.remainingCents);
+      addRow(status.calibrated ? status.remainingCents < 0 ? "\u5F53\u524D\u4F59\u989D \xB7 \u8D1F\u503A \xB7 \u5DF2\u6821\u51C6" : "\u5F53\u524D\u4F59\u989D \xB7 \u5DF2\u6821\u51C6" : "\u5F53\u524D\u4F59\u989D \xB7 \u8D26\u9762\u63A8\u7B97", status.remainingCents);
       if (status.calibrated) {
         addRow("\u672A\u8BB0\u8D26\u51C0\u5DEE\u989D", status.unrecordedNetCents);
         balanceSummary.createEl("small", { text: status.unrecordedNetCents >= 0 ? "\u6B63\u6570\u8868\u793A\u5B9E\u9645\u4F59\u989D\u4F4E\u4E8E\u8D26\u9762\u63A8\u7B97\uFF1B\u53EF\u80FD\u6709\u672A\u8BB0\u5F55\u7684\u652F\u51FA\u7B49\uFF0C\u5E76\u4E0D\u7B49\u540C\u4E8E\u57AB\u4ED8\u3002" : "\u8D1F\u6570\u8868\u793A\u5B9E\u9645\u4F59\u989D\u9AD8\u4E8E\u8D26\u9762\u63A8\u7B97\uFF1B\u53EF\u80FD\u6709\u5176\u4ED6\u6536\u5165\u6216\u4E0A\u671F\u7ED3\u4F59\u3002" });
@@ -7235,7 +7241,7 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
   }
   const remainingCents = (_c = balance == null ? void 0 : balance.remainingCents) != null ? _c : snapshot.remainingSalaryCents;
   const remaining = heading.createDiv({ cls: `ledger-advisor-remaining${remainingCents < 0 ? " is-negative" : ""}` });
-  remaining.createSpan({ text: snapshot.salaryCents <= 0 ? "\u5DE5\u8D44\u5C1A\u672A\u8BBE\u7F6E" : (balance == null ? void 0 : balance.calibrated) ? "\u76EE\u524D\u8FD8\u5269 \xB7 \u5DF2\u6821\u51C6" : "\u76EE\u524D\u8FD8\u5269" });
+  remaining.createSpan({ text: snapshot.salaryCents <= 0 ? "\u5DE5\u8D44\u5C1A\u672A\u8BBE\u7F6E" : (balance == null ? void 0 : balance.calibrated) ? remainingCents < 0 ? "\u5F53\u524D\u8D1F\u503A \xB7 \u5DF2\u6821\u51C6" : "\u76EE\u524D\u8FD8\u5269 \xB7 \u5DF2\u6821\u51C6" : "\u76EE\u524D\u8FD8\u5269" });
   remaining.createEl("strong", { text: snapshot.salaryCents > 0 ? formatCents(remainingCents) : "\u6628\u65E5\u7B80\u62A5\u53EF\u7528" });
   const event = (_d = snapshot.events.find((item) => {
     var _a2;

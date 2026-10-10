@@ -214,6 +214,8 @@ test('remaining salary and calibrated balances keep the negative sign after over
   const calibrated = new Element();
   renderFinanceAdvisor(calibrated, s, { status: 'local', advice: null, canRefresh: false, message: '' }, () => {}, false, undefined, undefined, undefined, false, undefined, { remainingCents: -50, calibrated: true });
   assert.equal(calibrated.querySelector('.ledger-advisor-remaining').children[1].textContent, '-¥0.50');
+  assert.equal(calibrated.querySelector('.ledger-advisor-remaining').children[0].textContent, '当前负债 · 已校准');
+  assert.equal(remaining.children[0].textContent, '目前还剩');
 });
 test('rolling seven days cross the month and compare equal preceding windows with four complete historical weeks', () => {
   const s = snapshot(), w = s.weekly;
