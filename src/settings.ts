@@ -1,7 +1,7 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type LedgerStatisticsPlugin from "./main";
 import { flattenRecords, formatCents, parseMoneyToCents, salaryDayRange } from "./core";
-import { BalanceCalibration, balanceStatus, createBalanceCalibration, parseBalanceToCents } from "./balance";
+import { BalanceCalibration, balanceStatus, parseBalanceToCents } from "./balance";
 import type { FinanceAdviceCache } from "./ai";
 import { testFinanceConnection } from "./ai";
 import { sharedRequestGate } from "./request-gate";
@@ -233,7 +233,7 @@ export class LedgerSettingTab extends PluginSettingTab {
 
     const calibrationSetting = new Setting(balancePanel)
       .setName("校准当前余额")
-      .setDesc("填写此刻实际余额，负数表示负债（例如 -230），再点击“校准”。仅对当前工资周期生效；之后新记账消费继续扣减，校准前的补记不会重复扣款。")
+      .setDesc("填写此刻实际余额，负数表示负债（例如 -230）。校准时同时更新资产里的默认扣款账户；资产修改不会反向更新这里。校准值仅对当前工资周期生效。")
       .addText((text) => {
         text.setPlaceholder("例如 3500 或 -230");
         text.inputEl.setAttribute("inputmode", "text");
@@ -247,15 +247,23 @@ export class LedgerSettingTab extends PluginSettingTab {
         calibrationSetting.setDesc("请输入有效金额，最多两位小数；支持负数（表示负债）和 0。");
         return;
       }
-      this.plugin.settings.balanceCalibration = createBalanceCalibration(flattenRecords(this.plugin.repository.files.values()), new Date(), cents);
-      await this.plugin.saveSettings(false);
+      button.setDisabled(true);
+      try { await this.plugin.calibrateBalance(cents); }
+      catch (error) {
+        calibrationSetting.setDesc(error instanceof Error ? `校准失败：${error.message}` : "校准失败，请重试。");
+        return;
+      } finally { button.setDisabled(false); }
       calibrationInput.value = "";
-      calibrationSetting.setDesc("余额已校准。新记账消费继续扣减；校准前的补记不会重复扣款。");
+      calibrationSetting.setDesc("余额已校准，并已同步资产默认扣款账户。新记账消费继续扣减；校准前的补记不会重复扣款。");
       refreshBalanceSummary();
     }));
     calibrationSetting.addButton((button) => button.setButtonText("取消校准").onClick(async () => {
-      this.plugin.settings.balanceCalibration = null;
-      await this.plugin.saveSettings(false);
+      button.setDisabled(true);
+      try { await this.plugin.clearBalanceCalibration(); }
+      catch (error) {
+        calibrationSetting.setDesc(error instanceof Error ? `取消校准失败：${error.message}` : "取消校准失败，请重试。");
+        return;
+      } finally { button.setDisabled(false); }
       calibrationInput.value = "";
       refreshBalanceSummary();
     }));
@@ -298,7 +306,9 @@ export class LedgerSettingTab extends PluginSettingTab {
       } else {
         balanceSummary.createEl("small", { text: "尚未校准。当前余额只是工资减已记账支出的推算值；上次校准不会跨工资周期沿用。" });
       }
-      balanceSummary.createEl("p", { text: "余额与差额仅用于对账，不进入消费异常、历史均值或 AI 判断。校准后补记较早交易不会二次扣款；如有未记账资金变化，请再次校准。" });
+      const cash = this.plugin.settings.assets.accounts.find(a => a.id === this.plugin.settings.assets.defaultCashId && a.kind === "cash" && !a.archived);
+      balanceSummary.createEl("p", { text: cash ? `点击校准时同步资产账户“${cash.name}”；负余额只计一次负债。资产页的账户修改和其他负债不会反向改动校准值。` : "首次校准将创建默认扣款账户“余额校准账户”，负余额自动计入资产负债。" });
+      balanceSummary.createEl("p", { text: "余额与差额不进入消费异常、历史均值或 AI 判断。补记较早交易不会二次扣款；未记账资金变化需再次校准。取消校准或进入新工资周期只恢复这里的账面推算，不清除资产账户欠款。" });
     };
     refreshBalanceSummary();
     this.balanceSummaryRefresh = refreshBalanceSummary;

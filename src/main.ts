@@ -3,12 +3,12 @@ import { BudgetMonitor } from "./budget-monitor";
 import { sharedRequestGate } from "./request-gate";
 import { flattenRecords, migrateStarredIds, renameStarredIds } from "./core";
 import { LedgerRepository } from "./repository";
-import { isBalanceCalibration } from "./balance";
+import { createBalanceCalibration, isBalanceCalibration } from "./balance";
 import { DEFAULT_SETTINGS, LedgerSettingTab, LedgerSettings, normalizeLedgerView } from "./settings";
 import { LedgerStatisticsView, LEDGER_VIEW_TYPE } from "./view";
 import { normalizeReportPreferences } from "./report";
 import { normalizeReportCaches } from "./report-ai";
-import { AssetSnapshot, AssetState, SecurityKind, applyAssetQuote, buildAssetSnapshot, normalizeAssets, quoteKey, renameAssetLinks, storeAssetSnapshot } from "./assets";
+import { AssetSnapshot, AssetState, SecurityKind, applyAssetQuote, assetId, buildAssetSnapshot, calibrateAccount, normalizeAssets, quoteKey, renameAssetLinks, setDefaultCash, storeAssetSnapshot } from "./assets";
 import { AssetQuoteMonitor } from "./asset-quotes";
 
 export default class LedgerStatisticsPlugin extends Plugin {
@@ -128,6 +128,48 @@ export default class LedgerStatisticsPlugin extends Plugin {
   lookupAssetQuote(kind: SecurityKind, code: string) { return this.assetQuotes.lookup(kind, code); }
 
   refreshAssetViews(): void { this.refreshViews(); }
+
+  /** Calibration writes to cash once; subsequent asset edits never write back to calibration. */
+  calibrateBalance(cents: number, now = new Date()): Promise<void> {
+    const operation = this.assetQueue.then(async () => {
+      if (this.assetsStopped) throw new Error("插件已关闭，请重新打开");
+      const records = flattenRecords(this.repository.files.values());
+      const calibration = createBalanceCalibration(records, now, cents);
+      if (!isBalanceCalibration(calibration)) throw new Error("余额无效");
+      const beforeAssets = this.settings.assets, beforeCalibration = this.settings.balanceCalibration;
+      const next = JSON.parse(JSON.stringify(beforeAssets)) as AssetState;
+      let cash = next.accounts.find(a => a.id === next.defaultCashId && a.kind === "cash" && !a.archived);
+      if (!cash) {
+        cash = { id: assetId(), name: "余额校准账户", kind: "cash", balanceCents: 0, baselineAt: now.toISOString(), includedRecordIds: [], includedEventIds: [] };
+        next.accounts.push(cash);
+        setDefaultCash(next, cash.id, records, now);
+      }
+      calibrateAccount(next, cash.id, cents, records, now);
+      storeAssetSnapshot(next, buildAssetSnapshot(next, records, now));
+      this.settings.assets = next;
+      this.settings.balanceCalibration = calibration;
+      try { await this.saveSettings(false, false); }
+      catch (error) { this.settings.assets = beforeAssets; this.settings.balanceCalibration = beforeCalibration; throw error; }
+      if (!this.assetsStopped) this.refreshViews();
+      this.settingTab?.refreshBalanceSummary();
+    });
+    this.assetQueue = operation.catch(() => {});
+    return operation;
+  }
+
+  clearBalanceCalibration(): Promise<void> {
+    const operation = this.assetQueue.then(async () => {
+      if (this.assetsStopped) throw new Error("插件已关闭，请重新打开");
+      const before = this.settings.balanceCalibration;
+      this.settings.balanceCalibration = null;
+      try { await this.saveSettings(false, false); }
+      catch (error) { this.settings.balanceCalibration = before; throw error; }
+      if (!this.assetsStopped) this.refreshViews();
+      this.settingTab?.refreshBalanceSummary();
+    });
+    this.assetQueue = operation.catch(() => {});
+    return operation;
+  }
 
   updateAssets(change: (state: AssetState) => void): Promise<void> {
     const operation = this.assetQueue.then(async () => {
