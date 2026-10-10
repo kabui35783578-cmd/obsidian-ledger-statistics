@@ -4,6 +4,7 @@ import { LedgerRecord, flattenRecords, formatCents, isoFromDate } from "./core";
 import { ASSET_NAMES, AssetAccount, AssetEvent, AssetEventKind, AssetHolding, AssetKind, AssetSnapshot, SecurityKind, addAssetEvent, addEstimatedHolding, assetId, assetTotals, baselineRecordIds, calibrateAccount, dailyAssetChange, decimal, knownRecord, linkRecord, moneyCents, normalizeCode, previousDaySnapshot, quantityFromAmount, removeAssetAccount, removeAssetHolding, repayAssetLiability, setDefaultCash, validateQuantity } from "./assets";
 import { renderAssetOverviewSankey, renderAssetSankey } from "./asset-charts";
 import type { AssetQuote } from "./assets";
+import { styleLedgerModal } from "./ui-surface";
 
 function button(parent: HTMLElement, text: string, action: () => void, primary = false): HTMLButtonElement {
   const node = parent.createEl("button", { cls: `ledger-button${primary ? " ledger-assets-primary" : ""}`, text });
@@ -38,6 +39,7 @@ export class AssetFormModal extends Modal {
   private alive = false;
   constructor(plugin: LedgerStatisticsPlugin, private title: string, private build: (body: HTMLElement, active: () => boolean) => () => Promise<void>, private saveLabel = "保存") { super(plugin.app); }
   onOpen(): void {
+    styleLedgerModal(this);
     this.alive = true;
     this.modalEl.addClass("ledger-assets-modal"); this.setTitle(this.title);
     const body = this.contentEl.createEl("form", { cls: "ledger-assets-form" });
@@ -123,7 +125,7 @@ export class AssetPanel {
   }
   private categoryModal(kind: AssetKind): void {
     if (kind === "liability") { this.liabilitiesModal(); return; }
-    const modal = new Modal(this.plugin.app); modal.setTitle(`${ASSET_NAMES[kind]} · 账户明细`); modal.modalEl.addClass("ledger-assets-modal");
+    const modal = new Modal(this.plugin.app); styleLedgerModal(modal); modal.setTitle(`${ASSET_NAMES[kind]} · 账户明细`); modal.modalEl.addClass("ledger-assets-modal");
     modal.onOpen = () => {
       this.renderAccounts(modal.contentEl, id => { modal.close(); this.accountDetails(id); }, kind);
       button(modal.contentEl, `添加${ASSET_NAMES[kind]}账户`, () => { modal.close(); this.accountForm(undefined, kind); });
@@ -315,7 +317,7 @@ export class AssetPanel {
   private liabilitiesModal(): void {
     const state = this.plugin.settings.assets, liabilities = this.plugin.assetSnapshot().accounts.filter(a => a.kind === "liability" || (a.kind === "cash" && a.cents < 0));
     if (!liabilities.length) { this.accountForm(undefined, "liability"); return; }
-    const modal = new Modal(this.plugin.app); modal.setTitle("负债与还款"); modal.modalEl.addClass("ledger-assets-modal");
+    const modal = new Modal(this.plugin.app); styleLedgerModal(modal); modal.setTitle("负债与还款"); modal.modalEl.addClass("ledger-assets-modal");
     modal.onOpen = () => {
       for (const account of liabilities) {
         const row = modal.contentEl.createDiv({ cls: "ledger-assets-position-row" }), info = row.createDiv();
@@ -349,7 +351,7 @@ export class AssetPanel {
   private accountDetails(id: string): void {
     const account = this.plugin.settings.assets.accounts.find(a => a.id === id && !a.archived), valued = this.plugin.assetSnapshot().accounts.find(a => a.id === id);
     if (!account || !valued) return;
-    const state = this.plugin.settings.assets, modal = new Modal(this.plugin.app); modal.setTitle(account.name); modal.modalEl.addClass("ledger-assets-modal");
+    const state = this.plugin.settings.assets, modal = new Modal(this.plugin.app); styleLedgerModal(modal); modal.setTitle(account.name); modal.modalEl.addClass("ledger-assets-modal");
     modal.onOpen = () => {
       modal.contentEl.createDiv({ cls: "ledger-assets-dialog-total", text: state.hideAmounts ? "••••" : formatCents(valued.cents) });
       const actions = modal.contentEl.createDiv({ cls: "ledger-assets-actions" });
@@ -377,7 +379,7 @@ export class AssetPanel {
     }, "删除").open();
   }
   private toolsModal(): void {
-    const modal = new Modal(this.plugin.app); modal.setTitle("资产管理"); modal.modalEl.addClass("ledger-assets-modal", "ledger-assets-tools-modal");
+    const modal = new Modal(this.plugin.app); styleLedgerModal(modal); modal.setTitle("资产管理"); modal.modalEl.addClass("ledger-assets-modal", "ledger-assets-tools-modal");
     modal.onOpen = () => {
       modal.contentEl.createDiv({ cls: "ledger-assets-badge", text: "MANAGE · LOCAL LEDGER" });
       const actions = modal.contentEl.createDiv({ cls: "ledger-assets-tool-grid" });
@@ -397,7 +399,7 @@ export class AssetPanel {
     }; modal.open();
   }
   private sankeyModal(snapshot: AssetSnapshot): void {
-    const modal = new Modal(this.plugin.app); modal.setTitle(`资产组成 · ${snapshot.date}`); modal.modalEl.addClass("ledger-assets-sankey-modal", "ledger-assets-sankey-expanded");
+    const modal = new Modal(this.plugin.app); styleLedgerModal(modal); modal.setTitle(`资产组成 · ${snapshot.date}`); modal.modalEl.addClass("ledger-assets-sankey-modal", "ledger-assets-sankey-expanded");
     const draw = (): void => {
       modal.contentEl.empty();
       modal.contentEl.createEl("small", { cls: "ledger-assets-sankey-help", text: "左右拖动 · 双指缩放" });
@@ -406,7 +408,7 @@ export class AssetPanel {
     modal.onOpen = draw; modal.open();
   }
   private calendarModal(): void {
-    const modal = new Modal(this.plugin.app); modal.setTitle("资产月历"); modal.modalEl.addClass("ledger-assets-sankey-modal");
+    const modal = new Modal(this.plugin.app); styleLedgerModal(modal); modal.setTitle("资产月历"); modal.modalEl.addClass("ledger-assets-sankey-modal");
     modal.onOpen = () => {
       const state = this.plugin.settings.assets, snapshots = [...state.snapshots].sort((a, b) => b.date.localeCompare(a.date));
       if (!snapshots.length) { modal.contentEl.createEl("p", { text: "尚无资产快照，添加账户后自动保存。" }); return; }

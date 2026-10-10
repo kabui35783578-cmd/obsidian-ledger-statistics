@@ -6,10 +6,12 @@ import { appendReportCache, findReportCache, reportConfiguration, requestSpendin
 import { sharedRequestGate } from "./request-gate";
 import { createButton } from "./ui";
 import { formatReportFact, formatReportText, reportPlainLanguage, reportProgress, reportTextParts } from "./report-presentation";
+import { styleLedgerModal } from "./ui-surface";
 
 export class ReportEvidenceModal extends Modal {
   constructor(plugin: LedgerStatisticsPlugin, private snapshot: ReportSnapshot, private evidenceIds: string[], private openRecord: (r: LedgerRecord) => Promise<void>, private generatedAt?: string) { super(plugin.app); }
   onOpen(): void {
+    styleLedgerModal(this);
     this.setTitle("报告证据");
     this.contentEl.empty(); this.contentEl.addClass("ledger-report-evidence", "ledger-design-surface");
     this.modalEl?.addClass("ledger-report-evidence-modal");

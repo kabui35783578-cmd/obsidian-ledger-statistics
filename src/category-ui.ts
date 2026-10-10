@@ -3,6 +3,7 @@ import { formatCents, LedgerRecord, trendPoints } from "./core";
 import type { CategoryAnalysis, CategoryGroup } from "./category-analysis";
 import { createButton, renderDonut, renderDumbbell, renderHorizontalBars, renderTrendChart } from "./ui";
 import { renderSelectedBox, renderWeekdayRungs } from "./category-charts";
+import { styleLedgerModal } from "./ui-surface";
 
 const money = (value: number | null) => value === null ? "—" : formatCents(Math.round(value));
 const signedMoney = (value: number) => `${value > 0 ? "+" : ""}${money(value)}`;
@@ -43,8 +44,9 @@ function recordList(parent: HTMLElement, records: LedgerRecord[], open: (record:
 
 export function showCategoryRecords(app: App, label: string, records: LedgerRecord[], open: (record: LedgerRecord) => void): void {
   const modal = new Modal(app);
+  styleLedgerModal(modal);
+  modal.setTitle(label);
   modal.contentEl.addClass("ledger-category-evidence");
-  modal.contentEl.createEl("h2", { text: label });
   modal.contentEl.createDiv({ cls: "ledger-note", text: `${records.length} 笔 · 点击打开原始账目` });
   if (!records.length) modal.contentEl.createDiv({ cls: "ledger-empty", text: "没有匹配记录" });
   recordList(modal.contentEl, [...records].sort((a, b) => b.cents - a.cents || b.date.localeCompare(a.date) || a.id.localeCompare(b.id)), record => { modal.close(); open(record); });

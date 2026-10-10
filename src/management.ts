@@ -2,10 +2,13 @@ import { FuzzySuggestModal, Modal, Notice, Setting } from "obsidian";
 import type LedgerStatisticsPlugin from "./main";
 import { flattenRecords, formatCents, LedgerRecord, parseMoneyToCents, salaryCycleFullRange, salaryDayRange } from "./core";
 import { relinkStar, unmatchedStarIds } from "./insights";
+import { styleLedgerModal } from "./ui-surface";
 
 class RecordPicker extends FuzzySuggestModal<LedgerRecord> {
   constructor(private plugin: LedgerStatisticsPlugin, private choose: (record: LedgerRecord) => void, private range?: { start: string; end: string }) {
     super(plugin.app);
+    styleLedgerModal(this);
+    this.modalEl.addClass("ledger-record-picker");
     this.setPlaceholder("搜索日期、分类、金额或备注");
   }
   getItems(): LedgerRecord[] {
@@ -18,6 +21,7 @@ class RecordPicker extends FuzzySuggestModal<LedgerRecord> {
 export class BalanceCalibrationNoteModal extends Modal {
   constructor(private plugin: LedgerStatisticsPlugin) { super(plugin.app); }
   onOpen(): void {
+    styleLedgerModal(this);
     this.containerEl.addClass("ledger-balance-note-container");
     this.modalEl.addClass("ledger-balance-note-modal");
     this.setTitle("余额校准差额备注");
@@ -45,7 +49,7 @@ export class BalanceCalibrationNoteModal extends Modal {
 
 export class FixedExpenseModal extends Modal {
   constructor(private plugin: LedgerStatisticsPlugin) { super(plugin.app); }
-  onOpen(): void { this.render(); }
+  onOpen(): void { styleLedgerModal(this); this.setTitle("固定支出确认"); this.render(); }
   private async save(): Promise<void> {
     this.plugin.settings.financeAdviceCache = null;
     await this.plugin.saveSettings(false);
@@ -53,7 +57,6 @@ export class FixedExpenseModal extends Modal {
   private render(): void {
     const root = this.contentEl;
     root.empty(); root.addClass("ledger-management");
-    root.createEl("h2", { text: "固定支出确认" });
     root.createEl("p", { text: "工资日固定为每月 15 日。关联实际账目只用于修正周期末参考，不新增、修改或扣减账目。每笔账目只能关联一个项目；分期付款请拆成多个项目。" });
     const records = flattenRecords(this.plugin.repository.files.values());
     const ranges = [salaryDayRange(new Date()), salaryCycleFullRange(new Date(), 1), salaryCycleFullRange(new Date(), 2)];
@@ -117,10 +120,9 @@ export class FixedExpenseModal extends Modal {
 
 export class StarRepairModal extends Modal {
   constructor(private plugin: LedgerStatisticsPlugin) { super(plugin.app); }
-  onOpen(): void { this.render(); }
+  onOpen(): void { styleLedgerModal(this); this.setTitle("核对失效星标"); this.render(); }
   private render(): void {
     this.contentEl.empty(); this.contentEl.addClass("ledger-management");
-    this.contentEl.createEl("h2", { text: "核对失效星标" });
     this.contentEl.createEl("p", { text: "账目修改、删除或离线移动后，旧星标可能无法匹配。请手动重新关联或移除星标；原始账目不会被修改。" });
     const records = flattenRecords(this.plugin.repository.files.values());
     const missing = unmatchedStarIds(this.plugin.settings.starredRecordIds, records);

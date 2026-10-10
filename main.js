@@ -2196,6 +2196,13 @@ function relinkStar(ids, oldId, newId, records) {
   return [...new Set(ids.map((id) => id === oldId ? newId : id))];
 }
 
+// src/ui-surface.ts
+function styleLedgerModal(modal) {
+  var _a, _b;
+  (_a = modal.modalEl) == null ? void 0 : _a.addClass("ledger-design-surface", "ledger-dialog");
+  (_b = modal.contentEl) == null ? void 0 : _b.addClass("ledger-design-surface");
+}
+
 // src/management.ts
 var RecordPicker = class extends import_obsidian3.FuzzySuggestModal {
   constructor(plugin, choose, range) {
@@ -2203,6 +2210,8 @@ var RecordPicker = class extends import_obsidian3.FuzzySuggestModal {
     this.plugin = plugin;
     this.choose = choose;
     this.range = range;
+    styleLedgerModal(this);
+    this.modalEl.addClass("ledger-record-picker");
     this.setPlaceholder("\u641C\u7D22\u65E5\u671F\u3001\u5206\u7C7B\u3001\u91D1\u989D\u6216\u5907\u6CE8");
   }
   getItems() {
@@ -2221,6 +2230,7 @@ var BalanceCalibrationNoteModal = class extends import_obsidian3.Modal {
     this.plugin = plugin;
   }
   onOpen() {
+    styleLedgerModal(this);
     this.containerEl.addClass("ledger-balance-note-container");
     this.modalEl.addClass("ledger-balance-note-modal");
     this.setTitle("\u4F59\u989D\u6821\u51C6\u5DEE\u989D\u5907\u6CE8");
@@ -2254,6 +2264,8 @@ var FixedExpenseModal = class extends import_obsidian3.Modal {
     this.plugin = plugin;
   }
   onOpen() {
+    styleLedgerModal(this);
+    this.setTitle("\u56FA\u5B9A\u652F\u51FA\u786E\u8BA4");
     this.render();
   }
   async save() {
@@ -2264,7 +2276,6 @@ var FixedExpenseModal = class extends import_obsidian3.Modal {
     const root = this.contentEl;
     root.empty();
     root.addClass("ledger-management");
-    root.createEl("h2", { text: "\u56FA\u5B9A\u652F\u51FA\u786E\u8BA4" });
     root.createEl("p", { text: "\u5DE5\u8D44\u65E5\u56FA\u5B9A\u4E3A\u6BCF\u6708 15 \u65E5\u3002\u5173\u8054\u5B9E\u9645\u8D26\u76EE\u53EA\u7528\u4E8E\u4FEE\u6B63\u5468\u671F\u672B\u53C2\u8003\uFF0C\u4E0D\u65B0\u589E\u3001\u4FEE\u6539\u6216\u6263\u51CF\u8D26\u76EE\u3002\u6BCF\u7B14\u8D26\u76EE\u53EA\u80FD\u5173\u8054\u4E00\u4E2A\u9879\u76EE\uFF1B\u5206\u671F\u4ED8\u6B3E\u8BF7\u62C6\u6210\u591A\u4E2A\u9879\u76EE\u3002" });
     const records = flattenRecords(this.plugin.repository.files.values());
     const ranges = [salaryDayRange(/* @__PURE__ */ new Date()), salaryCycleFullRange(/* @__PURE__ */ new Date(), 1), salaryCycleFullRange(/* @__PURE__ */ new Date(), 2)];
@@ -2343,12 +2354,13 @@ var StarRepairModal = class extends import_obsidian3.Modal {
     this.plugin = plugin;
   }
   onOpen() {
+    styleLedgerModal(this);
+    this.setTitle("\u6838\u5BF9\u5931\u6548\u661F\u6807");
     this.render();
   }
   render() {
     this.contentEl.empty();
     this.contentEl.addClass("ledger-management");
-    this.contentEl.createEl("h2", { text: "\u6838\u5BF9\u5931\u6548\u661F\u6807" });
     this.contentEl.createEl("p", { text: "\u8D26\u76EE\u4FEE\u6539\u3001\u5220\u9664\u6216\u79BB\u7EBF\u79FB\u52A8\u540E\uFF0C\u65E7\u661F\u6807\u53EF\u80FD\u65E0\u6CD5\u5339\u914D\u3002\u8BF7\u624B\u52A8\u91CD\u65B0\u5173\u8054\u6216\u79FB\u9664\u661F\u6807\uFF1B\u539F\u59CB\u8D26\u76EE\u4E0D\u4F1A\u88AB\u4FEE\u6539\u3002" });
     const records = flattenRecords(this.plugin.repository.files.values());
     const missing = unmatchedStarIds(this.plugin.settings.starredRecordIds, records);
@@ -7500,6 +7512,7 @@ var ReportEvidenceModal = class extends import_obsidian6.Modal {
   }
   onOpen() {
     var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j;
+    styleLedgerModal(this);
     this.setTitle("\u62A5\u544A\u8BC1\u636E");
     this.contentEl.empty();
     this.contentEl.addClass("ledger-report-evidence", "ledger-design-surface");
@@ -8106,8 +8119,9 @@ function recordList(parent, records, open) {
 }
 function showCategoryRecords(app, label2, records, open) {
   const modal = new import_obsidian7.Modal(app);
+  styleLedgerModal(modal);
+  modal.setTitle(label2);
   modal.contentEl.addClass("ledger-category-evidence");
-  modal.contentEl.createEl("h2", { text: label2 });
   modal.contentEl.createDiv({ cls: "ledger-note", text: `${records.length} \u7B14 \xB7 \u70B9\u51FB\u6253\u5F00\u539F\u59CB\u8D26\u76EE` });
   if (!records.length) modal.contentEl.createDiv({ cls: "ledger-empty", text: "\u6CA1\u6709\u5339\u914D\u8BB0\u5F55" });
   recordList(modal.contentEl, [...records].sort((a, b) => b.cents - a.cents || b.date.localeCompare(a.date) || a.id.localeCompare(b.id)), (record) => {
@@ -8629,6 +8643,7 @@ var AssetFormModal = class extends import_obsidian8.Modal {
     this.alive = false;
   }
   onOpen() {
+    styleLedgerModal(this);
     this.alive = true;
     this.modalEl.addClass("ledger-assets-modal");
     this.setTitle(this.title);
@@ -8768,6 +8783,7 @@ var AssetPanel = class {
       return;
     }
     const modal = new import_obsidian8.Modal(this.plugin.app);
+    styleLedgerModal(modal);
     modal.setTitle(`${ASSET_NAMES[kind]} \xB7 \u8D26\u6237\u660E\u7EC6`);
     modal.modalEl.addClass("ledger-assets-modal");
     modal.onOpen = () => {
@@ -9059,6 +9075,7 @@ var AssetPanel = class {
       return;
     }
     const modal = new import_obsidian8.Modal(this.plugin.app);
+    styleLedgerModal(modal);
     modal.setTitle("\u8D1F\u503A\u4E0E\u8FD8\u6B3E");
     modal.modalEl.addClass("ledger-assets-modal");
     modal.onOpen = () => {
@@ -9117,6 +9134,7 @@ var AssetPanel = class {
     const account = this.plugin.settings.assets.accounts.find((a) => a.id === id && !a.archived), valued = this.plugin.assetSnapshot().accounts.find((a) => a.id === id);
     if (!account || !valued) return;
     const state = this.plugin.settings.assets, modal = new import_obsidian8.Modal(this.plugin.app);
+    styleLedgerModal(modal);
     modal.setTitle(account.name);
     modal.modalEl.addClass("ledger-assets-modal");
     modal.onOpen = () => {
@@ -9168,6 +9186,7 @@ var AssetPanel = class {
   }
   toolsModal() {
     const modal = new import_obsidian8.Modal(this.plugin.app);
+    styleLedgerModal(modal);
     modal.setTitle("\u8D44\u4EA7\u7BA1\u7406");
     modal.modalEl.addClass("ledger-assets-modal", "ledger-assets-tools-modal");
     modal.onOpen = () => {
@@ -9199,6 +9218,7 @@ var AssetPanel = class {
   }
   sankeyModal(snapshot) {
     const modal = new import_obsidian8.Modal(this.plugin.app);
+    styleLedgerModal(modal);
     modal.setTitle(`\u8D44\u4EA7\u7EC4\u6210 \xB7 ${snapshot.date}`);
     modal.modalEl.addClass("ledger-assets-sankey-modal", "ledger-assets-sankey-expanded");
     const draw = () => {
@@ -9214,6 +9234,7 @@ var AssetPanel = class {
   }
   calendarModal() {
     const modal = new import_obsidian8.Modal(this.plugin.app);
+    styleLedgerModal(modal);
     modal.setTitle("\u8D44\u4EA7\u6708\u5386");
     modal.modalEl.addClass("ledger-assets-sankey-modal");
     modal.onOpen = () => {
