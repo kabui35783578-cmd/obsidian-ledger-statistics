@@ -5765,11 +5765,11 @@ var VIEW_NAMES = {
 var OPENAI_CHAT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
 var MIMO_CHAT_ENDPOINT = "https://api.xiaomimimo.com/v1/chat/completions";
 var SETTINGS_SECTIONS = [
-  { id: "ledger", label: "\u8D26\u672C\u4E0E\u663E\u793A", description: "\u8D26\u672C\u6765\u6E90\u3001\u7EDF\u8BA1\u53E3\u5F84\u3001\u9ED8\u8BA4\u89C6\u56FE\u4E0E\u661F\u6807\u6838\u5BF9\u3002" },
-  { id: "salary", label: "\u5DE5\u8D44\u5468\u671F", description: "\u7BA1\u7406\u56FA\u5B9A\u652F\u51FA\u53CA\u5176\u5468\u671F\u672B\u53C2\u8003\u3002" },
-  { id: "balance", label: "\u4F59\u989D\u6821\u51C6", description: "\u6309\u5B9E\u9645\u4F59\u989D\u6821\u51C6\u672C\u5468\u671F\u5269\u4F59\u91D1\u989D\uFF0C\u5E76\u67E5\u770B\u8D26\u9762\u4E0E\u5B9E\u9645\u7684\u51C0\u5DEE\u989D\u3002" },
-  { id: "ai", label: "AI \u6D1E\u5BDF", description: "\u622A\u81F3\u6628\u5929\u7684\u8FD1 7 \u5929\u5206\u6790\uFF1B\u4EC5\u70B9\u51FB\u5237\u65B0\u65F6\u751F\u6210\u3002" },
-  { id: "budget", label: "\u9884\u7B97\u4E0E\u63D0\u9192", description: "\u8BBE\u7F6E\u4ECA\u65E5\u9884\u7B97\u3001\u7EDF\u8BA1\u8303\u56F4\u4E0E\u8D85\u989D\u63D0\u9192\u3002" }
+  { id: "ledger", label: "\u8D26\u672C\u4E0E\u663E\u793A", icon: "notebook-text", description: "\u9009\u62E9\u8D26\u672C\u6765\u6E90\uFF0C\u8C03\u6574\u7EDF\u8BA1\u53E3\u5F84\u4E0E\u9ED8\u8BA4\u663E\u793A\u3002" },
+  { id: "salary", label: "\u5DE5\u8D44\u5468\u671F", icon: "calendar-days", description: "\u7BA1\u7406\u56FA\u5B9A\u652F\u51FA\u53CA\u5176\u5468\u671F\u672B\u53C2\u8003\u3002" },
+  { id: "balance", label: "\u4F59\u989D\u6821\u51C6", icon: "wallet", description: "\u6821\u51C6\u672C\u5468\u671F\u5B9E\u9645\u4F59\u989D\uFF0C\u6838\u5BF9\u8D26\u9762\u4E0E\u5B9E\u9645\u7684\u51C0\u5DEE\u989D\u3002" },
+  { id: "ai", label: "AI \u6D1E\u5BDF", icon: "sparkles", description: "\u914D\u7F6E\u6D1E\u5BDF\u4E0E\u6D88\u8D39\u62A5\u544A\u5171\u7528\u7684 AI \u670D\u52A1\uFF0C\u624B\u52A8\u751F\u6210\u5206\u6790\u3002" },
+  { id: "budget", label: "\u9884\u7B97\u4E0E\u63D0\u9192", icon: "bell", description: "\u8BBE\u7F6E\u6BCF\u65E5\u9884\u7B97\u3001\u7EDF\u8BA1\u8303\u56F4\u4E0E\u8D85\u989D\u63D0\u9192\u3002" }
 ];
 var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
   constructor(app, plugin) {
@@ -5786,26 +5786,44 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
     var _a;
     (_a = this.balanceSummaryRefresh) == null ? void 0 : _a.call(this);
   }
+  selectAiSection() {
+    this.activeSection = "ai";
+  }
   display() {
-    var _a;
+    var _a, _b, _c, _d;
     (_a = this.connectionController) == null ? void 0 : _a.abort();
     this.containerEl.empty();
-    this.containerEl.addClass("ledger-settings");
-    this.containerEl.createEl("h2", { text: "\u8BB0\u8D26\u7EDF\u8BA1\u8BBE\u7F6E" });
-    this.containerEl.createEl("p", { cls: "ledger-settings-intro", text: "\u6309\u4E3B\u9898\u67E5\u627E\u8BBE\u7F6E\u3002\u5207\u6362\u4E3B\u9898\u4E0D\u4F1A\u6539\u52A8\u5DF2\u4FDD\u5B58\u7684\u5185\u5BB9\u3002" });
+    this.containerEl.addClass("ledger-settings", "ledger-design-surface");
+    const header = this.containerEl.createDiv({ cls: "ledger-settings-header" });
+    const title = header.createDiv();
+    title.createSpan({ cls: "ledger-settings-eyebrow", text: "\u504F\u597D\u8BBE\u7F6E" });
+    title.createEl("h2", { text: "\u8BB0\u8D26\u7EDF\u8BA1" });
+    title.createEl("p", { cls: "ledger-settings-intro", text: "\u8BA9\u8D26\u672C\u3001\u5206\u6790\u548C\u63D0\u9192\u66F4\u9002\u5408\u4F60\u7684\u4E60\u60EF\u3002" });
+    header.createSpan({ cls: "ledger-settings-version", text: `v${this.plugin.manifest.version}` });
     const navigation = this.containerEl.createDiv({ cls: "ledger-settings-navigation" });
     navigation.setAttribute("aria-label", "\u8BBE\u7F6E\u4E3B\u9898");
     const panels = /* @__PURE__ */ new Map();
+    const bodies = /* @__PURE__ */ new Map();
     const buttons = /* @__PURE__ */ new Map();
     for (const section of SETTINGS_SECTIONS) {
-      const button2 = navigation.createEl("button", { cls: "ledger-settings-navigation-button", text: section.label });
+      const button2 = navigation.createEl("button", { cls: "ledger-settings-navigation-button" });
+      const icon = button2.createSpan({ cls: "ledger-settings-nav-icon", attr: { "aria-hidden": "true" } });
+      (0, import_obsidian4.setIcon)(icon, section.icon);
+      button2.createSpan({ text: section.label });
       button2.type = "button";
       button2.setAttribute("aria-controls", `ledger-settings-${section.id}`);
       buttons.set(section.id, button2);
       const panel = this.containerEl.createDiv({ cls: "ledger-settings-panel" });
       panel.id = `ledger-settings-${section.id}`;
-      panel.createEl("h3", { text: section.label });
-      panel.createEl("p", { cls: "ledger-settings-panel-description", text: section.description });
+      panel.setAttribute("role", "region");
+      panel.setAttribute("aria-label", section.label);
+      const panelHeader = panel.createDiv({ cls: "ledger-settings-panel-header" });
+      const panelIcon = panelHeader.createSpan({ cls: "ledger-settings-panel-icon", attr: { "aria-hidden": "true" } });
+      (0, import_obsidian4.setIcon)(panelIcon, section.icon);
+      const copy = panelHeader.createDiv();
+      copy.createEl("h3", { text: section.label });
+      copy.createEl("p", { cls: "ledger-settings-panel-description", text: section.description });
+      bodies.set(section.id, panel.createDiv({ cls: "ledger-settings-body" }));
       panels.set(section.id, panel);
       button2.addEventListener("click", () => showSection(section.id));
     }
@@ -5818,16 +5836,21 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
       }
     };
     showSection(this.activeSection);
-    const ledgerPanel = panels.get("ledger");
-    const salaryPanel = panels.get("salary");
-    const balancePanel = panels.get("balance");
-    const aiPanel = panels.get("ai");
-    const budgetPanel = panels.get("budget");
-    const ruleErrors = ledgerPanel.createEl("p", { cls: "ledger-report-limit" });
+    const ledgerPanel = bodies.get("ledger");
+    const salaryPanel = bodies.get("salary");
+    const balancePanel = bodies.get("balance");
+    const aiPanel = bodies.get("ai");
+    const budgetPanel = bodies.get("budget");
+    const rules = document.createElement("details");
+    rules.className = "ledger-settings-advanced";
+    rules.createEl("summary", { text: "\u62A5\u544A\u5BF9\u8C61\u8BC6\u522B \xB7 \u9AD8\u7EA7\u8BBE\u7F6E" });
+    const ruleErrors = rules.createEl("p", { cls: "ledger-report-limit", attr: { "aria-live": "polite" } });
     const showRuleErrors = () => {
-      ruleErrors.setText(parseObjectRules(this.plugin.settings.reportObjectRules).errors.join("\uFF1B"));
+      const errors = parseObjectRules(this.plugin.settings.reportObjectRules).errors;
+      ruleErrors.setText(errors.join("\uFF1B"));
+      if (errors.length) rules.open = true;
     };
-    new import_obsidian4.Setting(ledgerPanel).setName("\u652F\u51FA\u62A5\u544A\u5BF9\u8C61\u8BC6\u522B\u89C4\u5219").setDesc("\u6BCF\u884C \u6807\u7B7E=\u6B63\u5219\uFF1B\u54C1\u724C\u7528 @\u54C1\u724C=\u6B63\u5219\u3002\u7528\u9014\u53EF\u8DE8\u5206\u7C7B\u8BC6\u522B\uFF0C\u54C1\u724C\u4E0D\u4F1A\u81EA\u52A8\u63A8\u65AD\u5546\u54C1\u3002\u65E0\u6548\u89C4\u5219\u4F1A\u8DF3\u8FC7\u5E76\u63D0\u793A\u3002").addTextArea((text2) => text2.setValue(this.plugin.settings.reportObjectRules).onChange(async (value) => {
+    new import_obsidian4.Setting(rules).setName("\u652F\u51FA\u62A5\u544A\u5BF9\u8C61\u8BC6\u522B\u89C4\u5219").setDesc("\u6BCF\u884C \u6807\u7B7E=\u6B63\u5219\uFF1B\u54C1\u724C\u7528 @\u54C1\u724C=\u6B63\u5219\u3002\u7528\u9014\u53EF\u8DE8\u5206\u7C7B\u8BC6\u522B\uFF0C\u54C1\u724C\u4E0D\u4F1A\u81EA\u52A8\u63A8\u65AD\u5546\u54C1\u3002\u65E0\u6548\u89C4\u5219\u4F1A\u8DF3\u8FC7\u5E76\u63D0\u793A\u3002").addTextArea((text2) => text2.setValue(this.plugin.settings.reportObjectRules).onChange(async (value) => {
       this.plugin.settings.reportObjectRules = value;
       showRuleErrors();
       await this.plugin.saveSettings(false);
@@ -5951,7 +5974,7 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
     this.balanceSummaryRefresh = refreshBalanceSummary;
     new import_obsidian4.Setting(salaryPanel).setName("\u56FA\u5B9A\u652F\u51FA").setDesc("\u624B\u52A8\u786E\u8BA4\u672C\u5468\u671F\u53CA\u524D\u4E24\u4E2A\u5468\u671F\u7684\u652F\u4ED8\u8BB0\u5F55\uFF0C\u51CF\u5C11\u4ED8\u6B3E\u65E5\u671F\u53D8\u5316\u5BF9\u9884\u6D4B\u7684\u5F71\u54CD\u3002").addButton((button2) => button2.setButtonText("\u7BA1\u7406\u56FA\u5B9A\u652F\u51FA").onClick(() => new FixedExpenseModal(this.plugin).open()));
     new import_obsidian4.Setting(ledgerPanel).setName("\u661F\u6807\u6838\u5BF9").setDesc("\u68C0\u67E5\u4FEE\u6539\u3001\u5220\u9664\u6216\u79BB\u7EBF\u79FB\u52A8\u540E\u65E0\u6CD5\u5339\u914D\u7684\u661F\u6807\u3002").addButton((button2) => button2.setButtonText("\u6838\u5BF9\u661F\u6807").onClick(() => new StarRepairModal(this.plugin).open()));
-    new import_obsidian4.Setting(aiPanel).setName("\u542F\u7528 AI \u8D22\u52A1\u5224\u65AD").setDesc("\u53D1\u9001\u622A\u81F3\u6628\u5929\u7684\u8FD1 7 \u5929\u6570\u636E\u3001\u5BF9\u6BD4\u6C47\u603B\u53CA\u6709\u9650\u4EA4\u6613\u5907\u6CE8\uFF0C\u4E0D\u53D1\u9001\u8D26\u672C\u6587\u4EF6\u3001\u8DEF\u5F84\u6216\u5B8C\u6574\u539F\u59CB\u884C\u3002\u4EC5\u70B9\u51FB\u6D1E\u5BDF\u5361\u7247\u7684\u5237\u65B0\u6309\u94AE\u65F6\u8C03\u7528 AI\uFF08\u53EF\u80FD\u4EA7\u751F\u6A21\u578B\u8D39\u7528\uFF09\uFF1B\u91CD\u65B0\u6253\u5F00\u3001\u8DE8\u5929\u548C\u8D26\u76EE\u53D8\u5316\u5747\u4FDD\u7559\u4E0A\u6B21\u5206\u6790\u3002").addToggle((toggle) => toggle.setValue(this.plugin.settings.financeAiEnabled).onChange(async (value) => {
+    new import_obsidian4.Setting(aiPanel).setName("\u542F\u7528 AI \u8D22\u52A1\u5224\u65AD").setDesc("\u6D1E\u5BDF\u53D1\u9001\u622A\u81F3\u6628\u5929\u7684\u8FD1 7 \u5929\u6570\u636E\uFF0C\u62A5\u544A\u53D1\u9001\u6240\u9009\u671F\u95F4\u7684\u6C47\u603B\u4E0E\u6709\u9650\u5907\u6CE8\u3002\u4EC5\u70B9\u51FB\u5237\u65B0\u6216\u751F\u6210\u62A5\u544A\u65F6\u8C03\u7528 AI\uFF08\u53EF\u80FD\u4EA7\u751F\u6A21\u578B\u8D39\u7528\uFF09\uFF1B\u91CD\u65B0\u6253\u5F00\u3001\u8DE8\u5929\u548C\u8D26\u76EE\u53D8\u5316\u5747\u4FDD\u7559\u4E0A\u6B21\u5206\u6790\u3002").addToggle((toggle) => toggle.setValue(this.plugin.settings.financeAiEnabled).onChange(async (value) => {
       this.plugin.settings.financeAiEnabled = value;
       await this.plugin.saveSettings(false);
       this.display();
@@ -6047,10 +6070,19 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
       text2.inputEl.setAttribute("autocomplete", "off");
       return text2;
     });
+    ledgerPanel.appendChild(rules);
+    for (const body of bodies.values()) {
+      for (const control of Array.from(body.querySelectorAll(".setting-item-control input, .setting-item-control select, .setting-item-control textarea"))) {
+        const name = (_c = (_b = control.closest(".setting-item")) == null ? void 0 : _b.querySelector(".setting-item-name")) == null ? void 0 : _c.textContent;
+        if (name && !control.hasAttribute("aria-label")) control.setAttribute("aria-label", name);
+      }
+      for (const textarea of Array.from(body.querySelectorAll("textarea"))) (_d = textarea.closest(".setting-item")) == null ? void 0 : _d.classList.add("ledger-settings-textarea-row");
+    }
     ledgerPanel.createEl("p", {
       cls: "ledger-settings-footnote",
       text: "\u63D2\u4EF6\u4E0D\u4F1A\u4FEE\u6539\u8D26\u76EE\u3002\u6B63\u6587\u9010\u7B14\u8BB0\u5F55\u662F\u7EDF\u8BA1\u6765\u6E90\uFF0Cfrontmatter total \u4EC5\u7528\u4E8E\u6838\u5BF9\u3002"
     });
+    this.containerEl.createEl("p", { cls: "ledger-settings-save-note", text: "\u4FEE\u6539\u540E\u81EA\u52A8\u4FDD\u5B58\u5230\u672C\u5730" });
   }
   budgetValue() {
     return this.moneyValue(this.plugin.settings.dailyBudgetCents);
@@ -7467,10 +7499,11 @@ var ReportEvidenceModal = class extends import_obsidian6.Modal {
     this.generatedAt = generatedAt;
   }
   onOpen() {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j;
     this.setTitle("\u62A5\u544A\u8BC1\u636E");
     this.contentEl.empty();
-    this.contentEl.addClass("ledger-report-evidence");
+    this.contentEl.addClass("ledger-report-evidence", "ledger-design-surface");
+    (_a = this.modalEl) == null ? void 0 : _a.addClass("ledger-report-evidence-modal");
     if (this.generatedAt) this.contentEl.createEl("p", { cls: "ledger-report-muted", text: `\u4EE5\u4E0B\u4E3A ${new Date(this.generatedAt).toLocaleString("zh-CN")} \u751F\u6210\u65F6\u7684\u4F9D\u636E\uFF1B\u6253\u5F00\u6765\u6E90\u6587\u4EF6\u4F1A\u663E\u793A\u6587\u4EF6\u5F53\u524D\u5185\u5BB9\u3002` });
     const entries = this.snapshot.evidence.filter((e) => this.evidenceIds.includes(e.id));
     for (const e of entries) {
@@ -7480,9 +7513,9 @@ var ReportEvidenceModal = class extends import_obsidian6.Modal {
       e.ranges.forEach((r) => section.createEl("p", { cls: "ledger-report-muted", text: `${reportPlainLanguage(r.label)}\uFF1A${r.range.start} \u81F3 ${r.range.end}` }));
       const p = this.snapshot.preferences;
       if (p.category || p.keyword || !p.includeStarred) section.createEl("p", { cls: "ledger-report-muted", text: `\u7B5B\u9009\uFF1A${p.category || "\u5168\u90E8\u5206\u7C7B"}${p.keyword ? ` \xB7 \u5173\u952E\u8BCD ${p.keyword}` : ""}${!p.includeStarred ? " \xB7 \u6392\u9664\u661F\u6807" : ""}` });
-      const caution = (_a = e.readings) == null ? void 0 : _a.counter[0];
+      const caution = (_b = e.readings) == null ? void 0 : _b.counter[0];
       if (caution) section.createEl("p", { cls: "ledger-report-limit", text: `\u9700\u540C\u65F6\u8003\u8651\uFF1A${formatReportText(caution.text)}` });
-      const interpretation = ((_b = e.readings) == null ? void 0 : _b.supporting.length) || ((_c = e.readings) == null ? void 0 : _c.counter.length) ? section.createEl("details", { cls: "ledger-report-evidence-group" }) : void 0;
+      const interpretation = ((_c = e.readings) == null ? void 0 : _c.supporting.length) || ((_d = e.readings) == null ? void 0 : _d.counter.length) ? section.createEl("details", { cls: "ledger-report-evidence-group" }) : void 0;
       interpretation == null ? void 0 : interpretation.createEl("summary", { text: "\u89E3\u8BFB\u7EBF\u7D22\uFF1A\u89C2\u5BDF\u4E0E\u76F8\u53CD\u4FE1\u606F" });
       const readings = (label2, items) => {
         if (!items.length || !interpretation) return;
@@ -7491,8 +7524,8 @@ var ReportEvidenceModal = class extends import_obsidian6.Modal {
         const list2 = group2.createEl("ul");
         items.forEach((item) => list2.createEl("li", { text: formatReportText(item.text) }));
       };
-      readings("\u89C2\u5BDF\u7EBF\u7D22", (_e = (_d = e.readings) == null ? void 0 : _d.supporting) != null ? _e : []);
-      readings("\u9700\u8981\u540C\u65F6\u8003\u8651", (_g = (_f = e.readings) == null ? void 0 : _f.counter) != null ? _g : []);
+      readings("\u89C2\u5BDF\u7EBF\u7D22", (_f = (_e = e.readings) == null ? void 0 : _e.supporting) != null ? _f : []);
+      readings("\u9700\u8981\u540C\u65F6\u8003\u8651", (_h = (_g = e.readings) == null ? void 0 : _g.counter) != null ? _h : []);
       const facts = (parent, keys) => {
         const list2 = parent.createEl("dl", { cls: "ledger-report-facts" });
         for (const key of keys) {
@@ -7503,7 +7536,7 @@ var ReportEvidenceModal = class extends import_obsidian6.Modal {
           list2.createEl("dd", { text: value.text, cls: value.tone ? `ledger-report-${value.tone}` : "" });
         }
       };
-      if ((_h = e.sections) == null ? void 0 : _h.length) {
+      if ((_i = e.sections) == null ? void 0 : _i.length) {
         const shown2 = /* @__PURE__ */ new Set();
         e.sections.forEach((group2) => {
           var _a2;
@@ -7516,7 +7549,7 @@ var ReportEvidenceModal = class extends import_obsidian6.Modal {
         const rest = Object.keys(e.facts).filter((k) => !shown2.has(k));
         if (rest.length) facts(section, rest);
       } else facts(section, Object.keys(e.facts));
-      if ((_i = e.categories) == null ? void 0 : _i.length) {
+      if ((_j = e.categories) == null ? void 0 : _j.length) {
         const categories = section.createEl("details", { cls: "ledger-report-evidence-group ledger-report-categories" });
         categories.createEl("summary", { text: `\u5168\u90E8\u5206\u7C7B\u589E\u51CF\uFF08${e.categories.length}\u7C7B\uFF09` });
         categories.createEl("p", { cls: "ledger-report-muted", text: this.snapshot.comparable ? "\u6309\u91D1\u989D\u53D8\u5316\u5E45\u5EA6\u6392\u5E8F\uFF1B\u4E24\u671F\u957F\u5EA6\u4E0D\u540C\u65F6\uFF0C\u4E0A\u671F\u6309\u89C2\u5BDF\u65E5\u6298\u7B97\u3002\u65B0\u589E\u53EA\u8868\u793A\u4E0A\u671F\u8BE5\u7C7B\u672A\u8BB0\u5F55\u91D1\u989D\u3002" : "\u53EF\u6BD4\u6570\u636E\u4E0D\u8DB3\uFF0C\u4EC5\u5217\u51FA\u5DF2\u8BB0\u5F55\u5206\u7C7B\u91D1\u989D\uFF0C\u4E0D\u636E\u6B64\u5224\u65AD\u65B0\u589E\u6216\u589E\u51CF\u3002" });
@@ -7576,6 +7609,7 @@ var ReportPanel = class {
     this.requestFingerprint = "";
     this.disposed = false;
     this.snapshotKey = "";
+    this.filtersExpanded = false;
   }
   get preferences() {
     return normalizeReportPreferences(this.plugin.settings.reportPreferences);
@@ -7633,7 +7667,29 @@ var ReportPanel = class {
     const changed = !!cache && (cache.fingerprint !== snapshot.fingerprint || cache.configuration !== configuration);
     const reportSnapshot = cache ? (_b = cache.snapshot) != null ? _b : findReportCache(caches, snapshot, this.config()) === cache ? snapshot : void 0 : snapshot;
     const shell = parent.createDiv({ cls: "ledger-report" });
-    const toolbar = shell.createDiv({ cls: "ledger-report-toolbar" });
+    const header = shell.createDiv({ cls: "ledger-report-header" });
+    const heading = header.createDiv({ cls: "ledger-report-heading" });
+    heading.createSpan({ cls: "ledger-report-eyebrow", text: "\u6D88\u8D39\u62A5\u544A" });
+    heading.createEl("h3", { text: p.mode === "salary" ? "\u5DE5\u8D44\u5468\u671F" : p.mode === "month" ? "\u81EA\u7136\u6708" : "\u81EA\u5B9A\u4E49\u671F\u95F4" });
+    heading.createEl("p", { cls: "ledger-report-period", text: `${snapshot.range.start} \u2014 ${snapshot.range.end}${snapshot.range.end !== snapshot.fullRange.end ? " \xB7 \u8FDB\u884C\u4E2D" : ""}` });
+    heading.createEl("p", { cls: "ledger-report-muted", text: `\u5BF9\u6BD4 ${snapshot.previousRange.start} \u81F3 ${snapshot.previousRange.end} \xB7 \u5B8C\u6574\u5386\u53F2 ${snapshot.historicalRanges.length} \u671F` });
+    const actions = header.createDiv({ cls: "ledger-report-actions" });
+    const configured = this.plugin.settings.financeAiEnabled && !!this.config().endpoint.trim() && !!this.config().model.trim();
+    const generate = createButton(actions, this.loading ? "\u6B63\u5728\u751F\u6210\u2026" : cache ? "\u91CD\u65B0\u751F\u6210\u62A5\u544A" : "\u751F\u6210\u62A5\u544A");
+    generate.addClass("ledger-report-generate");
+    generate.disabled = this.loading || !configured;
+    generate.addEventListener("click", () => void this.generate(snapshot));
+    actions.createSpan({ cls: "ledger-report-muted", text: cache ? `\u4E0A\u6B21\u751F\u6210 ${new Date(cache.generatedAt).toLocaleString("zh-CN")}` : configured ? "\u70B9\u51FB\u751F\u6210 AI \u62A5\u544A" : "\u542F\u7528\u5E76\u914D\u7F6E AI \u540E\u53EF\u751F\u6210\u62A5\u544A" });
+    if (!configured) createButton(actions, "\u524D\u5F80 AI \u8BBE\u7F6E").addEventListener("click", () => this.plugin.openAiSettings());
+    const filters = shell.createEl("details", { cls: "ledger-report-filters" });
+    filters.open = this.filtersExpanded;
+    const filterSummary = filters.createEl("summary");
+    filterSummary.createSpan({ text: "\u62A5\u544A\u7B5B\u9009", cls: "ledger-report-filter-label" });
+    filterSummary.createSpan({ cls: "ledger-report-filter-value", text: `${p.scope === "all" ? "\u5168\u90E8\u652F\u51FA" : "\u6D88\u8D39\u652F\u51FA"} \xB7 ${p.category || "\u5168\u90E8\u5206\u7C7B"}${p.keyword ? ` \xB7 ${p.keyword}` : ""}${!p.includeStarred ? " \xB7 \u6392\u9664\u661F\u6807" : ""}` });
+    filters.addEventListener("toggle", () => {
+      this.filtersExpanded = filters.open;
+    });
+    const toolbar = filters.createDiv({ cls: "ledger-report-toolbar" });
     const select2 = (label2, value, options, changed2) => {
       const field = toolbar.createEl("label", { cls: "ledger-field" });
       field.createSpan({ text: label2 });
@@ -7671,19 +7727,12 @@ var ReportPanel = class {
     const input2 = keyword.createEl("input", { type: "search", value: p.keyword, placeholder: "\u5206\u7C7B\u6216\u5907\u6CE8" });
     input2.addEventListener("change", () => this.change({ keyword: input2.value }));
     select2("\u661F\u6807\u8BB0\u5F55", p.includeStarred ? "include" : "exclude", [["include", "\u5305\u542B\u661F\u6807"], ["exclude", "\u6392\u9664\u661F\u6807"]], (value) => this.change({ includeStarred: value === "include" }));
-    shell.createEl("p", { cls: "ledger-report-period", text: `${snapshot.label} \xB7 ${snapshot.range.start} \u81F3 ${snapshot.range.end}${snapshot.range.end !== snapshot.fullRange.end ? "\uFF08\u8FDB\u884C\u4E2D\uFF09" : ""}` });
-    shell.createEl("p", { cls: "ledger-report-muted", text: `\u5BF9\u6BD4 ${snapshot.previousRange.start} \u81F3 ${snapshot.previousRange.end} \xB7 \u53EF\u7528\u5B8C\u6574\u5386\u53F2 ${snapshot.historicalRanges.length} \u671F${p.category || p.keyword || !p.includeStarred ? " \xB7 \u5C40\u90E8\u62A5\u544A" : ""}` });
-    const actions = shell.createDiv({ cls: "ledger-report-actions" });
-    const configured = this.plugin.settings.financeAiEnabled && !!this.config().endpoint.trim() && !!this.config().model.trim();
-    const generate = createButton(actions, this.loading ? "\u6B63\u5728\u751F\u6210\u2026" : cache ? "\u91CD\u65B0\u751F\u6210\u62A5\u544A" : "\u751F\u6210\u62A5\u544A");
-    generate.disabled = this.loading || !configured;
-    generate.addEventListener("click", () => void this.generate(snapshot));
-    actions.createSpan({ cls: "ledger-report-muted", text: cache ? `AI \u62A5\u544A \xB7 ${new Date(cache.generatedAt).toLocaleString("zh-CN")}` : configured ? "\u672C\u5730\u5206\u6790 \xB7 \u70B9\u51FB\u751F\u6210 AI \u62A5\u544A" : "\u672C\u5730\u5206\u6790 \xB7 \u914D\u7F6E\u5E76\u542F\u7528 AI \u540E\u53EF\u751F\u6210\u5B8C\u6574\u62A5\u544A" });
     const missingEvidence = cache && !reportSnapshot;
     const notice = missingEvidence ? `\u65E7\u62A5\u544A${changed ? "\u53EF\u66F4\u65B0\uFF0C" : "\u65E0\u4F9D\u636E\uFF0C"}\u91CD\u65B0\u751F\u6210\u53EF\u8865\u5168\u4F9D\u636E\u3002` : changed ? "\u62A5\u544A\u53EF\u66F4\u65B0\uFF0C\u5F53\u524D\u4FDD\u7559\u65E7\u7248\u3002" : "";
     if (notice) shell.createEl("p", { cls: "ledger-report-status", text: notice });
     if (cache && reportSnapshot) shell.createEl("p", { cls: "ledger-report-muted", text: `\u62A5\u544A\u751F\u6210\u8303\u56F4\uFF1A${reportSnapshot.label} \xB7 ${reportSnapshot.range.start} \u81F3 ${reportSnapshot.range.end} \xB7 ${reportSnapshot.preferences.scope === "all" ? "\u5168\u90E8\u652F\u51FA" : "\u6D88\u8D39\u652F\u51FA"} \xB7 ${reportSnapshot.preferences.category || "\u5168\u90E8\u5206\u7C7B"}${reportSnapshot.preferences.keyword ? ` \xB7 \u5173\u952E\u8BCD ${reportSnapshot.preferences.keyword}` : ""}${!reportSnapshot.preferences.includeStarred ? " \xB7 \u6392\u9664\u661F\u6807" : ""}` });
     if (this.error) shell.createEl("p", { cls: "ledger-report-status", text: `${this.error}\u3002${cache ? "\u4E0A\u6B21\u751F\u6210\u7684\u62A5\u544A\u4ECD\u4FDD\u7559\u3002" : "\u5F53\u524D\u4ECD\u53EF\u67E5\u770B\u672C\u5730\u5206\u6790\u3002"}` });
+    shell.createDiv({ cls: "ledger-report-document-label", text: cache ? "AI \u6D88\u8D39\u5206\u6790 \xB7 \u5DF2\u4FDD\u5B58" : "\u672C\u5730\u6D88\u8D39\u5206\u6790" });
     renderReportArticle(shell, (_c = cache == null ? void 0 : cache.report) != null ? _c : localSpendingReport(snapshot), reportSnapshot, (ids) => {
       if (reportSnapshot) new ReportEvidenceModal(this.plugin, reportSnapshot, ids, this.openRecord, cache == null ? void 0 : cache.generatedAt).open();
     });
@@ -7740,7 +7789,8 @@ var ReportPanel = class {
   }
 };
 function renderReportArticle(parent, report, snapshot, evidence) {
-  const article = parent.createEl("article", { cls: "ledger-report-article" });
+  const surface = parent.createEl("article", { cls: "ledger-report-article" });
+  const article = surface.createDiv({ cls: "ledger-report-reading" });
   article.createEl("h2", { text: formatReportText(report.title).replace(/\*\*/g, "") });
   if (snapshot) article.createEl("p", { cls: "ledger-report-progress", text: reportProgress(snapshot) });
   const prose = (parent2, text2, cls = "") => {
@@ -7764,8 +7814,10 @@ function renderReportArticle(parent, report, snapshot, evidence) {
   if (snapshot && report.paragraphs.length) article.createEl("p", { cls: "ledger-report-reference-note", text: "\u5F15\u7528\u6309\u94AE\u6307\u5411\u672C\u5730\u4E8B\u5B9E\uFF1B\u62A5\u544A\u7684\u89E3\u91CA\u9700\u7ED3\u5408\u89C2\u5BDF\u4E0E\u76F8\u53CD\u7EBF\u7D22\u5224\u65AD\u3002" });
   report.paragraphs.forEach((p, i) => {
     var _a;
-    const section = article.createEl("section");
-    if (p.heading) section.createEl("h3", { text: formatReportText(p.heading).replace(/\*\*/g, "") });
+    const section = article.createEl("section", { cls: "ledger-report-section" });
+    const sectionHeading = section.createDiv({ cls: "ledger-report-section-heading" });
+    sectionHeading.createSpan({ cls: "ledger-report-section-number", text: String(i + 1).padStart(2, "0") });
+    sectionHeading.createEl("h3", { text: p.heading ? formatReportText(p.heading).replace(/\*\*/g, "") : "\u5206\u6790\u89C2\u5BDF" });
     prose(section, p.text);
     if (!snapshot) return;
     const ids = p.evidenceIds.filter((id) => snapshot.evidence.some((e) => e.id === id));
@@ -10599,6 +10651,13 @@ var LedgerStatisticsPlugin = class extends import_obsidian10.Plugin {
     this.saveQueue = Promise.resolve();
     this.assetQueue = Promise.resolve();
     this.assetsStopped = false;
+  }
+  openAiSettings() {
+    var _a;
+    (_a = this.settingTab) == null ? void 0 : _a.selectAiSection();
+    const settings = this.app.setting;
+    settings.open();
+    settings.openTabById(this.manifest.id);
   }
   async onload() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());

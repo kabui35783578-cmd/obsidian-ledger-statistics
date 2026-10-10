@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, PluginSettingTab, Setting, setIcon } from "obsidian";
 import type LedgerStatisticsPlugin from "./main";
 import { flattenRecords, formatCents, parseMoneyToCents, salaryDayRange } from "./core";
 import { BalanceCalibration, balanceStatus, parseBalanceToCents } from "./balance";
@@ -88,12 +88,12 @@ const MIMO_CHAT_ENDPOINT = "https://api.xiaomimimo.com/v1/chat/completions";
 
 type SettingsSection = "ledger" | "salary" | "balance" | "ai" | "budget";
 
-const SETTINGS_SECTIONS: { id: SettingsSection; label: string; description: string }[] = [
-  { id: "ledger", label: "账本与显示", description: "账本来源、统计口径、默认视图与星标核对。" },
-  { id: "salary", label: "工资周期", description: "管理固定支出及其周期末参考。" },
-  { id: "balance", label: "余额校准", description: "按实际余额校准本周期剩余金额，并查看账面与实际的净差额。" },
-  { id: "ai", label: "AI 洞察", description: "截至昨天的近 7 天分析；仅点击刷新时生成。" },
-  { id: "budget", label: "预算与提醒", description: "设置今日预算、统计范围与超额提醒。" }
+const SETTINGS_SECTIONS: { id: SettingsSection; label: string; icon: string; description: string }[] = [
+  { id: "ledger", label: "账本与显示", icon: "notebook-text", description: "选择账本来源，调整统计口径与默认显示。" },
+  { id: "salary", label: "工资周期", icon: "calendar-days", description: "管理固定支出及其周期末参考。" },
+  { id: "balance", label: "余额校准", icon: "wallet", description: "校准本周期实际余额，核对账面与实际的净差额。" },
+  { id: "ai", label: "AI 洞察", icon: "sparkles", description: "配置洞察与消费报告共用的 AI 服务，手动生成分析。" },
+  { id: "budget", label: "预算与提醒", icon: "bell", description: "设置每日预算、统计范围与超额提醒。" }
 ];
 
 export class LedgerSettingTab extends PluginSettingTab {
@@ -106,27 +106,43 @@ export class LedgerSettingTab extends PluginSettingTab {
   }
 
   refreshBalanceSummary(): void { this.balanceSummaryRefresh?.(); }
+  selectAiSection(): void { this.activeSection = "ai"; }
 
   display(): void {
     this.connectionController?.abort();
     this.containerEl.empty();
-    this.containerEl.addClass("ledger-settings");
-    this.containerEl.createEl("h2", { text: "记账统计设置" });
-    this.containerEl.createEl("p", { cls: "ledger-settings-intro", text: "按主题查找设置。切换主题不会改动已保存的内容。" });
+    this.containerEl.addClass("ledger-settings", "ledger-design-surface");
+    const header = this.containerEl.createDiv({ cls: "ledger-settings-header" });
+    const title = header.createDiv();
+    title.createSpan({ cls: "ledger-settings-eyebrow", text: "偏好设置" });
+    title.createEl("h2", { text: "记账统计" });
+    title.createEl("p", { cls: "ledger-settings-intro", text: "让账本、分析和提醒更适合你的习惯。" });
+    header.createSpan({ cls: "ledger-settings-version", text: `v${this.plugin.manifest.version}` });
 
     const navigation = this.containerEl.createDiv({ cls: "ledger-settings-navigation" });
     navigation.setAttribute("aria-label", "设置主题");
     const panels = new Map<SettingsSection, HTMLElement>();
+    const bodies = new Map<SettingsSection, HTMLElement>();
     const buttons = new Map<SettingsSection, HTMLButtonElement>();
     for (const section of SETTINGS_SECTIONS) {
-      const button = navigation.createEl("button", { cls: "ledger-settings-navigation-button", text: section.label });
+      const button = navigation.createEl("button", { cls: "ledger-settings-navigation-button" });
+      const icon = button.createSpan({ cls: "ledger-settings-nav-icon", attr: { "aria-hidden": "true" } });
+      setIcon(icon, section.icon);
+      button.createSpan({ text: section.label });
       button.type = "button";
       button.setAttribute("aria-controls", `ledger-settings-${section.id}`);
       buttons.set(section.id, button);
       const panel = this.containerEl.createDiv({ cls: "ledger-settings-panel" });
       panel.id = `ledger-settings-${section.id}`;
-      panel.createEl("h3", { text: section.label });
-      panel.createEl("p", { cls: "ledger-settings-panel-description", text: section.description });
+      panel.setAttribute("role", "region");
+      panel.setAttribute("aria-label", section.label);
+      const panelHeader = panel.createDiv({ cls: "ledger-settings-panel-header" });
+      const panelIcon = panelHeader.createSpan({ cls: "ledger-settings-panel-icon", attr: { "aria-hidden": "true" } });
+      setIcon(panelIcon, section.icon);
+      const copy = panelHeader.createDiv();
+      copy.createEl("h3", { text: section.label });
+      copy.createEl("p", { cls: "ledger-settings-panel-description", text: section.description });
+      bodies.set(section.id, panel.createDiv({ cls: "ledger-settings-body" }));
       panels.set(section.id, panel);
       button.addEventListener("click", () => showSection(section.id));
     }
@@ -140,15 +156,22 @@ export class LedgerSettingTab extends PluginSettingTab {
     };
     showSection(this.activeSection);
 
-    const ledgerPanel = panels.get("ledger")!;
-    const salaryPanel = panels.get("salary")!;
-    const balancePanel = panels.get("balance")!;
-    const aiPanel = panels.get("ai")!;
-    const budgetPanel = panels.get("budget")!;
+    const ledgerPanel = bodies.get("ledger")!;
+    const salaryPanel = bodies.get("salary")!;
+    const balancePanel = bodies.get("balance")!;
+    const aiPanel = bodies.get("ai")!;
+    const budgetPanel = bodies.get("budget")!;
 
-    const ruleErrors = ledgerPanel.createEl("p", { cls:"ledger-report-limit" });
-    const showRuleErrors = () => { ruleErrors.setText(parseObjectRules(this.plugin.settings.reportObjectRules).errors.join("；")); };
-    new Setting(ledgerPanel).setName("支出报告对象识别规则")
+    const rules = document.createElement("details");
+    rules.className = "ledger-settings-advanced";
+    rules.createEl("summary", { text: "报告对象识别 · 高级设置" });
+    const ruleErrors = rules.createEl("p", { cls:"ledger-report-limit", attr: { "aria-live": "polite" } });
+    const showRuleErrors = () => {
+      const errors = parseObjectRules(this.plugin.settings.reportObjectRules).errors;
+      ruleErrors.setText(errors.join("；"));
+      if (errors.length) rules.open = true;
+    };
+    new Setting(rules).setName("支出报告对象识别规则")
       .setDesc("每行 标签=正则；品牌用 @品牌=正则。用途可跨分类识别，品牌不会自动推断商品。无效规则会跳过并提示。")
       .addTextArea(text => text.setValue(this.plugin.settings.reportObjectRules).onChange(async value => {
         this.plugin.settings.reportObjectRules=value; showRuleErrors(); await this.plugin.saveSettings(false);
@@ -322,7 +345,7 @@ export class LedgerSettingTab extends PluginSettingTab {
 
     new Setting(aiPanel)
       .setName("启用 AI 财务判断")
-      .setDesc("发送截至昨天的近 7 天数据、对比汇总及有限交易备注，不发送账本文件、路径或完整原始行。仅点击洞察卡片的刷新按钮时调用 AI（可能产生模型费用）；重新打开、跨天和账目变化均保留上次分析。")
+      .setDesc("洞察发送截至昨天的近 7 天数据，报告发送所选期间的汇总与有限备注。仅点击刷新或生成报告时调用 AI（可能产生模型费用）；重新打开、跨天和账目变化均保留上次分析。")
       .addToggle((toggle) => toggle
         .setValue(this.plugin.settings.financeAiEnabled)
         .onChange(async (value) => {
@@ -467,10 +490,19 @@ export class LedgerSettingTab extends PluginSettingTab {
         return text;
       });
 
+    ledgerPanel.appendChild(rules);
+    for (const body of bodies.values()) {
+      for (const control of Array.from(body.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(".setting-item-control input, .setting-item-control select, .setting-item-control textarea"))) {
+        const name = control.closest(".setting-item")?.querySelector(".setting-item-name")?.textContent;
+        if (name && !control.hasAttribute("aria-label")) control.setAttribute("aria-label", name);
+      }
+      for (const textarea of Array.from(body.querySelectorAll("textarea"))) textarea.closest(".setting-item")?.classList.add("ledger-settings-textarea-row");
+    }
     ledgerPanel.createEl("p", {
       cls: "ledger-settings-footnote",
       text: "插件不会修改账目。正文逐笔记录是统计来源，frontmatter total 仅用于核对。"
     });
+    this.containerEl.createEl("p", { cls: "ledger-settings-save-note", text: "修改后自动保存到本地" });
   }
 
   private budgetValue(): string {

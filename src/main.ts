@@ -21,6 +21,13 @@ export default class LedgerStatisticsPlugin extends Plugin {
   private assetQuotes!: AssetQuoteMonitor;
   private assetsStopped = false;
 
+  openAiSettings(): void {
+    this.settingTab?.selectAiSection();
+    const settings = (this.app as typeof this.app & { setting: { open(): void; openTabById(id: string): void } }).setting;
+    settings.open();
+    settings.openTabById(this.manifest.id);
+  }
+
   async onload(): Promise<void> {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<LedgerSettings> | null);
     this.settings.defaultView = normalizeLedgerView(this.settings.defaultView);

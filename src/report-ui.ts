@@ -11,7 +11,8 @@ export class ReportEvidenceModal extends Modal {
   constructor(plugin: LedgerStatisticsPlugin, private snapshot: ReportSnapshot, private evidenceIds: string[], private openRecord: (r: LedgerRecord) => Promise<void>, private generatedAt?: string) { super(plugin.app); }
   onOpen(): void {
     this.setTitle("报告证据");
-    this.contentEl.empty(); this.contentEl.addClass("ledger-report-evidence");
+    this.contentEl.empty(); this.contentEl.addClass("ledger-report-evidence", "ledger-design-surface");
+    this.modalEl?.addClass("ledger-report-evidence-modal");
     if (this.generatedAt) this.contentEl.createEl("p", { cls: "ledger-report-muted", text: `以下为 ${new Date(this.generatedAt).toLocaleString("zh-CN")} 生成时的依据；打开来源文件会显示文件当前内容。` });
     const entries = this.snapshot.evidence.filter(e => this.evidenceIds.includes(e.id));
     for (const e of entries) {
@@ -83,6 +84,7 @@ export class ReportPanel {
   private disposed = false;
   private cachedSnapshot?: ReportSnapshot;
   private snapshotKey = "";
+  private filtersExpanded = false;
   constructor(private plugin: LedgerStatisticsPlugin, private redraw: () => void, private openRecord: (r: LedgerRecord) => Promise<void>) {}
   get preferences(): ReportPreferences { return normalizeReportPreferences(this.plugin.settings.reportPreferences); }
   private config() { return { endpoint: this.plugin.settings.financeAiEndpoint, model: this.plugin.settings.financeAiModel, apiKey: this.plugin.settings.financeAiApiKey }; }
@@ -127,7 +129,27 @@ export class ReportPanel {
     // Legacy caches can use current evidence only when their exact fingerprint still matches.
     const reportSnapshot = cache ? cache.snapshot ?? (findReportCache(caches, snapshot, this.config()) === cache ? snapshot : undefined) : snapshot;
     const shell = parent.createDiv({ cls: "ledger-report" });
-    const toolbar = shell.createDiv({ cls: "ledger-report-toolbar" });
+    const header = shell.createDiv({ cls: "ledger-report-header" });
+    const heading = header.createDiv({ cls: "ledger-report-heading" });
+    heading.createSpan({ cls: "ledger-report-eyebrow", text: "消费报告" });
+    heading.createEl("h3", { text: p.mode === "salary" ? "工资周期" : p.mode === "month" ? "自然月" : "自定义期间" });
+    heading.createEl("p", { cls: "ledger-report-period", text: `${snapshot.range.start} — ${snapshot.range.end}${snapshot.range.end !== snapshot.fullRange.end ? " · 进行中" : ""}` });
+    heading.createEl("p", { cls: "ledger-report-muted", text: `对比 ${snapshot.previousRange.start} 至 ${snapshot.previousRange.end} · 完整历史 ${snapshot.historicalRanges.length} 期` });
+    const actions = header.createDiv({ cls: "ledger-report-actions" });
+    const configured = this.plugin.settings.financeAiEnabled && !!this.config().endpoint.trim() && !!this.config().model.trim();
+    const generate = createButton(actions, this.loading ? "正在生成…" : cache ? "重新生成报告" : "生成报告");
+    generate.addClass("ledger-report-generate");
+    generate.disabled = this.loading || !configured;
+    generate.addEventListener("click", () => void this.generate(snapshot));
+    actions.createSpan({ cls: "ledger-report-muted", text: cache ? `上次生成 ${new Date(cache.generatedAt).toLocaleString("zh-CN")}` : configured ? "点击生成 AI 报告" : "启用并配置 AI 后可生成报告" });
+    if (!configured) createButton(actions, "前往 AI 设置").addEventListener("click", () => this.plugin.openAiSettings());
+    const filters = shell.createEl("details", { cls: "ledger-report-filters" });
+    filters.open = this.filtersExpanded;
+    const filterSummary = filters.createEl("summary");
+    filterSummary.createSpan({ text: "报告筛选", cls: "ledger-report-filter-label" });
+    filterSummary.createSpan({ cls: "ledger-report-filter-value", text: `${p.scope === "all" ? "全部支出" : "消费支出"} · ${p.category || "全部分类"}${p.keyword ? ` · ${p.keyword}` : ""}${!p.includeStarred ? " · 排除星标" : ""}` });
+    filters.addEventListener("toggle", () => { this.filtersExpanded = filters.open; });
+    const toolbar = filters.createDiv({ cls: "ledger-report-toolbar" });
     const select = (label: string, value: string, options: Array<[string, string]>, changed: (value: string) => void) => {
       const field = toolbar.createEl("label", { cls: "ledger-field" }); field.createSpan({ text: label });
       const el = field.createEl("select"); options.forEach(([v, text]) => el.createEl("option", { value: v, text })); el.value = value;
@@ -154,19 +176,12 @@ export class ReportPanel {
     const input = keyword.createEl("input", { type: "search", value: p.keyword, placeholder: "分类或备注" });
     input.addEventListener("change", () => this.change({ keyword: input.value }));
     select("星标记录", p.includeStarred ? "include" : "exclude", [["include", "包含星标"], ["exclude", "排除星标"]], value => this.change({ includeStarred: value === "include" }));
-    shell.createEl("p", { cls: "ledger-report-period", text: `${snapshot.label} · ${snapshot.range.start} 至 ${snapshot.range.end}${snapshot.range.end !== snapshot.fullRange.end ? "（进行中）" : ""}` });
-    shell.createEl("p", { cls: "ledger-report-muted", text: `对比 ${snapshot.previousRange.start} 至 ${snapshot.previousRange.end} · 可用完整历史 ${snapshot.historicalRanges.length} 期${p.category || p.keyword || !p.includeStarred ? " · 局部报告" : ""}` });
-    const actions = shell.createDiv({ cls: "ledger-report-actions" });
-    const configured = this.plugin.settings.financeAiEnabled && !!this.config().endpoint.trim() && !!this.config().model.trim();
-    const generate = createButton(actions, this.loading ? "正在生成…" : cache ? "重新生成报告" : "生成报告");
-    generate.disabled = this.loading || !configured;
-    generate.addEventListener("click", () => void this.generate(snapshot));
-    actions.createSpan({ cls: "ledger-report-muted", text: cache ? `AI 报告 · ${new Date(cache.generatedAt).toLocaleString("zh-CN")}` : configured ? "本地分析 · 点击生成 AI 报告" : "本地分析 · 配置并启用 AI 后可生成完整报告" });
     const missingEvidence = cache && !reportSnapshot;
     const notice = missingEvidence ? `旧报告${changed ? "可更新，" : "无依据，"}重新生成可补全依据。` : changed ? "报告可更新，当前保留旧版。" : "";
     if (notice) shell.createEl("p", { cls: "ledger-report-status", text: notice });
     if (cache && reportSnapshot) shell.createEl("p", { cls: "ledger-report-muted", text: `报告生成范围：${reportSnapshot.label} · ${reportSnapshot.range.start} 至 ${reportSnapshot.range.end} · ${reportSnapshot.preferences.scope === "all" ? "全部支出" : "消费支出"} · ${reportSnapshot.preferences.category || "全部分类"}${reportSnapshot.preferences.keyword ? ` · 关键词 ${reportSnapshot.preferences.keyword}` : ""}${!reportSnapshot.preferences.includeStarred ? " · 排除星标" : ""}` });
     if (this.error) shell.createEl("p", { cls: "ledger-report-status", text: `${this.error}。${cache ? "上次生成的报告仍保留。" : "当前仍可查看本地分析。"}` });
+    shell.createDiv({ cls: "ledger-report-document-label", text: cache ? "AI 消费分析 · 已保存" : "本地消费分析" });
     renderReportArticle(shell, cache?.report ?? localSpendingReport(snapshot), reportSnapshot, ids => {
       if (reportSnapshot) new ReportEvidenceModal(this.plugin, reportSnapshot, ids, this.openRecord, cache?.generatedAt).open();
     });
@@ -213,7 +228,8 @@ export class ReportPanel {
 }
 
 export function renderReportArticle(parent: HTMLElement, report: SpendingReport, snapshot: ReportSnapshot | undefined, evidence: (ids: string[]) => void): void {
-  const article = parent.createEl("article", { cls: "ledger-report-article" });
+  const surface = parent.createEl("article", { cls: "ledger-report-article" });
+  const article = surface.createDiv({ cls: "ledger-report-reading" });
   article.createEl("h2", { text: formatReportText(report.title).replace(/\*\*/g, "") });
   if (snapshot) article.createEl("p", { cls: "ledger-report-progress", text: reportProgress(snapshot) });
   const prose = (parent: HTMLElement, text: string, cls = "") => {
@@ -235,8 +251,10 @@ export function renderReportArticle(parent: HTMLElement, report: SpendingReport,
   }
   if(snapshot && report.paragraphs.length)article.createEl('p',{cls:'ledger-report-reference-note',text:'引用按钮指向本地事实；报告的解释需结合观察与相反线索判断。'});
   report.paragraphs.forEach((p, i) => {
-    const section = article.createEl("section");
-    if (p.heading) section.createEl("h3", { text: formatReportText(p.heading).replace(/\*\*/g, "") });
+    const section = article.createEl("section", { cls: "ledger-report-section" });
+    const sectionHeading = section.createDiv({ cls: "ledger-report-section-heading" });
+    sectionHeading.createSpan({ cls: "ledger-report-section-number", text: String(i + 1).padStart(2, "0") });
+    sectionHeading.createEl("h3", { text: p.heading ? formatReportText(p.heading).replace(/\*\*/g, "") : "分析观察" });
     prose(section, p.text);
     if (!snapshot) return;
     const ids = p.evidenceIds.filter(id => snapshot.evidence.some(e => e.id === id));
