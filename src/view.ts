@@ -1,5 +1,6 @@
 import { ItemView, MarkdownView, Menu, Notice, Platform, TFile, WorkspaceLeaf, setIcon } from "obsidian";
 import { sharedRequestGate } from "./request-gate";
+import { financeAiConfig } from "./ai-secrets";
 import type LedgerStatisticsPlugin from "./main";
 import { requestFinanceAdvice } from "./ai";
 import { assessFinanceAdvice, createFinanceAdviceCache } from "./advice-lifecycle";
@@ -594,13 +595,14 @@ export class LedgerStatisticsView extends ItemView {
     this.financeAdviceLoading = true;
     const controller = new AbortController();
     this.financeController = controller;
-    const config = { endpoint: this.plugin.settings.financeAiEndpoint, apiKey: this.plugin.settings.financeAiApiKey, model: this.plugin.settings.financeAiModel };
+    const config = financeAiConfig(this.plugin.settings, this.app);
     this.financeAdviceError = "";
     this.refreshFinanceSection();
     try {
       const advice = await requestFinanceAdvice(config, snapshot, controller.signal, sharedRequestGate(`ai:${this.app.vault.getName()}`));
       if (controller.signal.aborted || this.closed || !this.plugin.settings.financeAiEnabled) return;
-      if (config.endpoint !== this.plugin.settings.financeAiEndpoint || config.model !== this.plugin.settings.financeAiModel || config.apiKey !== this.plugin.settings.financeAiApiKey) {
+      const currentConfig = financeAiConfig(this.plugin.settings, this.app);
+      if (config.endpoint !== currentConfig.endpoint || config.model !== currentConfig.model || config.apiKey !== currentConfig.apiKey || currentConfig.credentialError) {
         throw new Error("AI 配置已变化，本次结果已废弃，请重新判断");
       }
       const nextCache = createFinanceAdviceCache(snapshot, advice);

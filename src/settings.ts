@@ -1,4 +1,5 @@
-import { App, PluginSettingTab, Setting, setIcon } from "obsidian";
+import { App, PluginSettingTab, SecretComponent, Setting, setIcon } from "obsidian";
+import { financeAiConfig, normalizeAiSecretId } from "./ai-secrets";
 import type LedgerStatisticsPlugin from "./main";
 import { flattenRecords, formatCents, parseMoneyToCents, salaryDayRange } from "./core";
 import { BalanceCalibration, balanceStatus, parseBalanceToCents } from "./balance";
@@ -39,7 +40,7 @@ export interface LedgerSettings {
   financeAiEnabled: boolean;
   financeAiEndpoint: string;
   financeAiModel: string;
-  financeAiApiKey: string;
+  financeAiSecretId: string;
   financeAdviceCache: FinanceAdviceCache | null;
   dailyBudgetCents: number;
   budgetCategory: string;
@@ -66,7 +67,7 @@ export const DEFAULT_SETTINGS: LedgerSettings = {
   financeAiEnabled: false,
   financeAiEndpoint: "https://api.openai.com/v1/chat/completions",
   financeAiModel: "",
-  financeAiApiKey: "",
+  financeAiSecretId: "",
   financeAdviceCache: null,
   dailyBudgetCents: 0,
   budgetCategory: "",
@@ -390,31 +391,28 @@ export class LedgerSettingTab extends PluginSettingTab {
 
       new Setting(aiPanel)
         .setName("AI API Key")
-        .setDesc("仅保存在本地 data.json，不会上传 GitHub；本机免密接口可以留空。")
-        .addText((text) => {
-          text
-            .setPlaceholder("sk-…")
-            .setValue(this.plugin.settings.financeAiApiKey)
-            .onChange(async (value) => {
-              this.plugin.settings.financeAiApiKey = value.trim();
-              this.plugin.settings.financeAdviceCache = null;
-              await this.plugin.saveSettings(false);
-            });
-          text.inputEl.type = "password";
-          text.inputEl.setAttribute("autocomplete", "off");
-          return text;
-        });
+        .setDesc("选择或新建 Obsidian 钥匙串密钥。只同步密钥名称，手机和电脑需分别配置同名密钥；免密接口可以留空。")
+        .addComponent(el => new SecretComponent(this.app, el)
+          .setValue(this.plugin.settings.financeAiSecretId)
+          .onChange(async value => {
+            this.plugin.settings.financeAiSecretId = normalizeAiSecretId(value);
+            this.plugin.settings.financeAdviceCache = null;
+            await this.plugin.saveSettings(false);
+          }));
       const test = new Setting(aiPanel).setName("测试 AI 连接")
         .setDesc("只发送简短测试消息，不发送账目；可能产生少量模型调用费用。");
       test.descEl.setAttribute("aria-live", "polite");
       test.addButton((button) => button.setButtonText("测试连接").onClick(async () => {
         const controller = new AbortController(); this.connectionController = controller;
-        const config = { endpoint: this.plugin.settings.financeAiEndpoint, model: this.plugin.settings.financeAiModel, apiKey: this.plugin.settings.financeAiApiKey };
+        const config = financeAiConfig(this.plugin.settings, this.app);
         button.setDisabled(true).setButtonText("正在测试…");
         test.setDesc("正在等待接口响应，最长等待 60 秒…");
         try {
           await testFinanceConnection(config, controller.signal, sharedRequestGate(`ai:${this.app.vault.getName()}`));
-          if (!controller.signal.aborted) test.setDesc(config.endpoint === this.plugin.settings.financeAiEndpoint && config.model === this.plugin.settings.financeAiModel && config.apiKey === this.plugin.settings.financeAiApiKey ? "连接成功：模型已返回有效内容。" : "配置已变化，请重新测试。");
+          if (!controller.signal.aborted) {
+            const current = financeAiConfig(this.plugin.settings, this.app);
+            test.setDesc(config.endpoint === current.endpoint && config.model === current.model && config.apiKey === current.apiKey && !current.credentialError ? "连接成功：模型已返回有效内容。" : "配置已变化，请重新测试。");
+          }
         } catch (error) {
           if (!controller.signal.aborted) test.setDesc(error instanceof Error ? error.message : "连接失败，请检查网络与接口配置");
         } finally { if (!controller.signal.aborted) button.setDisabled(false).setButtonText("测试连接"); }

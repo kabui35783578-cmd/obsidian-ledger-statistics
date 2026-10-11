@@ -1034,6 +1034,54 @@ function balanceStatus(records, now, salaryCents, calibration) {
 // src/settings.ts
 var import_obsidian4 = require("obsidian");
 
+// src/ai-secrets.ts
+function normalizeAiSecretId(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+function newSecretId() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return `ledger-statistics-ai-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+function migrateAiSecret(data, storage, createId = newSecretId) {
+  const { financeAiApiKey: legacyValue, ...clean } = data;
+  let id = normalizeAiSecretId(clean.financeAiSecretId);
+  const legacy = typeof legacyValue === "string" ? legacyValue.trim() : "";
+  if (legacy) {
+    try {
+      if (!storage) throw new Error();
+      if (!id) id = createId();
+      const existing = storage.getSecret(id);
+      if (existing && existing !== legacy) id = createId();
+      if (storage.getSecret(id) !== legacy) storage.setSecret(id, legacy);
+      if (storage.getSecret(id) !== legacy) throw new Error();
+    } catch (e) {
+      throw new Error("API \u5BC6\u94A5\u8FC1\u79FB\u5931\u8D25\uFF0C\u539F\u6570\u636E\u6587\u4EF6\u5DF2\u4FDD\u7559\u3002\u8BF7\u68C0\u67E5 Obsidian \u94A5\u5319\u4E32\u540E\u91CD\u65B0\u542F\u7528\u63D2\u4EF6\u3002");
+    }
+  }
+  return {
+    data: { ...clean, financeAiSecretId: id },
+    changed: Object.prototype.hasOwnProperty.call(data, "financeAiApiKey") || data.financeAiSecretId !== id
+  };
+}
+function withoutLegacyAiSecret(settings) {
+  const { financeAiApiKey: _legacy, ...clean } = settings;
+  return clean;
+}
+function financeAiConfig(settings, app) {
+  var _a;
+  const config2 = { endpoint: settings.financeAiEndpoint, model: settings.financeAiModel, apiKey: "" };
+  const id = normalizeAiSecretId(settings.financeAiSecretId);
+  if (!id) return config2;
+  try {
+    const value = (_a = app == null ? void 0 : app.secretStorage) == null ? void 0 : _a.getSecret(id);
+    if (!(value == null ? void 0 : value.trim())) config2.credentialError = "\u672C\u673A\u94A5\u5319\u4E32\u7F3A\u5C11\u6240\u9009 API \u5BC6\u94A5\uFF0C\u8BF7\u5728\u8BBE\u7F6E\u4E2D\u914D\u7F6E\u540C\u540D\u5BC6\u94A5\u3002";
+    else config2.apiKey = value.trim();
+  } catch (e) {
+    config2.credentialError = "\u65E0\u6CD5\u8BFB\u53D6 Obsidian \u94A5\u5319\u4E32\uFF0C\u8BF7\u68C0\u67E5\u672C\u673A\u5BC6\u94A5\u8BBE\u7F6E\u3002";
+  }
+  return config2;
+}
+
 // src/ai.ts
 var import_obsidian2 = require("obsidian");
 
@@ -2111,6 +2159,7 @@ function validateEndpoint(value) {
 }
 async function chatContent(config2, messages, maxTokens, signal2, gate) {
   var _a, _b, _c;
+  if (config2.credentialError) throw new Error(config2.credentialError);
   const endpoint = validateEndpoint(config2.endpoint);
   const model = config2.model.trim();
   if (!model) throw new Error("\u8BF7\u5148\u586B\u5199 AI \u6A21\u578B\u540D\u79F0");
@@ -5808,7 +5857,7 @@ var DEFAULT_SETTINGS = {
   financeAiEnabled: false,
   financeAiEndpoint: "https://api.openai.com/v1/chat/completions",
   financeAiModel: "",
-  financeAiApiKey: "",
+  financeAiSecretId: "",
   financeAdviceCache: null,
   dailyBudgetCents: 0,
   budgetCategory: "",
@@ -6060,27 +6109,25 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
         this.plugin.settings.financeAdviceCache = null;
         await this.plugin.saveSettings(false);
       }));
-      new import_obsidian4.Setting(aiPanel).setName("AI API Key").setDesc("\u4EC5\u4FDD\u5B58\u5728\u672C\u5730 data.json\uFF0C\u4E0D\u4F1A\u4E0A\u4F20 GitHub\uFF1B\u672C\u673A\u514D\u5BC6\u63A5\u53E3\u53EF\u4EE5\u7559\u7A7A\u3002").addText((text2) => {
-        text2.setPlaceholder("sk-\u2026").setValue(this.plugin.settings.financeAiApiKey).onChange(async (value) => {
-          this.plugin.settings.financeAiApiKey = value.trim();
-          this.plugin.settings.financeAdviceCache = null;
-          await this.plugin.saveSettings(false);
-        });
-        text2.inputEl.type = "password";
-        text2.inputEl.setAttribute("autocomplete", "off");
-        return text2;
-      });
+      new import_obsidian4.Setting(aiPanel).setName("AI API Key").setDesc("\u9009\u62E9\u6216\u65B0\u5EFA Obsidian \u94A5\u5319\u4E32\u5BC6\u94A5\u3002\u53EA\u540C\u6B65\u5BC6\u94A5\u540D\u79F0\uFF0C\u624B\u673A\u548C\u7535\u8111\u9700\u5206\u522B\u914D\u7F6E\u540C\u540D\u5BC6\u94A5\uFF1B\u514D\u5BC6\u63A5\u53E3\u53EF\u4EE5\u7559\u7A7A\u3002").addComponent((el3) => new import_obsidian4.SecretComponent(this.app, el3).setValue(this.plugin.settings.financeAiSecretId).onChange(async (value) => {
+        this.plugin.settings.financeAiSecretId = normalizeAiSecretId(value);
+        this.plugin.settings.financeAdviceCache = null;
+        await this.plugin.saveSettings(false);
+      }));
       const test = new import_obsidian4.Setting(aiPanel).setName("\u6D4B\u8BD5 AI \u8FDE\u63A5").setDesc("\u53EA\u53D1\u9001\u7B80\u77ED\u6D4B\u8BD5\u6D88\u606F\uFF0C\u4E0D\u53D1\u9001\u8D26\u76EE\uFF1B\u53EF\u80FD\u4EA7\u751F\u5C11\u91CF\u6A21\u578B\u8C03\u7528\u8D39\u7528\u3002");
       test.descEl.setAttribute("aria-live", "polite");
       test.addButton((button2) => button2.setButtonText("\u6D4B\u8BD5\u8FDE\u63A5").onClick(async () => {
         const controller = new AbortController();
         this.connectionController = controller;
-        const config2 = { endpoint: this.plugin.settings.financeAiEndpoint, model: this.plugin.settings.financeAiModel, apiKey: this.plugin.settings.financeAiApiKey };
+        const config2 = financeAiConfig(this.plugin.settings, this.app);
         button2.setDisabled(true).setButtonText("\u6B63\u5728\u6D4B\u8BD5\u2026");
         test.setDesc("\u6B63\u5728\u7B49\u5F85\u63A5\u53E3\u54CD\u5E94\uFF0C\u6700\u957F\u7B49\u5F85 60 \u79D2\u2026");
         try {
           await testFinanceConnection(config2, controller.signal, sharedRequestGate(`ai:${this.app.vault.getName()}`));
-          if (!controller.signal.aborted) test.setDesc(config2.endpoint === this.plugin.settings.financeAiEndpoint && config2.model === this.plugin.settings.financeAiModel && config2.apiKey === this.plugin.settings.financeAiApiKey ? "\u8FDE\u63A5\u6210\u529F\uFF1A\u6A21\u578B\u5DF2\u8FD4\u56DE\u6709\u6548\u5185\u5BB9\u3002" : "\u914D\u7F6E\u5DF2\u53D8\u5316\uFF0C\u8BF7\u91CD\u65B0\u6D4B\u8BD5\u3002");
+          if (!controller.signal.aborted) {
+            const current = financeAiConfig(this.plugin.settings, this.app);
+            test.setDesc(config2.endpoint === current.endpoint && config2.model === current.model && config2.apiKey === current.apiKey && !current.credentialError ? "\u8FDE\u63A5\u6210\u529F\uFF1A\u6A21\u578B\u5DF2\u8FD4\u56DE\u6709\u6548\u5185\u5BB9\u3002" : "\u914D\u7F6E\u5DF2\u53D8\u5316\uFF0C\u8BF7\u91CD\u65B0\u6D4B\u8BD5\u3002");
+          }
         } catch (error) {
           if (!controller.signal.aborted) test.setDesc(error instanceof Error ? error.message : "\u8FDE\u63A5\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u7F51\u7EDC\u4E0E\u63A5\u53E3\u914D\u7F6E");
         } finally {
@@ -7712,7 +7759,7 @@ var ReportPanel = class {
     return normalizeReportPreferences(this.plugin.settings.reportPreferences);
   }
   config() {
-    return { endpoint: this.plugin.settings.financeAiEndpoint, model: this.plugin.settings.financeAiModel, apiKey: this.plugin.settings.financeAiApiKey };
+    return financeAiConfig(this.plugin.settings, this.plugin.app);
   }
   snapshot(now = /* @__PURE__ */ new Date()) {
     var _a;
@@ -10030,13 +10077,14 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
     this.financeAdviceLoading = true;
     const controller = new AbortController();
     this.financeController = controller;
-    const config2 = { endpoint: this.plugin.settings.financeAiEndpoint, apiKey: this.plugin.settings.financeAiApiKey, model: this.plugin.settings.financeAiModel };
+    const config2 = financeAiConfig(this.plugin.settings, this.app);
     this.financeAdviceError = "";
     this.refreshFinanceSection();
     try {
       const advice = await requestFinanceAdvice(config2, snapshot, controller.signal, sharedRequestGate(`ai:${this.app.vault.getName()}`));
       if (controller.signal.aborted || this.closed || !this.plugin.settings.financeAiEnabled) return;
-      if (config2.endpoint !== this.plugin.settings.financeAiEndpoint || config2.model !== this.plugin.settings.financeAiModel || config2.apiKey !== this.plugin.settings.financeAiApiKey) {
+      const currentConfig = financeAiConfig(this.plugin.settings, this.app);
+      if (config2.endpoint !== currentConfig.endpoint || config2.model !== currentConfig.model || config2.apiKey !== currentConfig.apiKey || currentConfig.credentialError) {
         throw new Error("AI \u914D\u7F6E\u5DF2\u53D8\u5316\uFF0C\u672C\u6B21\u7ED3\u679C\u5DF2\u5E9F\u5F03\uFF0C\u8BF7\u91CD\u65B0\u5224\u65AD");
       }
       const nextCache = createFinanceAdviceCache(snapshot, advice);
@@ -10875,7 +10923,10 @@ var LedgerStatisticsPlugin = class extends import_obsidian10.Plugin {
     settings.openTabById(this.manifest.id);
   }
   async onload() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const stored = await this.loadData();
+    const migratedSecrets = migrateAiSecret(stored != null ? stored : {}, this.app.secretStorage);
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, migratedSecrets.data);
+    if (migratedSecrets.changed) await this.saveSettings(false, false);
     this.settings.defaultView = normalizeLedgerView(this.settings.defaultView);
     this.settings.assets = normalizeAssets(this.settings.assets);
     this.assetsStopped = false;
@@ -10949,7 +11000,7 @@ var LedgerStatisticsPlugin = class extends import_obsidian10.Plugin {
     });
   }
   onunload() {
-    var _a, _b;
+    var _a, _b, _c;
     this.assetsStopped = true;
     (_a = this.assetQuotes) == null ? void 0 : _a.stop();
     (_b = this.budgetMonitor) == null ? void 0 : _b.stop();
@@ -10957,10 +11008,10 @@ var LedgerStatisticsPlugin = class extends import_obsidian10.Plugin {
       if (leaf.view instanceof LedgerStatisticsView) void leaf.view.onClose();
     }
     disposeAssetGestures();
-    this.repository.dispose();
+    (_c = this.repository) == null ? void 0 : _c.dispose();
   }
   async saveSettings(rescan, refresh = true) {
-    const data = JSON.parse(JSON.stringify(this.settings));
+    const data = JSON.parse(JSON.stringify(withoutLegacyAiSecret(this.settings)));
     const saved = this.saveQueue.then(() => this.saveData(data));
     this.saveQueue = saved.catch(() => {
     });

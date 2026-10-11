@@ -1,4 +1,5 @@
 import { Modal, Notice } from "obsidian";
+import { financeAiConfig } from "./ai-secrets";
 import type LedgerStatisticsPlugin from "./main";
 import { addDays, formatCents, isValidIsoDate, isoFromDate, LedgerRecord } from "./core";
 import { buildReportSnapshot, localSpendingReport, normalizeReportPreferences, reportDays, reportPeriods, ReportEvidence, ReportPreferences, ReportSnapshot, SpendingReport } from "./report";
@@ -89,7 +90,7 @@ export class ReportPanel {
   private filtersExpanded = false;
   constructor(private plugin: LedgerStatisticsPlugin, private redraw: () => void, private openRecord: (r: LedgerRecord) => Promise<void>) {}
   get preferences(): ReportPreferences { return normalizeReportPreferences(this.plugin.settings.reportPreferences); }
-  private config() { return { endpoint: this.plugin.settings.financeAiEndpoint, model: this.plugin.settings.financeAiModel, apiKey: this.plugin.settings.financeAiApiKey }; }
+  private config() { return financeAiConfig(this.plugin.settings, this.plugin.app); }
   snapshot(now = new Date()): ReportSnapshot {
     const repository = this.plugin.repository;
     const key = JSON.stringify([repository.contentRevision ?? [...repository.files.values()], this.preferences, isoFromDate(now), this.plugin.settings.excludedCategories, this.plugin.settings.starredRecordIds, this.plugin.settings.reportObjectRules]);

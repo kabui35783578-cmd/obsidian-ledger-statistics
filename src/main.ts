@@ -11,6 +11,7 @@ import { normalizeReportCaches } from "./report-ai";
 import { AssetSnapshot, AssetState, SecurityKind, applyAssetQuote, assetId, buildAssetSnapshot, calibrateAccount, normalizeAssets, quoteKey, renameAssetLinks, setDefaultCash, storeAssetSnapshot } from "./assets";
 import { AssetQuoteMonitor } from "./asset-quotes";
 import { disposeAssetGestures } from "./asset-gestures";
+import { migrateAiSecret, withoutLegacyAiSecret } from "./ai-secrets";
 
 export default class LedgerStatisticsPlugin extends Plugin {
   settings: LedgerSettings = DEFAULT_SETTINGS;
@@ -30,7 +31,10 @@ export default class LedgerStatisticsPlugin extends Plugin {
   }
 
   async onload(): Promise<void> {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<LedgerSettings> | null);
+    const stored = await this.loadData();
+    const migratedSecrets = migrateAiSecret(stored ?? {}, this.app.secretStorage);
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, migratedSecrets.data);
+    if (migratedSecrets.changed) await this.saveSettings(false, false);
     this.settings.defaultView = normalizeLedgerView(this.settings.defaultView);
     this.settings.assets = normalizeAssets(this.settings.assets);
     this.assetsStopped = false;
@@ -100,11 +104,11 @@ export default class LedgerStatisticsPlugin extends Plugin {
       if (leaf.view instanceof LedgerStatisticsView) void leaf.view.onClose();
     }
     disposeAssetGestures();
-    this.repository.dispose();
+    this.repository?.dispose();
   }
 
   async saveSettings(rescan: boolean, refresh = true): Promise<void> {
-    const data = JSON.parse(JSON.stringify(this.settings));
+    const data = JSON.parse(JSON.stringify(withoutLegacyAiSecret(this.settings)));
     const saved = this.saveQueue.then(() => this.saveData(data));
     this.saveQueue = saved.catch(() => {});
     await saved;

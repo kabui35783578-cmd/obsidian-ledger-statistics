@@ -1,6 +1,10 @@
 import esbuild from "esbuild";
 
 await esbuild.build({
+  entryPoints: ["src/ai-secrets.ts"], bundle: true, platform: "node", format: "cjs", target: "node18", outfile: "dist/ai-secrets.cjs"
+});
+
+await esbuild.build({
   entryPoints: ["src/chart-animation.ts"],
   bundle: true,
   platform: "node",
@@ -42,6 +46,7 @@ await esbuild.build({
       export const Modal = globalThis.__ledgerTestModal ?? class { close() {} };
       export class FuzzySuggestModal {}
       export class Setting {}
+      export class SecretComponent {}
       export class Notice { constructor(message) { (globalThis.__ledgerTestNotices ??= []).push(message); } }
       export const Platform = { isMobile: false };
       export function setIcon() {}
