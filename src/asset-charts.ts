@@ -61,6 +61,13 @@ export function renderAssetOverviewSankey(parent: HTMLElement, snapshot: AssetSn
 }
 export function renderAssetSankey(parent: HTMLElement, snapshot: AssetSnapshot, excludeFixed: boolean, hide: boolean, onSelect: (accountId: string, holdingId?: string) => void, showControls = true, overview = false, expanded = false): void {
   const amounts = (cents: number): string => hide ? "••••" : formatCents(cents);
+  const namedAmount = (svg: SVGElement, x: number, y: number, name: string, cents: number, size: number, anchor = "start"): void => {
+    if (overview) {
+      const showAmount = name === "净资产" || name === "负债";
+      label(svg, x, showAmount ? y - 9 : y, name, size, anchor);
+      if (showAmount) label(svg, x, y + 16, amounts(cents), 17, anchor);
+    } else label(svg, x, y, `${name} ${amounts(cents)}`, size, anchor);
+  };
   const visible = snapshot.accounts.filter(a => a.kind !== "liability" && !(excludeFixed && a.kind === "fixed") && a.cents > 0);
   const kinds: AssetKind[] = ["cash", "fixed", "investment", "receivable"];
   const groups = kinds.map(kind => ({ kind, accounts: visible.filter(a => a.kind === kind) })).filter(g => g.accounts.length);
@@ -81,10 +88,14 @@ export function renderAssetSankey(parent: HTMLElement, snapshot: AssetSnapshot, 
   const tools = showControls ? parent.createDiv({ cls: "ledger-assets-zoom-tools" }) : null;
   const scroll = parent.createDiv({ cls: `ledger-assets-sankey-scroll${overview ? " ledger-assets-overview-scroll" : ""}` });
   scroll.setAttribute("aria-label", "资产组成桑基图，直接展示账户余额与持仓");
+  if (expanded) scroll.setAttribute("tabindex", "0");
   const svg = document.createElementNS(NS, "svg");
+  const canvas = expanded ? scroll.createDiv({ cls: "ledger-assets-sankey-canvas" }) : null;
+  const labels = el("g", { class: "ledger-assets-sankey-labels", "pointer-events": "none" }, svg);
   svg.setAttribute("viewBox", `0 0 1240 ${height}`); svg.setAttribute("class", `ledger-assets-sankey${overview ? " ledger-assets-overview-sankey" : ""}${expanded ? " ledger-assets-expanded-sankey" : ""}`);
   if (overview) { svg.style.minWidth = "0"; svg.style.width = `${1240 / 800 * 100}%`; }
-  svg.setAttribute("role", "group"); svg.setAttribute("aria-label", "资产总量、资产类别、账户组成"); scroll.appendChild(svg);
+  if (expanded) svg.style.width = "1240px";
+  svg.setAttribute("role", "group"); svg.setAttribute("aria-label", "资产总量、资产类别、账户组成"); (canvas ?? scroll).appendChild(svg);
   const totals = assetTotals(snapshot, excludeFixed), sources = totals.netCents >= 0 && !snapshot.accounts.some(a => a.kind !== "cash" && a.kind !== "liability" && !(excludeFixed && a.kind === "fixed") && a.cents < 0);
   const sourceX = overview ? 125 : expanded ? 10 : 80, sourceLabelX = overview ? 25 : expanded ? 5 : 75;
   const rootX = overview ? 365 : 310, groupX = overview ? 620 : 675;
@@ -99,23 +110,23 @@ export function renderAssetSankey(parent: HTMLElement, snapshot: AssetSnapshot, 
     const debt = totals.liabilitiesCents, net = totals.netCents, netHeight = net * scale, debtHeight = debt * scale;
     el("rect", { x: sourceX, y: 100, width: 12, height: netHeight, rx: 3, fill: "#76A69A", "fill-opacity": .72 }, svg);
     band(svg, sourceX + 12, 100, rootX - (overview ? 20 : 0), 100, netHeight, "#76A69A", overview ? "#76A69A" : "#7C9CBF");
-    label(svg, sourceLabelX, overview ? 100 + netHeight / 2 : 82, overview ? "净资产" : `净资产 ${amounts(net)}`, overview ? 25 : 16);
+    namedAmount(labels, sourceLabelX, overview ? 100 + netHeight / 2 : 82, "净资产", net, overview ? 25 : 16);
     if (debt > 0) {
       const y = 100 + netHeight + 28;
       el("rect", { x: sourceX, y, width: 12, height: debtHeight, rx: 3, fill: COLORS.liability }, svg);
       band(svg, sourceX + 12, y, rootX - (overview ? 20 : 0), 100 + netHeight, debtHeight, COLORS.liability);
-      label(svg, sourceLabelX, overview ? y + debtHeight / 2 : y + debtHeight + 22, overview ? "负债" : `负债 ${amounts(debt)}`, overview ? 25 : 15);
+      namedAmount(labels, sourceLabelX, overview ? y + debtHeight / 2 : y + debtHeight + 22, "负债", debt, overview ? 25 : 15);
     }
   } else {
-    label(svg, sourceLabelX, overview ? 100 + total * scale / 2 : 82, overview ? "净资产" : `净资产 ${amounts(totals.netCents)}`, overview ? 25 : 16);
+    namedAmount(labels, sourceLabelX, overview ? 100 + total * scale / 2 : 82, "净资产", totals.netCents, overview ? 25 : 16);
   }
   el("rect", { x: rootX, y: 100, width: overview ? 20 : 13, height: total * scale, rx: 3, fill: "#7C9CBF", "fill-opacity": .72 }, svg);
-  label(svg, rootX, overview ? 68 : 62, overview ? "总资产" : `总资产 ${amounts(totals.assetsCents)}`, overview ? 27 : 17);
+  namedAmount(labels, rootX, overview ? 68 : 62, "总资产", totals.assetsCents, overview ? 27 : 17);
   for (const group of groupLayout) {
     const color = COLORS[group.kind], groupHeight = group.cents * scale, groupRows = rows.filter(r => r.account.kind === group.kind);
     band(svg, rootX + (overview ? 20 : 13), rootCursor, groupX, group.y, groupHeight, overview ? COLORS.investment : color);
     el("rect", { x: groupX, y: group.y, width: 12, height: groupHeight, rx: 3, fill: color, "fill-opacity": .72 }, svg);
-    label(svg, overview ? groupX + 19 : groupX - 15, group.y + groupHeight / 2, overview ? ASSET_NAMES[group.kind] : `${ASSET_NAMES[group.kind]} ${amounts(group.cents)}`, overview ? 25 : 15, overview ? "start" : "end");
+    namedAmount(labels, overview ? groupX + 19 : groupX - 15, group.y + groupHeight / 2, ASSET_NAMES[group.kind], group.cents, overview ? 25 : 15, overview ? "start" : "end");
     let source = group.y;
     groupRows.forEach((row, index) => {
       const y = group.rowYs[index], h = row.cents * scale;
@@ -135,7 +146,10 @@ export function renderAssetSankey(parent: HTMLElement, snapshot: AssetSnapshot, 
     });
     rootCursor += groupHeight;
   }
+  // SVG paints in document order. Keep names and amounts above every flow,
+  // including the outgoing bands that are drawn after their category node.
+  svg.appendChild(labels);
   if (totals.missing) parent.createEl("small", { cls: "ledger-assets-hint", text: "部分账户金额待补全" });
   if (totals.netCents < 0) parent.createEl("small", { cls: "ledger-assets-hint", text: hide ? "净资产金额已隐藏" : `净资产 ${amounts(totals.netCents)}` });
-  enableAssetGestures(scroll, svg, tools, true, overview || !!parent.closest?.(".ledger-assets"), overview || expanded ? 1240 / 800 : 1);
+  enableAssetGestures(scroll, svg, tools, true, overview || !!parent.closest?.(".ledger-assets"), overview || expanded ? 1240 / 800 : 1, canvas);
 }

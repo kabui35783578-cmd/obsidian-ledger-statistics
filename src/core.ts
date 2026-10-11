@@ -382,7 +382,9 @@ export function recordMatches(record: LedgerRecord, filter: FilterState): boolea
 }
 
 export function filteredRecords(files: Iterable<ParsedLedgerFile>, filter: FilterState): LedgerRecord[] {
-  return flattenRecords(files).filter((record) => recordMatches(record, filter));
+  const records: LedgerRecord[] = [];
+  for (const file of files) for (const record of file.records) if (recordMatches(record, filter)) records.push(record);
+  return records.sort((a, b) => b.date.localeCompare(a.date) || b.line - a.line);
 }
 
 export function budgetScopedRecords(records: Iterable<LedgerRecord>, includeStarred: boolean, starredRecordIds: Iterable<string>): LedgerRecord[] {
@@ -741,9 +743,14 @@ export function buildFinanceAdvisorSnapshot(
       historicalByCategory.set(record.category, amounts);
     }
   }
+  const historicalMedians = new Map<string, number>();
   for (const record of currentConsumption) {
     if (historyCycleCount < 2 || !currentCoverage || (historicalByCategory.get(record.category)?.length ?? 0) < 3) continue;
-    const historicalMedian = median(historicalByCategory.get(record.category) ?? []);
+    let historicalMedian = historicalMedians.get(record.category);
+    if (historicalMedian === undefined) {
+      historicalMedian = median(historicalByCategory.get(record.category) ?? []);
+      historicalMedians.set(record.category, historicalMedian);
+    }
     const threshold = Math.max(10_000, Math.round(salaryCents * 0.05), historicalMedian * 3);
     if (record.cents >= threshold) {
       events.push({
@@ -840,6 +847,27 @@ export function trendPoints(records: LedgerRecord[], granularity: "day" | "week"
     map.set(bucket.key, point);
   }
   return [...map.values()].sort((a, b) => a.key.localeCompare(b.key));
+}
+
+/** Each point describes all posted spending from the selected start to that point. */
+export function cumulativeTrendPoints(records: LedgerRecord[], range: DateRange, granularity: "day" | "week" | "month"): TrendPoint[] {
+  if (!isValidIsoDate(range.start) || !isValidIsoDate(range.end) || range.start > range.end) return [];
+  const selected = records.filter(record => record.date >= range.start && record.date <= range.end);
+  if (!selected.length) return [];
+  const buckets = new Map(trendPoints(selected, granularity).map(point => [point.key, point]));
+  const points: TrendPoint[] = [];
+  let cents = 0;
+  let count = 0;
+  for (let date = range.start; date <= range.end;) {
+    const bucket = trendBucket(date, granularity);
+    const current = buckets.get(bucket.key);
+    cents += current?.cents ?? 0;
+    count += current?.count ?? 0;
+    const end = bucket.end < range.end ? bucket.end : range.end;
+    points.push({ ...bucket, start: range.start, end, cents, count });
+    date = addDays(end, 1);
+  }
+  return points;
 }
 
 export function compareValue(currentCents: number, previousCents: number): ComparisonValue {

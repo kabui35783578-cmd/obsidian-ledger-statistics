@@ -188,8 +188,26 @@ function linkedRecords(state: AssetState, records: LedgerRecord[], pending: Set<
 }
 export function buildAssetSnapshot(state: AssetState, records: LedgerRecord[], now = new Date()): AssetSnapshot {
   const pending = new Set<string>(), excluded = linkedRecords(state, records, pending), nowMs = now.getTime(), today = isoFromDate(now);
+  // Index only this calculation; saved baselines and duplicate ordinals stay unchanged.
+  const identities = new Map<string, string>(), baselines = new Map<string[], Set<string>>();
+  const identity = (id: string): string => {
+    let value = identities.get(id);
+    if (value === undefined) { value = stableIdentity(id); identities.set(id, value); }
+    return value;
+  };
+  const included = (ids: string[], id: string): boolean => {
+    let values = baselines.get(ids);
+    if (!values) { values = new Set(ids.map(identity)); baselines.set(ids, values); }
+    return values.has(identity(id));
+  };
+  const recordIdentities = new Set(records.map(record => identity(record.id))), assignments = new Map<string, string>();
+  for (const [id, accountId] of Object.entries(state.recordAssignments)) {
+    const key = identity(id);
+    // Object.entries(...).find() used the first matching saved assignment.
+    if (!assignments.has(key)) assignments.set(key, accountId);
+  }
   for (const id of Object.keys(state.recordAssignments)) {
-    if (records.some(r => stableIdentity(r.id) === stableIdentity(id))) continue;
+    if (recordIdentities.has(identity(id))) continue;
     try {
       const identity = JSON.parse(id.slice(10));
       const candidates = records.filter(r => r.path === identity[0] && r.date === identity[1] && r.time === identity[2]
@@ -216,21 +234,21 @@ export function buildAssetSnapshot(state: AssetState, records: LedgerRecord[], n
     if (account.kind === "cash") for (const epoch of state.epochs.filter(e => e.accountId === account.id)) {
       const start = Math.max(Date.parse(epoch.from), baseline), end = Math.min(epoch.to ? Date.parse(epoch.to) : nowMs, nowMs);
       for (const record of records) {
-        if (excluded.has(record.id) || Object.keys(state.recordAssignments).some(id => stableIdentity(id) === stableIdentity(record.id)) || knownRecord(account.includedRecordIds, record.id) || knownRecord(epoch.includedRecordIds, record.id)) continue;
+        if (excluded.has(record.id) || assignments.has(identity(record.id)) || included(account.includedRecordIds, record.id) || included(epoch.includedRecordIds, record.id)) continue;
         const time = recordInstant(record), dayStart = new Date(`${record.date}T00:00:00`).getTime();
         if (time === null) {
           if (dayStart > start && dayStart + 86400000 <= end) cents -= record.cents;
           else if (dayStart <= end && dayStart + 86400000 > start) pending.add(`${record.date} ${record.note || record.category}：补记时间未知，尚未扣款`);
         } else if (epoch.to && Math.floor(time / 60000) === Math.floor(Date.parse(epoch.to) / 60000)
-          && !knownRecord(state.epochs.find(e => e.from === epoch.to)?.includedRecordIds ?? [], record.id)) {
+          && !included(state.epochs.find(e => e.from === epoch.to)?.includedRecordIds ?? [], record.id)) {
           pending.add(`${record.date} ${record.time} ${record.note || record.category}：与账户切换同一分钟，尚未扣款`);
         } else if (time > start && time <= end) cents -= record.cents;
         else if (Math.floor(time / 60000) === Math.floor(start / 60000) && start <= end) pending.add(`${record.date} ${record.time} ${record.note || record.category}：与余额基线同一分钟，尚未扣款`);
       }
     }
     if (account.kind === "cash") for (const record of records) {
-      const assignment = Object.entries(state.recordAssignments).find(([id]) => stableIdentity(id) === stableIdentity(record.id))?.[1];
-      if (assignment === account.id && record.date <= today && !excluded.has(record.id) && !knownRecord(account.includedRecordIds, record.id)) cents -= record.cents;
+      const assignment = assignments.get(identity(record.id));
+      if (assignment === account.id && record.date <= today && !excluded.has(record.id) && !included(account.includedRecordIds, record.id)) cents -= record.cents;
     }
     const holdings = state.holdings.filter(h => h.accountId === account.id).map(h => {
       const quote = state.quotes[quoteKey(h.kind, h.code)];

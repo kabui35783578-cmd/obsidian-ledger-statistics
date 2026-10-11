@@ -5,6 +5,8 @@ import { ASSET_NAMES, AssetAccount, AssetEvent, AssetEventKind, AssetHolding, As
 import { renderAssetOverviewSankey, renderAssetSankey } from "./asset-charts";
 import type { AssetQuote } from "./assets";
 import { styleLedgerModal } from "./ui-surface";
+import { deferChartAnimation } from "./chart-animation";
+import { disposeAssetGestures } from "./asset-gestures";
 
 function button(parent: HTMLElement, text: string, action: () => void, primary = false): HTMLButtonElement {
   const node = parent.createEl("button", { cls: `ledger-button${primary ? " ledger-assets-primary" : ""}`, text });
@@ -68,6 +70,7 @@ export class AssetPanel {
     button(actions, "添加持仓", () => this.holdingForm(), true);
     button(actions, "更多", () => this.toolsModal());
     const hero = root.createDiv({ cls: "ledger-assets-hero ledger-reveal" });
+    deferChartAnimation(hero);
     const heroHeading = hero.createDiv({ cls: "ledger-assets-title-row ledger-assets-overview-heading" });
     const overview = hero.createDiv({ cls: "ledger-assets-overview" });
     const primary = overview.createDiv({ cls: "ledger-assets-primary-value" });
@@ -97,6 +100,7 @@ export class AssetPanel {
       const warning = root.createDiv({ cls: "ledger-assets-warning ledger-assets-compact-warning" }); warning.createSpan({ text: `${snapshot.pending.length}项变动待核对` }); button(warning, "查看", () => this.toolsModal());
     }
     const card = root.createDiv({ cls: "ledger-assets-card ledger-assets-chart-card ledger-reveal" });
+    deferChartAnimation(card);
     const heading = card.createDiv({ cls: "ledger-assets-title-row" });
     heading.createEl("h3", { text: "资产组成" });
     const expand = button(heading, "", () => this.sankeyModal(snapshot)); setIcon(expand, "maximize-2"); expand.setAttribute("aria-label", "放大查看桑基图");
@@ -401,11 +405,12 @@ export class AssetPanel {
   private sankeyModal(snapshot: AssetSnapshot): void {
     const modal = new Modal(this.plugin.app); styleLedgerModal(modal); modal.setTitle(`资产组成 · ${snapshot.date}`); modal.modalEl.addClass("ledger-assets-sankey-modal", "ledger-assets-sankey-expanded");
     const draw = (): void => {
+      disposeAssetGestures(modal.contentEl);
       modal.contentEl.empty();
-      modal.contentEl.createEl("small", { cls: "ledger-assets-sankey-help", text: "左右拖动 · 双指缩放" });
+      modal.contentEl.createEl("small", { cls: "ledger-assets-sankey-help", text: "拖动查看 · 双指缩放 · Ctrl／⌘ + 滚轮缩放" });
       renderAssetSankey(modal.contentEl, snapshot, this.plugin.settings.assets.excludeFixed, this.plugin.settings.assets.hideAmounts, (id, holdingId) => { modal.close(); this.sankeySelect(id, holdingId); }, false, false, true);
     };
-    modal.onOpen = draw; modal.open();
+    modal.onOpen = draw; modal.onClose = () => disposeAssetGestures(modal.contentEl); modal.open();
   }
   private calendarModal(): void {
     const modal = new Modal(this.plugin.app); styleLedgerModal(modal); modal.setTitle("资产月历"); modal.modalEl.addClass("ledger-assets-sankey-modal");
@@ -417,6 +422,7 @@ export class AssetPanel {
       const calendar = modal.contentEl.createDiv({ cls: "ledger-assets-calendar" }), detail = modal.contentEl.createDiv();
       let selected = snapshots[0].date;
       const draw = (): void => {
+        disposeAssetGestures(detail);
         detail.empty(); const snapshot = snapshots.find(s => s.date === selected)!, totals = assetTotals(snapshot, state.excludeFixed);
         detail.createEl("h3", { text: `${snapshot.date} · ${state.hideAmounts ? "••••" : formatCents(totals.assetsCents)}${totals.missing ? " · 金额待补全" : ""}` });
         const change = dailyAssetChange(state, snapshot, state.excludeFixed);
@@ -441,7 +447,7 @@ export class AssetPanel {
         }
       };
       month.addEventListener("change", () => { selected = snapshots.find(s => s.date.startsWith(month.value))!.date; drawMonth(); draw(); }); drawMonth(); draw();
-    }; modal.open();
+    }; modal.onClose = () => disposeAssetGestures(modal.contentEl); modal.open();
   }
 }
 const EVENT_NAMES: Record<AssetEventKind, string> = { buy: "买入", sell: "卖出", income: "收入", transfer: "账户转账", repay: "偿还负债", dividend: "现金分红", reinvest: "红利再投资", quantity: "份额核对／拆分", adjust: "资产／负债增减" };

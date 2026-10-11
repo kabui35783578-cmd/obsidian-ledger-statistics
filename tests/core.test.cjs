@@ -27,6 +27,19 @@ function coverage(start, end) {
   return days;
 }
 
+test("filtering keeps stable tie order and fresh results after callers edit arrays", () => {
+  const files = [parseLedgerFile('first.md', note('2026-09-21', '- 12:00｜餐饮｜￥10.00')), parseLedgerFile('second.md', note('2026-09-21', '- 12:00｜餐饮｜￥20.00'))];
+  const filter = { range: { start: '2026-09-21', end: '2026-09-21' }, scope: 'consumption', excludedCategories: [], categories: [], keyword: '' };
+  const first = filteredRecords(files.values(), filter);
+  assert.deepEqual(first.map(record => record.path), ['first.md', 'second.md']);
+  first.reverse(); first.length = 0;
+  assert.equal(filteredRecords(files.values(), filter).length, 2);
+  files[0].records[0].cents = 5000;
+  assert.equal(filteredRecords(files.values(), filter)[0].cents, 5000);
+  files[0].records.push({ ...files[0].records[0], id: 'new', line: 100 });
+  assert.equal(filteredRecords(files.values(), filter)[0].id, 'new');
+});
+
 test("stars survive inserted lines and unrelated transactions, and migrate legacy IDs", () => {
   const { migrateStarredIds, renameStarredIds } = require("../dist/core.cjs");
   const body = "- 12:00｜餐饮｜￥10.00（午餐）";

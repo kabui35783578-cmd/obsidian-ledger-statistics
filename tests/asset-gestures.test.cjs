@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { enableAssetGestures, clampAssetZoom, zoomScrollOffset } = require('../dist/asset-gestures.cjs');
+const { enableAssetGestures, disposeAssetGestures, clampAssetZoom, zoomScrollOffset } = require('../dist/asset-gestures.cjs');
 class Node {
   constructor() { this.listeners = {}; this.children = []; this.attributes = {}; this.style = {}; this.scrollLeft = 300; this.scrollTop = 100; this.clientWidth = 320; this.clientHeight = 300; }
   setAttribute(name, value) { this.attributes[name] = value; }
@@ -12,6 +12,25 @@ class Node {
 }
 const pointer = (id, x, y) => ({ pointerId: id, clientX: x, clientY: y, pointerType: 'touch', preventDefault() {} });
 const nativeTouch = (...xy) => ({ touches: xy.map(([clientX,clientY],identifier)=>({clientX,clientY,identifier})),cancelable:true,preventDefault(){this.prevented=true;},stopPropagation(){this.stopped=true;} });
+
+test('owner cleanup cancels queued fitting before removal and leaves sibling charts alive', () => {
+  const observers = [], frames = new Map(), cancelled = [];
+  global.ResizeObserver = class { constructor(callback) { this.callback = callback; observers.push(this); } observe() {} disconnect() { this.disconnected = true; } };
+  global.requestAnimationFrame = callback => { const id = frames.size + 1; frames.set(id, callback); return id; };
+  global.cancelAnimationFrame = id => cancelled.push(id);
+  try {
+    const first = new Node(), second = new Node(), svg = new Node(); first.isConnected = second.isConnected = true;
+    enableAssetGestures(first, svg, null, true); enableAssetGestures(second, new Node(), null, true);
+    first.clientWidth = 500; observers[0].callback(); const width = svg.style.width;
+    disposeAssetGestures({ contains: target => target === first });
+    assert.equal(observers[0].disconnected, true); assert.equal(observers[1].disconnected, undefined);
+    assert.deepEqual(cancelled, [1]);
+    frames.get(1)(); observers[0].callback();
+    assert.equal(svg.style.width, width, 'Late deliveries cannot resize a disposed chart');
+    disposeAssetGestures(); assert.equal(observers[1].disconnected, true);
+    disposeAssetGestures();
+  } finally { disposeAssetGestures(); delete global.ResizeObserver; delete global.requestAnimationFrame; delete global.cancelAnimationFrame; }
+});
 
 test('home reference framing leaves horizontal content available and native touch swipes reveal it', () => {
   const view=new Node(),svg=new Node();view.scrollWidth=496;view.scrollLeft=0;view.scrollTop=0;view.clientHeight=192;
@@ -179,4 +198,59 @@ test('browser resize fitting is deferred to the next frame and cancelled on remo
     frameCallback();assert.equal(parseFloat(svg.style.width),500);
     view.clientWidth=600;callback();view.isConnected=false;callback();assert.equal(cancelled,true);
   } finally {delete global.ResizeObserver;delete global.requestAnimationFrame;delete global.cancelAnimationFrame;}
+});
+
+test('expanded canvas starts centered, pans in both directions and zooms around the finger midpoint', () => {
+  const view = new Node(), svg = new Node(), canvas = new Node();
+  svg.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1080, height: 558 });
+  enableAssetGestures(view, svg, null, true, false, 1, canvas);
+  const scale = +view.attributes['data-zoom'];
+  assert.equal(view.scrollLeft, 160);
+  assert.ok(Math.abs(view.scrollTop - 558 * scale / 2) < .001);
+  assert.equal(canvas.style.paddingLeft, '160px');
+  assert.equal(canvas.style.paddingTop, '150px');
+  view.listeners.touchstart(nativeTouch([150, 150]));
+  const x = view.scrollLeft, y = view.scrollTop;
+  view.listeners.touchmove(nativeTouch([200, 180]));
+  assert.equal(view.scrollLeft, x - 50); assert.equal(view.scrollTop, y - 30);
+  view.listeners.touchmove(nativeTouch([100, 100]));
+  assert.equal(view.scrollLeft, x + 50); assert.equal(view.scrollTop, y + 50);
+  view.listeners.touchend(nativeTouch());
+  const beforeX = (view.scrollLeft + 150 - 160) / scale;
+  const beforeY = (view.scrollTop + 100 - 150) / scale;
+  view.listeners.touchstart(nativeTouch([100, 100], [200, 100]));
+  view.listeners.touchmove(nativeTouch([100, 100], [300, 100]));
+  const next = +view.attributes['data-zoom'];
+  assert.ok(Math.abs((view.scrollLeft + 200 - 160) / next - beforeX) < .001);
+  assert.ok(Math.abs((view.scrollTop + 100 - 150) / next - beforeY) < .001);
+});
+
+test('manual canvas panning survives resize and desktop mouse dragging is supported', () => {
+  let callback; global.ResizeObserver = class { constructor(cb) { callback = cb; } observe() {} disconnect() {} };
+  try {
+    const view = new Node(), svg = new Node(), canvas = new Node(); view.isConnected = true;
+    enableAssetGestures(view, svg, null, true, false, 1, canvas);
+    const mouse = (x, y) => ({ ...pointer(1, x, y), pointerType: 'mouse', button: 0 });
+    const initial = view.scrollLeft;
+    view.listeners.pointerdown(mouse(100, 100)); view.listeners.pointermove(mouse(80, 70)); view.listeners.pointerup(mouse(80, 70));
+    assert.equal(view.scrollLeft, initial + 20);
+    const scroll = view.scrollLeft, width = svg.style.width;
+    view.clientWidth = 400; callback();
+    assert.equal(view.scrollLeft, scroll); assert.equal(svg.style.width, width);
+  } finally { delete global.ResizeObserver; }
+});
+
+test('modal opening transforms and changing viewport height do not freeze a small fit', () => {
+  let callback; global.ResizeObserver = class { constructor(cb) { callback = cb; } observe() {} disconnect() {} };
+  try {
+    const view = new Node(), svg = new Node(), canvas = new Node(); view.isConnected = true; view.clientWidth = 1400; view.clientHeight = 300;
+    svg.style.width = '1240px'; svg.viewBox = { baseVal: { width: 1240, height: 640 } };
+    svg.getBoundingClientRect = () => ({ left: 0, top: 0, width: 620, height: 320 });
+    enableAssetGestures(view, svg, null, true, false, 1240 / 800, canvas);
+    assert.equal(+view.attributes['data-zoom'], 300 / 640);
+    view.clientHeight = 700; callback();
+    assert.equal(+view.attributes['data-zoom'], 1);
+    assert.equal(svg.style.width, '1240px');
+    assert.equal(view.scrollLeft, 620); assert.equal(view.scrollTop, 320);
+  } finally { delete global.ResizeObserver; }
 });

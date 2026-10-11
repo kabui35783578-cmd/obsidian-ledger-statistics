@@ -19,6 +19,30 @@ function records(lines, path = '记账/2026-10-08.md', date = '2026-10-08') {
   return core.parseLedgerFile(path, `---\ndate: ${date}\ntotal: 0\n---\n# 今日消费记录\n${lines}`).records;
 }
 const balances = (s, rs = [], now = at(18)) => Object.fromEntries(a.buildAssetSnapshot(s, rs, now).accounts.map(a => [a.id, a.cents]));
+
+test('identity lookup keeps the first saved assignment when duplicate totals change', () => {
+  const state = fixture(), rs = records('- 10:00 | 餐饮 | Y10.00 (早餐)');
+  const parts = JSON.parse(rs[0].id.slice(10)); parts[6] += 1;
+  const prior = `ledger-v2:${JSON.stringify(parts)}`;
+  state.recordAssignments[prior] = 'other';
+  state.recordAssignments[rs[0].id] = 'cash';
+  assert.equal(balances(state, rs).cash, 100000);
+  assert.equal(balances(state, rs).other, -1000);
+  delete state.recordAssignments[prior];
+  assert.equal(balances(state, rs).cash, 99000);
+  assert.equal(balances(state, rs).other, 0);
+});
+
+test('snapshot indexes reflect in-place baseline and ledger edits without changing saved state', () => {
+  const state = fixture(), rs = records('- 10:00 | 餐饮 | Y10.00 (早餐)');
+  assert.equal(balances(state, rs).cash, 99000);
+  state.accounts[0].includedRecordIds.push(rs[0].id);
+  const saved = clone(state);
+  assert.equal(balances(state, rs).cash, 100000);
+  assert.deepEqual(state, saved);
+  state.accounts[0].includedRecordIds.length = 0;
+  assert.equal(balances(state, rs).cash, 99000);
+});
 let eventIndex = 0;
 function event(kind, extra = {}) { return { id: `e${++eventIndex}`, kind, date: '2026-10-08', createdAt: at(11).toISOString(), accountId: 'funds', cashAccountId: 'cash', holdingId: 'h', amountCents: 10000, feeCents: 0, note: '', ...extra }; }
 

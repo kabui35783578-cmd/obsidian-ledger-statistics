@@ -292,7 +292,9 @@ function recordMatches(record, filter) {
   return true;
 }
 function filteredRecords(files, filter) {
-  return flattenRecords(files).filter((record) => recordMatches(record, filter));
+  const records = [];
+  for (const file of files) for (const record of file.records) if (recordMatches(record, filter)) records.push(record);
+  return records.sort((a, b) => b.date.localeCompare(a.date) || b.line - a.line);
 }
 function budgetScopedRecords(records, includeStarred, starredRecordIds) {
   const copy = [...records];
@@ -622,9 +624,14 @@ function buildFinanceAdvisorSnapshot(records, date, salaryCents, excludedCategor
       historicalByCategory.set(record.category, amounts);
     }
   }
+  const historicalMedians = /* @__PURE__ */ new Map();
   for (const record of currentConsumption) {
     if (historyCycleCount < 2 || !currentCoverage || ((_c = (_b = historicalByCategory.get(record.category)) == null ? void 0 : _b.length) != null ? _c : 0) < 3) continue;
-    const historicalMedian = median((_d = historicalByCategory.get(record.category)) != null ? _d : []);
+    let historicalMedian = historicalMedians.get(record.category);
+    if (historicalMedian === void 0) {
+      historicalMedian = median((_d = historicalByCategory.get(record.category)) != null ? _d : []);
+      historicalMedians.set(record.category, historicalMedian);
+    }
     const threshold = Math.max(1e4, Math.round(salaryCents * 0.05), historicalMedian * 3);
     if (record.cents >= threshold) {
       events.push({
@@ -719,6 +726,26 @@ function trendPoints(records, granularity) {
     map.set(bucket.key, point);
   }
   return [...map.values()].sort((a, b) => a.key.localeCompare(b.key));
+}
+function cumulativeTrendPoints(records, range, granularity) {
+  var _a, _b;
+  if (!isValidIsoDate(range.start) || !isValidIsoDate(range.end) || range.start > range.end) return [];
+  const selected = records.filter((record) => record.date >= range.start && record.date <= range.end);
+  if (!selected.length) return [];
+  const buckets = new Map(trendPoints(selected, granularity).map((point) => [point.key, point]));
+  const points = [];
+  let cents = 0;
+  let count = 0;
+  for (let date = range.start; date <= range.end; ) {
+    const bucket = trendBucket(date, granularity);
+    const current = buckets.get(bucket.key);
+    cents += (_a = current == null ? void 0 : current.cents) != null ? _a : 0;
+    count += (_b = current == null ? void 0 : current.count) != null ? _b : 0;
+    const end = bucket.end < range.end ? bucket.end : range.end;
+    points.push({ ...bucket, start: range.start, end, cents, count });
+    date = addDays(end, 1);
+  }
+  return points;
 }
 function compareValue(currentCents, previousCents) {
   let ratio;
@@ -5551,20 +5578,42 @@ function linkedRecords(state, records, pending) {
 }
 function buildAssetSnapshot(state, records, now = /* @__PURE__ */ new Date()) {
   const pending = /* @__PURE__ */ new Set(), excluded = linkedRecords(state, records, pending), nowMs = now.getTime(), today = isoFromDate(now);
+  const identities = /* @__PURE__ */ new Map(), baselines = /* @__PURE__ */ new Map();
+  const identity = (id) => {
+    let value = identities.get(id);
+    if (value === void 0) {
+      value = stableIdentity(id);
+      identities.set(id, value);
+    }
+    return value;
+  };
+  const included = (ids, id) => {
+    let values = baselines.get(ids);
+    if (!values) {
+      values = new Set(ids.map(identity));
+      baselines.set(ids, values);
+    }
+    return values.has(identity(id));
+  };
+  const recordIdentities = new Set(records.map((record) => identity(record.id))), assignments = /* @__PURE__ */ new Map();
+  for (const [id, accountId] of Object.entries(state.recordAssignments)) {
+    const key = identity(id);
+    if (!assignments.has(key)) assignments.set(key, accountId);
+  }
   for (const id of Object.keys(state.recordAssignments)) {
-    if (records.some((r) => stableIdentity(r.id) === stableIdentity(id))) continue;
+    if (recordIdentities.has(identity(id))) continue;
     try {
-      const identity = JSON.parse(id.slice(10));
-      const candidates = records.filter((r) => r.path === identity[0] && r.date === identity[1] && r.time === identity[2] && (r.note === identity[5] || r.cents === identity[4]));
+      const identity2 = JSON.parse(id.slice(10));
+      const candidates = records.filter((r) => r.path === identity2[0] && r.date === identity2[1] && r.time === identity2[2] && (r.note === identity2[5] || r.cents === identity2[4]));
       if (candidates.length) {
-        pending.add(`${identity[1]} ${identity[2]}\uFF1A\u5DF2\u6307\u5B9A\u4ED8\u6B3E\u8D26\u6237\u7684\u6D41\u6C34\u53D1\u751F\u53D8\u5316\uFF0C\u8BF7\u91CD\u65B0\u6838\u5BF9`);
+        pending.add(`${identity2[1]} ${identity2[2]}\uFF1A\u5DF2\u6307\u5B9A\u4ED8\u6B3E\u8D26\u6237\u7684\u6D41\u6C34\u53D1\u751F\u53D8\u5316\uFF0C\u8BF7\u91CD\u65B0\u6838\u5BF9`);
         for (const r of candidates) excluded.add(r.id);
       }
     } catch (e) {
     }
   }
   const accounts = state.accounts.filter((a) => !a.archived).map((account) => {
-    var _a, _b, _c;
+    var _a, _b;
     let cents = account.balanceCents;
     const baseline = Date.parse(account.baselineAt);
     for (const event of state.events) {
@@ -5580,20 +5629,20 @@ function buildAssetSnapshot(state, records, now = /* @__PURE__ */ new Date()) {
     if (account.kind === "cash") for (const epoch of state.epochs.filter((e) => e.accountId === account.id)) {
       const start = Math.max(Date.parse(epoch.from), baseline), end = Math.min(epoch.to ? Date.parse(epoch.to) : nowMs, nowMs);
       for (const record of records) {
-        if (excluded.has(record.id) || Object.keys(state.recordAssignments).some((id) => stableIdentity(id) === stableIdentity(record.id)) || knownRecord(account.includedRecordIds, record.id) || knownRecord(epoch.includedRecordIds, record.id)) continue;
+        if (excluded.has(record.id) || assignments.has(identity(record.id)) || included(account.includedRecordIds, record.id) || included(epoch.includedRecordIds, record.id)) continue;
         const time = recordInstant(record), dayStart = (/* @__PURE__ */ new Date(`${record.date}T00:00:00`)).getTime();
         if (time === null) {
           if (dayStart > start && dayStart + 864e5 <= end) cents -= record.cents;
           else if (dayStart <= end && dayStart + 864e5 > start) pending.add(`${record.date} ${record.note || record.category}\uFF1A\u8865\u8BB0\u65F6\u95F4\u672A\u77E5\uFF0C\u5C1A\u672A\u6263\u6B3E`);
-        } else if (epoch.to && Math.floor(time / 6e4) === Math.floor(Date.parse(epoch.to) / 6e4) && !knownRecord((_b = (_a = state.epochs.find((e) => e.from === epoch.to)) == null ? void 0 : _a.includedRecordIds) != null ? _b : [], record.id)) {
+        } else if (epoch.to && Math.floor(time / 6e4) === Math.floor(Date.parse(epoch.to) / 6e4) && !included((_b = (_a = state.epochs.find((e) => e.from === epoch.to)) == null ? void 0 : _a.includedRecordIds) != null ? _b : [], record.id)) {
           pending.add(`${record.date} ${record.time} ${record.note || record.category}\uFF1A\u4E0E\u8D26\u6237\u5207\u6362\u540C\u4E00\u5206\u949F\uFF0C\u5C1A\u672A\u6263\u6B3E`);
         } else if (time > start && time <= end) cents -= record.cents;
         else if (Math.floor(time / 6e4) === Math.floor(start / 6e4) && start <= end) pending.add(`${record.date} ${record.time} ${record.note || record.category}\uFF1A\u4E0E\u4F59\u989D\u57FA\u7EBF\u540C\u4E00\u5206\u949F\uFF0C\u5C1A\u672A\u6263\u6B3E`);
       }
     }
     if (account.kind === "cash") for (const record of records) {
-      const assignment = (_c = Object.entries(state.recordAssignments).find(([id]) => stableIdentity(id) === stableIdentity(record.id))) == null ? void 0 : _c[1];
-      if (assignment === account.id && record.date <= today && !excluded.has(record.id) && !knownRecord(account.includedRecordIds, record.id)) cents -= record.cents;
+      const assignment = assignments.get(identity(record.id));
+      if (assignment === account.id && record.date <= today && !excluded.has(record.id) && !included(account.includedRecordIds, record.id)) cents -= record.cents;
     }
     const holdings = state.holdings.filter((h) => h.accountId === account.id).map((h) => {
       const quote = state.quotes[quoteKey(h.kind, h.code)];
@@ -6564,6 +6613,37 @@ function prepareDonut(data) {
   return parts.map((part, index) => ({ ...part, share: part.cents / total3, ticks: ticks[index] }));
 }
 
+// src/chart-animation.ts
+var observers = /* @__PURE__ */ new WeakMap();
+var initialized = /* @__PURE__ */ new WeakSet();
+function deferChartAnimation(element) {
+  var _a, _b, _c;
+  if (initialized.has(element) || typeof IntersectionObserver === "undefined") return;
+  if ((_c = (_b = (_a = element.ownerDocument) == null ? void 0 : _a.defaultView) == null ? void 0 : _b.matchMedia) == null ? void 0 : _c.call(_b, "(prefers-reduced-motion: reduce)").matches) return;
+  initialized.add(element);
+  element.classList.add("ledger-animation-pending");
+  const observer = new IntersectionObserver((entries) => {
+    if (!entries.some((entry) => entry.target === element && entry.isIntersecting)) return;
+    element.classList.remove("ledger-animation-pending");
+    observer.disconnect();
+    observers.delete(element);
+  }, { rootMargin: "0px 0px -24px 0px", threshold: 0 });
+  observers.set(element, observer);
+  observer.observe(element);
+}
+function disposeChartAnimations(root) {
+  const dispose = (element) => {
+    const observer = observers.get(element);
+    if (!observer) return;
+    observer.disconnect();
+    observers.delete(element);
+    initialized.delete(element);
+    element.classList.remove("ledger-animation-pending");
+  };
+  dispose(root);
+  root.querySelectorAll(".ledger-animation-pending").forEach(dispose);
+}
+
 // src/ui.ts
 var SVG_NS = "http://www.w3.org/2000/svg";
 var INK = "#1F1E1C";
@@ -6583,6 +6663,7 @@ function deterministic(index, salt) {
 }
 function monoCard(parent, badge, title, subtitle) {
   const shell = parent.createDiv({ cls: "ledger-mono-card ledger-reveal" });
+  deferChartAnimation(shell);
   shell.createDiv({ cls: "ledger-mono-badge", text: badge });
   shell.createEl("h3", { text: title });
   shell.createDiv({ cls: "ledger-mono-sub", text: subtitle });
@@ -6890,18 +6971,18 @@ function trendConclusion(points) {
   const peak = points.reduce((best, point) => point.cents > best.cents ? point : best, points[0]);
   return `${peak.label}\u662F\u8FD9\u6BB5\u65F6\u95F4\u7684\u652F\u51FA\u5CF0\u503C`;
 }
-function renderMobileTrend(parent, points, isLine, onClick) {
+function renderMobileTrend(parent, points, isLine, onClick, cumulative = false) {
   const viewport = parent.createDiv({ cls: "ledger-mobile-trend-scroll" });
+  const max2 = Math.max(...points.map((point) => point.cents), 1);
   const width = points.length > 10 ? points.length * 34 + 74 : 360;
   const height = 252;
-  const left = 44;
+  const left = cumulative ? Math.max(44, formatCents(max2).replace(".00", "").length * 6.5 + 14) : 44;
   const right = width - 14;
   const top = 38;
   const base = 194;
   const plotWidth = right - left;
   const plotHeight = base - top;
-  const max2 = Math.max(...points.map((point) => point.cents), 1);
-  const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": isLine ? "\u79FB\u52A8\u7AEF\u652F\u51FA\u6298\u7EBF\u56FE" : "\u79FB\u52A8\u7AEF\u652F\u51FA\u67F1\u72B6\u56FE" });
+  const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": cumulative ? "\u79FB\u52A8\u7AEF\u7D2F\u8BA1\u652F\u51FA\u6298\u7EBF\u56FE" : isLine ? "\u79FB\u52A8\u7AEF\u652F\u51FA\u6298\u7EBF\u56FE" : "\u79FB\u52A8\u7AEF\u652F\u51FA\u67F1\u72B6\u56FE" });
   svg.classList.add("ledger-svg", "ledger-mobile-trend");
   svg.style.width = `${width}px`;
   for (let tick = 0; tick <= 3; tick += 1) {
@@ -6913,7 +6994,7 @@ function renderMobileTrend(parent, points, isLine, onClick) {
   }
   const slot = plotWidth / Math.max(points.length, 1);
   const coords = [];
-  const peakIndex = points.reduce((best, point, index) => point.cents > points[best].cents ? index : best, 0);
+  const peakIndex = cumulative ? points.length - 1 : points.reduce((best, point, index) => point.cents > points[best].cents ? index : best, 0);
   const labelEvery = Math.max(1, Math.ceil(points.length / 6));
   points.forEach((point, index) => {
     const x = left + slot * index + slot / 2;
@@ -6924,13 +7005,13 @@ function renderMobileTrend(parent, points, isLine, onClick) {
       const group2 = svgEl("g", { class: "ledger-trend-point" });
       group2.append(svgEl("circle", { cx: x, cy: y, r: index === peakIndex ? 4.8 : 3, fill: index === peakIndex ? HERO : INK, class: "ledger-pop ledger-trend-dot" }));
       if (index === peakIndex) {
-        const peak = svgEl("text", { x, y: Math.max(19, y - 11), "text-anchor": "middle", class: "ledger-mobile-value-label ledger-peak-label ledger-persistent-peak" });
+        const peak = svgEl("text", { x, y: Math.max(19, y - 11), "text-anchor": cumulative ? "end" : "middle", class: "ledger-mobile-value-label ledger-peak-label ledger-persistent-peak" });
         peak.textContent = formatCents(point.cents);
         group2.append(peak);
       }
-      group2.append(trendTooltip(x, y, width, formatCents(point.cents), true));
+      group2.append(trendTooltip(x, y, width, `${cumulative ? "\u7D2F\u8BA1 " : ""}${formatCents(point.cents)}`, true));
       const hit = svgEl("circle", { cx: x, cy: y, r: 22, fill: "transparent" });
-      interactiveTrendTarget(svg, group2, hit, `${point.label} ${formatCents(point.cents)}\uFF0C${point.count} \u7B14`, () => onClick(point), true);
+      interactiveTrendTarget(svg, group2, hit, `${point.label} ${cumulative ? "\u7D2F\u8BA1 " : ""}${formatCents(point.cents)}\uFF0C${point.count} \u7B14`, () => onClick(point), true);
       group2.append(hit);
       svg.append(group2);
     } else {
@@ -6959,12 +7040,13 @@ function renderMobileTrend(parent, points, isLine, onClick) {
   viewport.append(svg);
 }
 function renderTrendChart(parent, points, type, onClick) {
-  const isLine = type === "line";
+  const cumulative = type === "cumulative";
+  const isLine = type !== "bar";
   const { shell, chart } = monoCard(
     parent,
-    isLine ? "LUPI BASICS \xB7 F2 HAIRLINE LINE" : "LUPI BASICS \xB7 F3 HAIRLINE AREA",
-    trendConclusion(points),
-    isLine ? "\u4E00\u4E2A\u5706\u70B9 = \u4E00\u4E2A\u65F6\u95F4\u6876 \xB7 \u53D1\u4E1D\u6298\u7EBF\u4FDD\u6301\u9010\u65E5\u8BFB\u6570" : "\u4E00\u6839\u53D1\u4E1D = \u4E00\u4E2A\u65F6\u95F4\u6876 \xB7 \u4ECE\u5730\u677F\u751F\u957F\u5230\u5F53\u671F\u91D1\u989D"
+    cumulative ? "CUMULATIVE SPENDING \xB7 LOCAL LEDGER" : isLine ? "LUPI BASICS \xB7 F2 HAIRLINE LINE" : "LUPI BASICS \xB7 F3 HAIRLINE AREA",
+    cumulative ? `\u7D2F\u8BA1\u652F\u51FA${points.length ? ` \xB7 ${formatCents(points.at(-1).cents)}` : ""}` : trendConclusion(points),
+    cumulative ? "\u4ECE\u6240\u9009\u671F\u95F4\u8D77\u7D2F\u52A0 \xB7 \u5706\u70B9\u8868\u793A\u622A\u81F3\u8BE5\u65E5\u671F\u7684\u5DF2\u8BB0\u652F\u51FA \xB7 \u672A\u65B0\u589E\u8BB0\u5F55\u65F6\u7D2F\u8BA1\u503C\u4FDD\u6301\u4E0D\u53D8" : isLine ? "\u4E00\u4E2A\u5706\u70B9 = \u4E00\u4E2A\u65F6\u95F4\u6876 \xB7 \u53D1\u4E1D\u6298\u7EBF\u4FDD\u6301\u9010\u65E5\u8BFB\u6570" : "\u4E00\u6839\u53D1\u4E1D = \u4E00\u4E2A\u65F6\u95F4\u6876 \xB7 \u4ECE\u5730\u677F\u751F\u957F\u5230\u5F53\u671F\u91D1\u989D"
   );
   if (points.length === 0) return renderEmpty(chart, "\u5F53\u524D\u7B5B\u9009\u6761\u4EF6\u4E0B\u6CA1\u6709\u53EF\u7ED8\u5236\u7684\u6570\u636E");
   const width = 820;
@@ -6975,7 +7057,7 @@ function renderTrendChart(parent, points, type, onClick) {
   const plotWidth = width - left - 26;
   const plotHeight = base - top;
   const max2 = Math.max(...points.map((point) => point.cents), 1);
-  const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": isLine ? "\u652F\u51FA\u53D1\u4E1D\u6298\u7EBF\u56FE" : "\u652F\u51FA\u53D1\u4E1D\u67F1\u72B6\u56FE" });
+  const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": cumulative ? "\u7D2F\u8BA1\u652F\u51FA\u6298\u7EBF\u56FE" : isLine ? "\u652F\u51FA\u53D1\u4E1D\u6298\u7EBF\u56FE" : "\u652F\u51FA\u53D1\u4E1D\u67F1\u72B6\u56FE" });
   svg.classList.add("ledger-svg", "ledger-hairline-chart", "ledger-desktop-chart");
   for (let tick = 0; tick <= 4; tick += 1) {
     const y = base - tick / 4 * plotHeight;
@@ -6986,7 +7068,7 @@ function renderTrendChart(parent, points, type, onClick) {
   }
   const slot = plotWidth / Math.max(points.length, 1);
   const coords = [];
-  const peaks = [...points.keys()].sort((a, b) => points[b].cents - points[a].cents).filter((index, position, chosen) => position === 0 || chosen.slice(0, position).every((other) => Math.abs(other - index) >= 3)).slice(0, 2);
+  const peaks = cumulative ? [points.length - 1] : [...points.keys()].sort((a, b) => points[b].cents - points[a].cents).filter((index, position, chosen) => position === 0 || chosen.slice(0, position).every((other) => Math.abs(other - index) >= 3)).slice(0, 2);
   points.forEach((point, index) => {
     const x = left + slot * index + slot / 2;
     const y = base - point.cents / max2 * plotHeight;
@@ -7009,13 +7091,13 @@ function renderTrendChart(parent, points, type, onClick) {
       const group2 = svgEl("g", { class: "ledger-trend-point" });
       group2.append(svgEl("circle", { cx: x, cy: y, r: peaks.includes(index) ? 4.2 : 2.2, fill: peaks.includes(index) ? HERO : index % 7 >= 5 ? PAPER : INK, stroke: peaks.includes(index) ? HERO : INK, "stroke-width": 1, class: "ledger-pop ledger-trend-dot" }));
       if (index === peaks[0]) {
-        const peak = svgEl("text", { x, y: Math.max(18, y - 12), "text-anchor": "middle", class: "ledger-value-label ledger-peak-label ledger-persistent-peak" });
+        const peak = svgEl("text", { x, y: Math.max(18, y - 12), "text-anchor": cumulative ? "end" : "middle", class: "ledger-value-label ledger-peak-label ledger-persistent-peak" });
         peak.textContent = formatCents(point.cents);
         group2.append(peak);
       }
-      group2.append(trendTooltip(x, y, width, formatCents(point.cents)));
+      group2.append(trendTooltip(x, y, width, `${cumulative ? "\u7D2F\u8BA1 " : ""}${formatCents(point.cents)}`));
       const hit = svgEl("circle", { cx: x, cy: y, r: 14, fill: "transparent" });
-      interactiveTrendTarget(svg, group2, hit, `${point.label} ${formatCents(point.cents)}\uFF0C${point.count} \u7B14`, () => onClick(point));
+      interactiveTrendTarget(svg, group2, hit, `${point.label} ${cumulative ? "\u7D2F\u8BA1 " : ""}${formatCents(point.cents)}\uFF0C${point.count} \u7B14`, () => onClick(point));
       group2.append(hit);
       svg.append(group2);
     } else {
@@ -7029,7 +7111,7 @@ function renderTrendChart(parent, points, type, onClick) {
       svg.append(value);
     }
     const labelEvery = Math.max(1, Math.ceil(points.length / 8));
-    if (index % labelEvery === 0 || index === points.length - 1) {
+    if (index % labelEvery === 0 && (!cumulative || index <= points.length - 1 - labelEvery) || index === points.length - 1) {
       const label2 = svgEl("text", { x, y: base + 24, "text-anchor": "middle", class: "ledger-axis-label" });
       label2.textContent = point.label;
       svg.append(label2);
@@ -7039,11 +7121,11 @@ function renderTrendChart(parent, points, type, onClick) {
   if (isLine) svg.insertBefore(outline, svg.firstChild);
   else svg.append(outline);
   const foot = svgEl("text", { x: width / 2, y: height - 10, "text-anchor": "middle", class: "ledger-foot-label" });
-  foot.textContent = isLine ? "HOVER A DOT \xB7 REVEAL THE EXACT AMOUNT" : "ONE HAIRLINE = ONE PERIOD, FLOOR TO PEAK";
+  foot.textContent = cumulative ? "\u60AC\u505C\u67E5\u770B\u7D2F\u8BA1\u91D1\u989D \xB7 \u70B9\u51FB\u67E5\u770B\u622A\u81F3\u8BE5\u65E5\u671F\u7684\u660E\u7EC6" : isLine ? "HOVER A DOT \xB7 REVEAL THE EXACT AMOUNT" : "ONE HAIRLINE = ONE PERIOD, FLOOR TO PEAK";
   svg.append(foot);
   chart.append(svg);
-  renderMobileTrend(chart, points, isLine, onClick);
-  sourceLine(shell, `${isLine ? "HAIRLINE LINE" : "HAIRLINE AREA"} \xB7 MONO-BASIC \xB7 LOCAL LEDGER`);
+  renderMobileTrend(chart, points, isLine, onClick, cumulative);
+  sourceLine(shell, `${cumulative ? "CUMULATIVE LINE" : isLine ? "HAIRLINE LINE" : "HAIRLINE AREA"} \xB7 MONO-BASIC \xB7 LOCAL LEDGER`);
 }
 function renderSalaryWaterfall(parent, steps, range, onCategory, onCalibrationNote) {
   var _a, _b, _c;
@@ -7283,6 +7365,7 @@ function renderEmpty(parent, message) {
 function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true, coverage2, onOpenFile, onManageFixed, detailsExpanded = false, onDetailsExpandedChange, balance, referencesExpanded = false, onReferencesExpandedChange) {
   var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r;
   const card2 = parent.createDiv({ cls: `ledger-advisor-card${animate ? " ledger-reveal" : ""}` });
+  deferChartAnimation(card2);
   card2.setAttribute("aria-busy", String(state.status === "loading"));
   const heading = card2.createDiv({ cls: "ledger-advisor-heading" });
   const copy = heading.createDiv({ cls: "ledger-advisor-heading-copy" });
@@ -7464,6 +7547,7 @@ function renderInlineBudget(card2, budget) {
 }
 function renderStarredExpenses(parent, records, onClick) {
   const card2 = parent.createDiv({ cls: "ledger-starred-card ledger-reveal" });
+  deferChartAnimation(card2);
   const heading = card2.createDiv({ cls: "ledger-starred-heading" });
   const headingCopy = heading.createDiv({ cls: "ledger-starred-heading-copy" });
   headingCopy.createDiv({ cls: "ledger-mono-badge", text: "STARRED EXPENSES \xB7 MANUAL CURATION" });
@@ -7967,7 +8051,6 @@ var import_obsidian7 = require("obsidian");
 
 // src/category-charts.ts
 var NS = "http://www.w3.org/2000/svg";
-var observers = /* @__PURE__ */ new WeakMap();
 function el(parent, tag2, attrs) {
   const node = document.createElementNS(NS, tag2);
   Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, String(value)));
@@ -7999,25 +8082,10 @@ function plot(parent, label2, width = 400, height = 320) {
   svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
   svg.setAttribute("role", "img");
   svg.setAttribute("aria-label", label2);
-  svg.classList.add("ledger-svg", "ledger-category-plot", "is-pending");
+  svg.classList.add("ledger-svg", "ledger-category-plot");
   parent.append(svg);
-  const observer = new IntersectionObserver((entries) => {
-    if (entries.some((entry) => entry.isIntersecting)) {
-      svg.classList.remove("is-pending");
-      observer.disconnect();
-      observers.delete(svg);
-    }
-  });
-  observers.set(svg, observer);
-  observer.observe(svg);
+  deferChartAnimation(svg);
   return svg;
-}
-function disposeCategoryCharts(root) {
-  root.querySelectorAll(".ledger-category-plot").forEach((svg) => {
-    var _a;
-    (_a = observers.get(svg)) == null ? void 0 : _a.disconnect();
-    observers.delete(svg);
-  });
 }
 var money = (cents) => formatCents(Math.round(cents));
 var INK2 = "var(--mono-ink)";
@@ -8085,6 +8153,7 @@ var signedMoney = (value) => `${value > 0 ? "+" : ""}${money2(value)}`;
 function card(parent, title, subtitle, cls = "") {
   var _a;
   const shell = parent.createDiv({ cls: `ledger-mono-card ledger-category-card ${cls}` });
+  deferChartAnimation(shell);
   const badges = { "\u540C\u671F\u53D8\u5316": "CATEGORY \xB7 PERIOD COMPARISON", "\u5355\u7B14\u91D1\u989D\u5206\u5E03": "LUPI BASICS \xB7 F15 TICK BOX", "\u91CD\u590D\u9879\u76EE": "REPEATED ITEMS \xB7 LOCAL RECORDS", "\u661F\u671F\u5206\u5E03": "LUPI BASICS \xB7 F1 RUNG BARS" };
   shell.createDiv({ cls: "ledger-mono-badge", text: (_a = badges[title]) != null ? _a : "CATEGORY DETAIL" });
   shell.createEl("h3", { text: title });
@@ -8245,17 +8314,22 @@ function renderCategoryAnalysis(parent, category, analysis, trendUnit, open, sho
   createButton(footer, `\u67E5\u770B\u5168\u90E8 ${a.records.length} \u7B14\u660E\u7EC6`).addEventListener("click", details);
 }
 
-// src/asset-ui.ts
-var import_obsidian8 = require("obsidian");
-
 // src/asset-gestures.ts
+var resizeCleanups = /* @__PURE__ */ new Map();
+function disposeAssetGestures(root) {
+  for (const [viewport, cleanup] of resizeCleanups) {
+    if (!root || root === viewport || root.contains(viewport)) cleanup();
+  }
+}
 function clampAssetZoom(value) {
   return Math.max(0.1, Math.min(4, value));
 }
 function zoomScrollOffset(scroll, anchor, previous, next) {
   return (scroll + anchor) * next / previous - anchor;
 }
-function enableAssetGestures(viewport, svg, tools, fit = false, allowPageScroll = false, fitWidthRatio = 1) {
+function enableAssetGestures(viewport, svg, tools, fit = false, allowPageScroll = false, fitWidthRatio = 1, canvas = null) {
+  var _a;
+  (_a = resizeCleanups.get(viewport)) == null ? void 0 : _a();
   let scale = 1, base = 0, baseHeight = 0, fitHeightLimit = 0, homeScale = 1, manuallyZoomed = false, dragged = false, suppressUntil = 0, origin = { x: 0, y: 0 };
   const points = /* @__PURE__ */ new Map();
   const minus = tools == null ? void 0 : tools.createEl("button", { cls: "ledger-button", text: "\u2212", attr: { "aria-label": "\u7F29\u5C0F\u6851\u57FA\u56FE" } });
@@ -8263,16 +8337,25 @@ function enableAssetGestures(viewport, svg, tools, fit = false, allowPageScroll 
   const plus = tools == null ? void 0 : tools.createEl("button", { cls: "ledger-button", text: "+", attr: { "aria-label": "\u653E\u5927\u6851\u57FA\u56FE" } });
   for (const button2 of [minus, reset, plus]) if (button2) button2.type = "button";
   const measure = () => {
-    var _a;
+    var _a2, _b;
     if (base) return;
-    const rect = (_a = svg.getBoundingClientRect) == null ? void 0 : _a.call(svg);
-    base = (rect == null ? void 0 : rect.width) || Math.max(viewport.clientWidth || 0, 1080);
-    baseHeight = (rect == null ? void 0 : rect.height) || 0;
+    const rect = (_a2 = svg.getBoundingClientRect) == null ? void 0 : _a2.call(svg);
+    base = (canvas ? parseFloat(svg.style.width) : 0) || (rect == null ? void 0 : rect.width) || Math.max(viewport.clientWidth || 0, 1080);
+    baseHeight = canvas && ((_b = svg.viewBox) == null ? void 0 : _b.baseVal.width) ? base * svg.viewBox.baseVal.height / svg.viewBox.baseVal.width : (rect == null ? void 0 : rect.height) || 0;
   };
   const zoomAt = (value, anchor, automatic = false) => {
     if (!automatic) manuallyZoomed = true;
     measure();
-    const next = automatic ? Math.max(0.01, Math.min(4, value)) : fit ? Math.max(Math.min(0.1, homeScale), Math.min(4, value)) : clampAssetZoom(value), x = zoomScrollOffset(viewport.scrollLeft, anchor.x, scale, next), y = zoomScrollOffset(viewport.scrollTop, anchor.y, scale, next);
+    const next = automatic ? Math.max(0.01, Math.min(4, value)) : fit ? Math.max(Math.min(0.1, homeScale), Math.min(4, value)) : clampAssetZoom(value);
+    const oldPadX = canvas ? parseFloat(canvas.style.paddingLeft) || 0 : 0, oldPadY = canvas ? parseFloat(canvas.style.paddingTop) || 0 : 0;
+    const padX = canvas ? viewport.clientWidth / 2 : 0, padY = canvas ? viewport.clientHeight / 2 : 0;
+    const x = zoomScrollOffset(viewport.scrollLeft - oldPadX, anchor.x, scale, next) + padX;
+    const y = zoomScrollOffset(viewport.scrollTop - oldPadY, anchor.y, scale, next) + padY;
+    if (canvas) {
+      canvas.style.width = `${base * next}px`;
+      canvas.style.paddingLeft = canvas.style.paddingRight = `${padX}px`;
+      canvas.style.paddingTop = canvas.style.paddingBottom = `${padY}px`;
+    }
     svg.style.minWidth = "0";
     svg.style.width = `${base * next}px`;
     viewport.style.touchAction = allowPageScroll && next <= homeScale + 1e-4 && (!baseHeight || baseHeight * next <= viewport.clientHeight + 1) ? "pan-y" : "none";
@@ -8283,17 +8366,19 @@ function enableAssetGestures(viewport, svg, tools, fit = false, allowPageScroll 
     viewport.setAttribute("data-zoom", String(scale));
   };
   const fitChart = () => {
-    var _a;
+    var _a2;
     if (!viewport.clientWidth) return;
     measure();
     const cap = typeof getComputedStyle === "function" ? getComputedStyle(viewport).maxHeight : "";
-    const pixels = (_a = cap.match(/[\d.]+px/g)) == null ? void 0 : _a.map((value) => parseFloat(value));
-    if ((pixels == null ? void 0 : pixels.length) && !cap.includes("vh")) fitHeightLimit = Math.min(...pixels);
+    const pixels = (_a2 = cap.match(/[\d.]+px/g)) == null ? void 0 : _a2.map((value) => parseFloat(value));
+    if (canvas) fitHeightLimit = viewport.clientHeight;
+    else if ((pixels == null ? void 0 : pixels.length) && !cap.includes("vh")) fitHeightLimit = Math.min(...pixels);
     else if (!fitHeightLimit) fitHeightLimit = viewport.clientHeight;
     const target2 = Math.min(1, viewport.clientWidth / base * fitWidthRatio, baseHeight && fitHeightLimit ? fitHeightLimit / baseHeight : 1);
     homeScale = target2;
     zoomAt(target2, { x: 0, y: 0 }, true);
-    viewport.scrollLeft = viewport.scrollTop = 0;
+    viewport.scrollLeft = canvas ? base * target2 / 2 : 0;
+    viewport.scrollTop = canvas ? baseHeight * target2 / 2 : 0;
   };
   const center = () => ({ x: viewport.clientWidth / 2, y: viewport.clientHeight / 2 });
   minus == null ? void 0 : minus.addEventListener("click", () => zoomAt(scale / 1.25, center()));
@@ -8316,20 +8401,30 @@ function enableAssetGestures(viewport, svg, tools, fit = false, allowPageScroll 
     reset == null ? void 0 : reset.setAttribute("aria-label", "\u67E5\u770B\u6851\u57FA\u56FE\u5168\u56FE");
     fitChart();
     if (typeof ResizeObserver !== "undefined") {
-      let frame = 0;
+      let frame = 0, disposed = false;
       const observer = new ResizeObserver(() => {
+        if (disposed) return;
         if (!viewport.isConnected) {
-          observer.disconnect();
-          if (frame) cancelAnimationFrame(frame);
+          cleanup();
           return;
         }
         if (manuallyZoomed || frame) return;
         if (typeof requestAnimationFrame === "function") frame = requestAnimationFrame(() => {
           frame = 0;
-          if (viewport.isConnected && !manuallyZoomed) fitChart();
+          if (!disposed && viewport.isConnected && !manuallyZoomed) fitChart();
         });
         else fitChart();
       });
+      const cleanup = () => {
+        disposed = true;
+        observer.disconnect();
+        if (frame) {
+          cancelAnimationFrame(frame);
+          frame = 0;
+        }
+        resizeCleanups.delete(viewport);
+      };
+      resizeCleanups.set(viewport, cleanup);
       observer.observe(viewport);
     }
   } else {
@@ -8369,6 +8464,7 @@ function enableAssetGestures(viewport, svg, tools, fit = false, allowPageScroll 
           const totalX = after[0].x - touchOrigin.x, totalY = after[0].y - touchOrigin.y;
           const ownsDrag = chartTouch || viewport.style.touchAction === "none" || viewport.scrollWidth > viewport.clientWidth + 1 && Math.abs(totalX) > Math.abs(totalY);
           if (ownsDrag && (dragged || Math.hypot(totalX, totalY) > 4)) {
+            manuallyZoomed = true;
             viewport.scrollLeft -= dragged ? after[0].x - touchPoints[0].x : totalX;
             viewport.scrollTop -= dragged ? after[0].y - touchPoints[0].y : totalY;
             dragged = chartTouch = true;
@@ -8399,9 +8495,9 @@ function enableAssetGestures(viewport, svg, tools, fit = false, allowPageScroll 
     }
   }, { passive: false });
   viewport.addEventListener("pointerdown", (event) => {
-    var _a;
+    var _a2;
     if (nativeTouch && event.pointerType === "touch") return;
-    if (event.pointerType !== "touch" && event.pointerType !== "pen") return;
+    if (event.pointerType !== "touch" && event.pointerType !== "pen" && !(canvas && event.pointerType === "mouse" && event.button === 0)) return;
     if (!points.size) {
       dragged = false;
       origin = { x: event.clientX, y: event.clientY };
@@ -8409,11 +8505,11 @@ function enableAssetGestures(viewport, svg, tools, fit = false, allowPageScroll 
     points.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (points.size > 1) {
       dragged = true;
-      for (const id of points.keys()) (_a = viewport.setPointerCapture) == null ? void 0 : _a.call(viewport, id);
+      for (const id of points.keys()) (_a2 = viewport.setPointerCapture) == null ? void 0 : _a2.call(viewport, id);
     }
   });
   viewport.addEventListener("pointermove", (event) => {
-    var _a;
+    var _a2;
     if (nativeTouch && event.pointerType === "touch") return;
     const previous = points.get(event.pointerId);
     if (!previous) return;
@@ -8433,8 +8529,9 @@ function enableAssetGestures(viewport, svg, tools, fit = false, allowPageScroll 
     } else {
       const dx = next.x - (dragged ? previous.x : origin.x), dy = next.y - (dragged ? previous.y : origin.y);
       if (dragged || Math.hypot(next.x - origin.x, next.y - origin.y) > 4) {
+        manuallyZoomed = true;
         dragged = true;
-        (_a = viewport.setPointerCapture) == null ? void 0 : _a.call(viewport, event.pointerId);
+        (_a2 = viewport.setPointerCapture) == null ? void 0 : _a2.call(viewport, event.pointerId);
         viewport.scrollLeft -= dx;
         viewport.scrollTop -= dy;
         event.preventDefault();
@@ -8455,6 +8552,9 @@ function enableAssetGestures(viewport, svg, tools, fit = false, allowPageScroll 
     }
   }, true);
 }
+
+// src/asset-ui.ts
+var import_obsidian8 = require("obsidian");
 
 // src/asset-charts.ts
 var NS2 = "http://www.w3.org/2000/svg";
@@ -8497,6 +8597,13 @@ function renderAssetOverviewSankey(parent, snapshot, excludeFixed, hide, onSelec
 function renderAssetSankey(parent, snapshot, excludeFixed, hide, onSelect, showControls = true, overview = false, expanded = false) {
   var _a;
   const amounts = (cents) => hide ? "\u2022\u2022\u2022\u2022" : formatCents(cents);
+  const namedAmount = (svg2, x, y, name, cents, size, anchor = "start") => {
+    if (overview) {
+      const showAmount = name === "\u51C0\u8D44\u4EA7" || name === "\u8D1F\u503A";
+      label(svg2, x, showAmount ? y - 9 : y, name, size, anchor);
+      if (showAmount) label(svg2, x, y + 16, amounts(cents), 17, anchor);
+    } else label(svg2, x, y, `${name} ${amounts(cents)}`, size, anchor);
+  };
   const visible = snapshot.accounts.filter((a) => a.kind !== "liability" && !(excludeFixed && a.kind === "fixed") && a.cents > 0);
   const kinds = ["cash", "fixed", "investment", "receivable"];
   const groups = kinds.map((kind) => ({ kind, accounts: visible.filter((a) => a.kind === kind) })).filter((g) => g.accounts.length);
@@ -8526,16 +8633,20 @@ function renderAssetSankey(parent, snapshot, excludeFixed, hide, onSelect, showC
   const tools = showControls ? parent.createDiv({ cls: "ledger-assets-zoom-tools" }) : null;
   const scroll = parent.createDiv({ cls: `ledger-assets-sankey-scroll${overview ? " ledger-assets-overview-scroll" : ""}` });
   scroll.setAttribute("aria-label", "\u8D44\u4EA7\u7EC4\u6210\u6851\u57FA\u56FE\uFF0C\u76F4\u63A5\u5C55\u793A\u8D26\u6237\u4F59\u989D\u4E0E\u6301\u4ED3");
+  if (expanded) scroll.setAttribute("tabindex", "0");
   const svg = document.createElementNS(NS2, "svg");
+  const canvas = expanded ? scroll.createDiv({ cls: "ledger-assets-sankey-canvas" }) : null;
+  const labels = el2("g", { class: "ledger-assets-sankey-labels", "pointer-events": "none" }, svg);
   svg.setAttribute("viewBox", `0 0 1240 ${height}`);
   svg.setAttribute("class", `ledger-assets-sankey${overview ? " ledger-assets-overview-sankey" : ""}${expanded ? " ledger-assets-expanded-sankey" : ""}`);
   if (overview) {
     svg.style.minWidth = "0";
     svg.style.width = `${1240 / 800 * 100}%`;
   }
+  if (expanded) svg.style.width = "1240px";
   svg.setAttribute("role", "group");
   svg.setAttribute("aria-label", "\u8D44\u4EA7\u603B\u91CF\u3001\u8D44\u4EA7\u7C7B\u522B\u3001\u8D26\u6237\u7EC4\u6210");
-  scroll.appendChild(svg);
+  (canvas != null ? canvas : scroll).appendChild(svg);
   const totals = assetTotals(snapshot, excludeFixed), sources = totals.netCents >= 0 && !snapshot.accounts.some((a) => a.kind !== "cash" && a.kind !== "liability" && !(excludeFixed && a.kind === "fixed") && a.cents < 0);
   const sourceX = overview ? 125 : expanded ? 10 : 80, sourceLabelX = overview ? 25 : expanded ? 5 : 75;
   const rootX = overview ? 365 : 310, groupX = overview ? 620 : 675;
@@ -8554,23 +8665,23 @@ function renderAssetSankey(parent, snapshot, excludeFixed, hide, onSelect, showC
     const debt = totals.liabilitiesCents, net = totals.netCents, netHeight = net * scale, debtHeight = debt * scale;
     el2("rect", { x: sourceX, y: 100, width: 12, height: netHeight, rx: 3, fill: "#76A69A", "fill-opacity": 0.72 }, svg);
     band(svg, sourceX + 12, 100, rootX - (overview ? 20 : 0), 100, netHeight, "#76A69A", overview ? "#76A69A" : "#7C9CBF");
-    label(svg, sourceLabelX, overview ? 100 + netHeight / 2 : 82, overview ? "\u51C0\u8D44\u4EA7" : `\u51C0\u8D44\u4EA7 ${amounts(net)}`, overview ? 25 : 16);
+    namedAmount(labels, sourceLabelX, overview ? 100 + netHeight / 2 : 82, "\u51C0\u8D44\u4EA7", net, overview ? 25 : 16);
     if (debt > 0) {
       const y = 100 + netHeight + 28;
       el2("rect", { x: sourceX, y, width: 12, height: debtHeight, rx: 3, fill: COLORS.liability }, svg);
       band(svg, sourceX + 12, y, rootX - (overview ? 20 : 0), 100 + netHeight, debtHeight, COLORS.liability);
-      label(svg, sourceLabelX, overview ? y + debtHeight / 2 : y + debtHeight + 22, overview ? "\u8D1F\u503A" : `\u8D1F\u503A ${amounts(debt)}`, overview ? 25 : 15);
+      namedAmount(labels, sourceLabelX, overview ? y + debtHeight / 2 : y + debtHeight + 22, "\u8D1F\u503A", debt, overview ? 25 : 15);
     }
   } else {
-    label(svg, sourceLabelX, overview ? 100 + total3 * scale / 2 : 82, overview ? "\u51C0\u8D44\u4EA7" : `\u51C0\u8D44\u4EA7 ${amounts(totals.netCents)}`, overview ? 25 : 16);
+    namedAmount(labels, sourceLabelX, overview ? 100 + total3 * scale / 2 : 82, "\u51C0\u8D44\u4EA7", totals.netCents, overview ? 25 : 16);
   }
   el2("rect", { x: rootX, y: 100, width: overview ? 20 : 13, height: total3 * scale, rx: 3, fill: "#7C9CBF", "fill-opacity": 0.72 }, svg);
-  label(svg, rootX, overview ? 68 : 62, overview ? "\u603B\u8D44\u4EA7" : `\u603B\u8D44\u4EA7 ${amounts(totals.assetsCents)}`, overview ? 27 : 17);
+  namedAmount(labels, rootX, overview ? 68 : 62, "\u603B\u8D44\u4EA7", totals.assetsCents, overview ? 27 : 17);
   for (const group2 of groupLayout) {
     const color = COLORS[group2.kind], groupHeight = group2.cents * scale, groupRows = rows.filter((r) => r.account.kind === group2.kind);
     band(svg, rootX + (overview ? 20 : 13), rootCursor, groupX, group2.y, groupHeight, overview ? COLORS.investment : color);
     el2("rect", { x: groupX, y: group2.y, width: 12, height: groupHeight, rx: 3, fill: color, "fill-opacity": 0.72 }, svg);
-    label(svg, overview ? groupX + 19 : groupX - 15, group2.y + groupHeight / 2, overview ? ASSET_NAMES[group2.kind] : `${ASSET_NAMES[group2.kind]} ${amounts(group2.cents)}`, overview ? 25 : 15, overview ? "start" : "end");
+    namedAmount(labels, overview ? groupX + 19 : groupX - 15, group2.y + groupHeight / 2, ASSET_NAMES[group2.kind], group2.cents, overview ? 25 : 15, overview ? "start" : "end");
     let source = group2.y;
     groupRows.forEach((row, index) => {
       const y = group2.rowYs[index], h = row.cents * scale;
@@ -8589,9 +8700,10 @@ function renderAssetSankey(parent, snapshot, excludeFixed, hide, onSelect, showC
     });
     rootCursor += groupHeight;
   }
+  svg.appendChild(labels);
   if (totals.missing) parent.createEl("small", { cls: "ledger-assets-hint", text: "\u90E8\u5206\u8D26\u6237\u91D1\u989D\u5F85\u8865\u5168" });
   if (totals.netCents < 0) parent.createEl("small", { cls: "ledger-assets-hint", text: hide ? "\u51C0\u8D44\u4EA7\u91D1\u989D\u5DF2\u9690\u85CF" : `\u51C0\u8D44\u4EA7 ${amounts(totals.netCents)}` });
-  enableAssetGestures(scroll, svg, tools, true, overview || !!((_a = parent.closest) == null ? void 0 : _a.call(parent, ".ledger-assets")), overview || expanded ? 1240 / 800 : 1);
+  enableAssetGestures(scroll, svg, tools, true, overview || !!((_a = parent.closest) == null ? void 0 : _a.call(parent, ".ledger-assets")), overview || expanded ? 1240 / 800 : 1, canvas);
 }
 
 // src/asset-ui.ts
@@ -8698,6 +8810,7 @@ var AssetPanel = class {
     button(actions, "\u6DFB\u52A0\u6301\u4ED3", () => this.holdingForm(), true);
     button(actions, "\u66F4\u591A", () => this.toolsModal());
     const hero = root.createDiv({ cls: "ledger-assets-hero ledger-reveal" });
+    deferChartAnimation(hero);
     const heroHeading = hero.createDiv({ cls: "ledger-assets-title-row ledger-assets-overview-heading" });
     const overview = hero.createDiv({ cls: "ledger-assets-overview" });
     const primary = overview.createDiv({ cls: "ledger-assets-primary-value" });
@@ -8744,6 +8857,7 @@ var AssetPanel = class {
       button(warning, "\u67E5\u770B", () => this.toolsModal());
     }
     const card2 = root.createDiv({ cls: "ledger-assets-card ledger-assets-chart-card ledger-reveal" });
+    deferChartAnimation(card2);
     const heading = card2.createDiv({ cls: "ledger-assets-title-row" });
     heading.createEl("h3", { text: "\u8D44\u4EA7\u7EC4\u6210" });
     const expand = button(heading, "", () => this.sankeyModal(snapshot));
@@ -9222,14 +9336,16 @@ var AssetPanel = class {
     modal.setTitle(`\u8D44\u4EA7\u7EC4\u6210 \xB7 ${snapshot.date}`);
     modal.modalEl.addClass("ledger-assets-sankey-modal", "ledger-assets-sankey-expanded");
     const draw = () => {
+      disposeAssetGestures(modal.contentEl);
       modal.contentEl.empty();
-      modal.contentEl.createEl("small", { cls: "ledger-assets-sankey-help", text: "\u5DE6\u53F3\u62D6\u52A8 \xB7 \u53CC\u6307\u7F29\u653E" });
+      modal.contentEl.createEl("small", { cls: "ledger-assets-sankey-help", text: "\u62D6\u52A8\u67E5\u770B \xB7 \u53CC\u6307\u7F29\u653E \xB7 Ctrl\uFF0F\u2318 + \u6EDA\u8F6E\u7F29\u653E" });
       renderAssetSankey(modal.contentEl, snapshot, this.plugin.settings.assets.excludeFixed, this.plugin.settings.assets.hideAmounts, (id, holdingId) => {
         modal.close();
         this.sankeySelect(id, holdingId);
       }, false, false, true);
     };
     modal.onOpen = draw;
+    modal.onClose = () => disposeAssetGestures(modal.contentEl);
     modal.open();
   }
   calendarModal() {
@@ -9248,6 +9364,7 @@ var AssetPanel = class {
       const calendar = modal.contentEl.createDiv({ cls: "ledger-assets-calendar" }), detail = modal.contentEl.createDiv();
       let selected = snapshots[0].date;
       const draw = () => {
+        disposeAssetGestures(detail);
         detail.empty();
         const snapshot = snapshots.find((s) => s.date === selected), totals = assetTotals(snapshot, state.excludeFixed);
         detail.createEl("h3", { text: `${snapshot.date} \xB7 ${state.hideAmounts ? "\u2022\u2022\u2022\u2022" : formatCents(totals.assetsCents)}${totals.missing ? " \xB7 \u91D1\u989D\u5F85\u8865\u5168" : ""}` });
@@ -9288,6 +9405,7 @@ var AssetPanel = class {
       drawMonth();
       draw();
     };
+    modal.onClose = () => disposeAssetGestures(modal.contentEl);
     modal.open();
   }
 };
@@ -9447,6 +9565,10 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
     this.filterResizeObserver = null;
     this.reportPanel = null;
     this.assetPanel = null;
+    this.recordCacheRevision = -1;
+    this.recordCache = [];
+    this.detailSearchTimer = null;
+    this.longPressTimers = /* @__PURE__ */ new Set();
     this.activeView = normalizeLedgerView(plugin.settings.defaultView);
     this.preset = plugin.settings.defaultDatePreset;
     const range = this.rangeForPreset(this.preset, /* @__PURE__ */ new Date(), 0);
@@ -9493,7 +9615,13 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
   async onClose() {
     var _a, _b;
     this.closed = true;
-    disposeCategoryCharts(this.contentEl);
+    if (this.detailSearchTimer !== null) window.clearTimeout(this.detailSearchTimer);
+    this.detailSearchTimer = null;
+    this.clearLongPressTimers();
+    this.recordCache = [];
+    this.recordCacheRevision = -1;
+    disposeAssetGestures(this.contentEl);
+    disposeChartAnimations(this.contentEl);
     (_a = this.reportPanel) == null ? void 0 : _a.dispose();
     this.reportPanel = null;
     this.assetPanel = null;
@@ -9526,18 +9654,23 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
     this.render();
   }
   render() {
-    var _a, _b, _c;
+    var _a, _b, _c, _d;
+    if (this.closed) return;
     const root = this.contentEl;
+    this.clearLongPressTimers();
+    (_a = this.filterResizeObserver) == null ? void 0 : _a.disconnect();
+    this.filterResizeObserver = null;
+    disposeAssetGestures(root);
     this.resetAutoAdvanceArm();
     this.pullHint = null;
-    disposeCategoryCharts(root);
+    disposeChartAnimations(root);
     root.empty();
     if (!this.plugin.repository.loaded) {
       root.createDiv({ cls: "ledger-loading", text: "\u6B63\u5728\u8BFB\u53D6\u8BB0\u8D26\u6587\u4EF6\u2026" });
       return;
     }
     const files = [...this.plugin.repository.files.values()];
-    if (this.activeView !== "report") (_a = this.reportPanel) == null ? void 0 : _a.cancel();
+    if (this.activeView !== "report") (_b = this.reportPanel) == null ? void 0 : _b.cancel();
     this.renderHeader(root);
     if (this.activeView === "overview" && files.length > 0 && !this.filter.categories.length) this.renderCoreCards(root);
     if (this.activeView !== "report" && this.filter.categories.length) this.cancelFinanceRequest();
@@ -9545,25 +9678,25 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
     this.renderTabs(root);
     if (this.activeView !== "report" && this.activeView !== "assets") this.renderDrillBack(root);
     const content = root.createDiv({ cls: "ledger-content" });
-    const orphanCount = unmatchedStarIds(this.plugin.settings.starredRecordIds, flattenRecords(files)).length;
+    const orphanCount = unmatchedStarIds(this.plugin.settings.starredRecordIds, this.allRecords()).length;
     if (orphanCount && this.activeView !== "assets") {
       const warning = content.createDiv({ cls: "ledger-star-warning" });
       warning.createSpan({ text: `${orphanCount} \u4E2A\u661F\u6807\u65E0\u6CD5\u5339\u914D\uFF0C\u53EF\u80FD\u5F71\u54CD\u661F\u6807\u7B5B\u9009\u4E0E\u9884\u7B97\u53E3\u5F84\u3002` });
       createButton(warning, "\u6838\u5BF9\u661F\u6807").addEventListener("click", () => new StarRepairModal(this.plugin).open());
     }
     if (this.activeView === "assets") {
-      (_b = this.assetPanel) != null ? _b : this.assetPanel = new AssetPanel(this.plugin);
+      (_c = this.assetPanel) != null ? _c : this.assetPanel = new AssetPanel(this.plugin);
       this.assetPanel.render(content);
     } else if (files.length === 0) {
       renderEmpty(content, `\u201C${this.plugin.settings.ledgerFolder}\u201D\u4E2D\u6CA1\u6709\u627E\u5230 Markdown \u8BB0\u8D26\u6587\u4EF6`);
     } else {
       if (this.activeView === "overview") {
         this.renderOverview(content);
-        this.renderCompare(this.overviewSection(content, "\u671F\u95F4\u5BF9\u6BD4"));
+        this.renderCompare(this.overviewSection(content, "\u671F\u95F4\u5BF9\u6BD4", "git-compare-arrows"));
       }
       if (this.activeView === "calendar") this.renderCalendar(content);
       if (this.activeView === "report") {
-        (_c = this.reportPanel) != null ? _c : this.reportPanel = new ReportPanel(this.plugin, () => this.render(), (record) => this.openRecord(record));
+        (_d = this.reportPanel) != null ? _d : this.reportPanel = new ReportPanel(this.plugin, () => this.render(), (record) => this.openRecord(record));
         this.reportPanel.render(content);
       }
     }
@@ -9578,7 +9711,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
     var _a, _b;
     const header = root.createDiv({ cls: "ledger-header" });
     const title = header.createDiv();
-    title.createEl("h2", { text: this.activeView === "assets" ? "\u8D44\u4EA7" : "\u8BB0\u8D26\u7EDF\u8BA1" });
+    title.createEl("h2", { text: this.activeView === "overview" ? "\u8BB0\u8D26\u7EDF\u8BA1" : VIEW_NAMES2.find(([id]) => id === this.activeView)[1] });
     if (this.activeView === "assets") return;
     title.createDiv({ cls: "ledger-subtitle", text: "\u672C\u5730\u53EA\u8BFB \xB7 \u6B63\u6587\u9010\u7B14\u8BB0\u5F55\u4E3A\u7EDF\u8BA1\u6765\u6E90" });
     const selectedScope = this.activeView === "report" ? (_b = (_a = this.plugin.settings.reportPreferences) == null ? void 0 : _a.scope) != null ? _b : "consumption" : this.filter.scope;
@@ -9673,8 +9806,12 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
         refresh.removeClass("is-refreshing");
       }
     });
+    let filterHeight = -1;
     const syncFilterHeight = () => {
-      filterContent.style.setProperty("--ledger-filter-height", `${toolbar.scrollHeight}px`);
+      const height = toolbar.scrollHeight;
+      if (height === filterHeight) return;
+      filterHeight = height;
+      filterContent.style.setProperty("--ledger-filter-height", `${height}px`);
     };
     syncFilterHeight();
     this.filterResizeObserver = new ResizeObserver(() => {
@@ -9683,8 +9820,8 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
     this.filterResizeObserver.observe(toolbar);
     summary.addEventListener("click", () => {
       this.filtersExpanded = !this.filtersExpanded;
-      panel.classList.toggle("is-open", this.filtersExpanded);
       if (this.filtersExpanded) syncFilterHeight();
+      panel.classList.toggle("is-open", this.filtersExpanded);
       summary.setAttribute("aria-expanded", String(this.filtersExpanded));
       filterContent.toggleAttribute("inert", !this.filtersExpanded);
     });
@@ -9732,20 +9869,20 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
       return;
     }
     const files = [...this.plugin.repository.files.values()];
-    const records = filteredRecords(files, this.filter);
+    const records = this.matchingRecords(this.filter);
     const stats2 = summarize(files, records, this.filter.range);
-    const metrics = parent.createDiv({ cls: "ledger-metrics" });
+    const metrics = this.overviewSection(parent, "\u671F\u95F4\u6982\u89C8", "layout-dashboard").createDiv({ cls: "ledger-metrics" });
     this.metric(metrics, "\u6240\u9009\u671F\u95F4\u603B\u989D", formatCents(stats2.cents), `${stats2.count} \u7B14`, () => this.goDetails());
     this.metric(metrics, "\u7B14\u6570", String(stats2.count), "\u70B9\u51FB\u67E5\u770B\u5168\u90E8\u660E\u7EC6", () => this.goDetails());
     this.metric(metrics, "\u65E5\u5747", formatCents(stats2.averagePerRecordedDayCents), `\u5206\u6BCD\uFF1A${stats2.recordedDays} \u4E2A\u6709\u65E5\u8BB0\u8D26\u6587\u4EF6\u7684\u65E5\u671F`, () => this.goDetails());
     this.metric(metrics, "\u6700\u5927\u5355\u7B14", stats2.maxRecord ? formatCents(stats2.maxRecord.cents) : "\u2014", stats2.maxRecord ? `${stats2.maxRecord.category} \xB7 ${stats2.maxRecord.date}` : "\u6682\u65E0\u8BB0\u5F55", () => this.goDetails());
     const now = /* @__PURE__ */ new Date();
     const currentCycle = salaryDayRange(now);
-    const cycleRecords = flattenRecords(files);
+    const cycleRecords = this.allRecords();
     const balance = balanceStatus(cycleRecords, now, this.plugin.settings.salaryCents, this.plugin.settings.balanceCalibration);
     const waterfall = salaryWaterfall(cycleRecords, currentCycle, this.plugin.settings.salaryCents, balance);
     renderSalaryWaterfall(
-      parent,
+      this.overviewSection(parent, "\u5DE5\u8D44\u5468\u671F\u6536\u652F", "wallet"),
       waterfall,
       currentCycle,
       (category) => this.drillCategoryInRange(category, currentCycle),
@@ -9754,22 +9891,25 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
     if (records.length === 0) {
       renderEmpty(parent, "\u5F53\u524D\u7B5B\u9009\u6761\u4EF6\u4E0B\u6CA1\u6709\u8BB0\u5F55\u3002\u7F3A\u5C11\u6587\u4EF6\u7684\u65E5\u671F\u4E0D\u4F1A\u6309\u96F6\u6D88\u8D39\u5904\u7406\u3002");
     }
-    this.renderCategory(this.overviewSection(parent, "\u5206\u7C7B\u7EDF\u8BA1"));
-    this.renderTrend(this.overviewSection(parent, "\u652F\u51FA\u8D8B\u52BF"));
+    this.renderCategory(this.overviewSection(parent, "\u5206\u7C7B\u7EDF\u8BA1", "chart-pie"));
+    this.renderTrend(this.overviewSection(parent, "\u652F\u51FA\u8D8B\u52BF", "chart-line"));
     const starred = this.starredRecords();
-    if (starred.length) renderStarredExpenses(parent, starred, (record) => void this.openRecord(record));
+    if (starred.length) renderStarredExpenses(this.overviewSection(parent, "\u661F\u6807\u652F\u51FA", "star"), starred, (record) => void this.openRecord(record));
   }
-  overviewSection(parent, title) {
+  overviewSection(parent, title, icon) {
     const section = parent.createEl("section", { cls: "ledger-overview-section", attr: { "aria-label": title } });
-    section.createEl("h3", { cls: "ledger-section-title", text: title });
-    return section;
+    const heading = section.createDiv({ cls: "ledger-overview-heading" });
+    const symbol = heading.createSpan({ cls: "ledger-overview-heading-icon", attr: { "aria-hidden": "true" } });
+    (0, import_obsidian9.setIcon)(symbol, icon);
+    heading.createEl("h3", { cls: "ledger-section-title", text: title });
+    return section.createDiv({ cls: "ledger-overview-body" });
   }
   renderSingleCategory(parent) {
     const category = this.filter.categories[0];
     const files = [...this.plugin.repository.files.values()];
     const analysis = buildCategoryAnalysis(files, this.filter, categoryPreviousRange(this.filter.range, this.preset), this.plugin.settings.reportObjectRules);
     renderCategoryAnalysis(
-      parent,
+      this.overviewSection(parent, `${category} \xB7 \u5206\u7C7B\u5206\u6790`, "chart-pie"),
       category,
       analysis,
       this.rangeTrendUnit(),
@@ -9778,7 +9918,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
       () => this.goDetails()
     );
     const starred = this.starredRecords();
-    if (starred.length) renderStarredExpenses(parent, starred, (record) => void this.openRecord(record));
+    if (starred.length) renderStarredExpenses(this.overviewSection(parent, "\u661F\u6807\u652F\u51FA", "star"), starred, (record) => void this.openRecord(record));
   }
   currentFinanceSnapshot(now = /* @__PURE__ */ new Date()) {
     var _a, _b;
@@ -9823,7 +9963,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
     const today = isoFromDate(now);
     const budgetCategory = (_f = this.plugin.settings.budgetCategory) != null ? _f : "";
     const includeStarred = (_g = this.plugin.settings.includeStarredInBudget) != null ? _g : true;
-    const todayRecords = budgetScopedRecords(filteredRecords(files, {
+    const todayRecords = budgetScopedRecords(this.matchingRecords({
       range: { start: today, end: today },
       scope: "all",
       excludedCategories: [],
@@ -9850,7 +9990,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
       (expanded) => {
         this.advisorDetailsExpanded = expanded;
       },
-      balanceStatus(flattenRecords(files), now, this.plugin.settings.salaryCents, this.plugin.settings.balanceCalibration),
+      balanceStatus(this.allRecords(), now, this.plugin.settings.salaryCents, this.plugin.settings.balanceCalibration),
       this.advisorReferencesExpanded,
       (expanded) => {
         this.advisorReferencesExpanded = expanded;
@@ -9875,6 +10015,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
     if (!host2 || !this.containerEl.isConnected) return;
     const scrollTop = this.contentEl.scrollTop;
     const focused = host2.contains(document.activeElement);
+    disposeChartAnimations(host2);
     host2.empty();
     this.renderFinanceSection(host2, false);
     this.contentEl.scrollTop = scrollTop;
@@ -9924,15 +10065,15 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
     const controls = parent.createDiv({ cls: "ledger-section-controls" });
     addSelect(controls, "\u663E\u793A", this.categoryChart, [["bar", "\u6A2A\u5411\u6761\u5F62\u56FE"], ["donut", "\u73AF\u5F62\u56FE"], ["table", "\u6C47\u603B\u8868"]], (value) => {
       this.categoryChart = value;
-      this.render();
+      this.refreshOverviewSection(parent, () => this.renderCategory(parent));
     });
     if (this.categoryChart !== "donut") {
       addSelect(controls, "\u6392\u5E8F", this.categorySort, [["amount", "\u6309\u91D1\u989D"], ["count", "\u6309\u7B14\u6570"]], (value) => {
         this.categorySort = value;
-        this.render();
+        this.refreshOverviewSection(parent, () => this.renderCategory(parent));
       });
     }
-    const records = filteredRecords(this.plugin.repository.files.values(), this.filter);
+    const records = this.matchingRecords(this.filter);
     const summaries = categorySummaries(records, this.categorySort);
     if (this.categoryChart === "bar") renderHorizontalBars(parent, summaries, (category) => this.drillCategory(category));
     if (this.categoryChart === "donut") renderDonut(parent, summaries, (category) => this.drillCategory(category));
@@ -9956,16 +10097,30 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
   }
   renderTrend(parent) {
     const controls = parent.createDiv({ cls: "ledger-section-controls" });
-    addSelect(controls, "\u56FE\u5F62", this.trendChart, [["line", "\u6298\u7EBF\u56FE"], ["bar", "\u67F1\u72B6\u56FE"]], (value) => {
+    addSelect(controls, "\u56FE\u5F62", this.trendChart, [["line", "\u6298\u7EBF\u56FE"], ["bar", "\u67F1\u72B6\u56FE"], ["cumulative", "\u7D2F\u8BA1\u652F\u51FA\u6298\u7EBF\u56FE"]], (value) => {
       this.trendChart = value;
-      this.render();
+      this.refreshOverviewSection(parent, () => this.renderTrend(parent));
     });
     addSelect(controls, "\u6C47\u603B", this.trendUnit, [["auto", "\u81EA\u52A8"], ["day", "\u6309\u65E5"], ["week", "\u6309\u5468"], ["month", "\u6309\u6708"]], (value) => {
       this.trendUnit = value;
-      this.render();
+      this.refreshOverviewSection(parent, () => this.renderTrend(parent));
     });
-    const records = filteredRecords(this.plugin.repository.files.values(), this.filter);
-    renderTrendChart(parent, trendPoints(records, this.trendUnit === "auto" ? this.rangeTrendUnit() : this.trendUnit), this.trendChart, (point) => this.drillRange({ start: point.start, end: point.end }));
+    const records = this.matchingRecords(this.filter);
+    const unit = this.trendUnit === "auto" ? this.rangeTrendUnit() : this.trendUnit;
+    const showRecords = (point) => this.drillRange({ start: point.start, end: point.end });
+    if (this.trendChart === "cumulative") {
+      const cumulativeRange = { ...this.filter.range, end: this.filter.range.end < todayIso() ? this.filter.range.end : todayIso() };
+      renderTrendChart(parent, cumulativeTrendPoints(records, cumulativeRange, unit), "cumulative", (point) => {
+        showCategoryRecords(
+          this.app,
+          `\u7D2F\u8BA1\u652F\u51FA \xB7 ${point.start} \u81F3 ${point.end}`,
+          records.filter((record) => record.date >= point.start && record.date <= point.end),
+          (record) => void this.openRecord(record)
+        );
+      });
+    } else {
+      renderTrendChart(parent, trendPoints(records, unit), this.trendChart, showRecords);
+    }
     parent.createDiv({ cls: "ledger-note", text: this.filter.categories.length ? `\u5F53\u524D\u53EA\u663E\u793A\u5206\u7C7B\uFF1A${this.filter.categories[0]}` : "\u5F53\u524D\u663E\u793A\u5168\u90E8\u5206\u7C7B\uFF1B\u53EF\u5728\u9876\u90E8\u9009\u62E9\u6307\u5B9A\u5206\u7C7B\u3002" });
   }
   renderCalendar(parent) {
@@ -9990,7 +10145,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
     const allFiles = [...this.plugin.repository.files.values()];
     const fileDates = new Set(allFiles.map((file) => file.date).filter((date) => date !== null));
     const monthFilter = { ...this.filter, range };
-    const records = filteredRecords(allFiles, monthFilter);
+    const records = this.matchingRecords(monthFilter);
     const amounts = /* @__PURE__ */ new Map();
     for (const record of records) amounts.set(record.date, ((_a = amounts.get(record.date)) != null ? _a : 0) + record.cents);
     const max2 = Math.max(...amounts.values(), 1);
@@ -10036,11 +10191,13 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
     const searchLabel = controls.createEl("label", { cls: "ledger-field ledger-search" });
     searchLabel.createSpan({ text: "\u641C\u7D22" });
     const search = searchLabel.createEl("input", { type: "search", placeholder: "\u65E5\u671F\u3001\u5206\u7C7B\u6216\u5907\u6CE8", value: this.filter.keyword });
-    let timer = null;
     search.addEventListener("input", () => {
-      if (timer !== null) window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        this.filter.keyword = search.value;
+      if (this.detailSearchTimer !== null) window.clearTimeout(this.detailSearchTimer);
+      const value = search.value;
+      this.detailSearchTimer = window.setTimeout(() => {
+        this.detailSearchTimer = null;
+        if (this.closed) return;
+        this.filter.keyword = value;
         this.render();
       }, 180);
     });
@@ -10048,12 +10205,12 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
       this.detailSort = value;
       this.render();
     });
-    let records = filteredRecords(this.plugin.repository.files.values(), detailFilter);
+    let records = this.matchingRecords(detailFilter);
     records = this.sortDetails(records);
     parent.createDiv({ cls: "ledger-results-count", text: `\u5171 ${records.length} \u7B14` });
     if (records.length === 0) return renderEmpty(parent, detailFilter.keyword || detailFilter.categories.length ? "\u7B5B\u9009\u540E\u6CA1\u6709\u5339\u914D\u8BB0\u5F55" : "\u6240\u9009\u671F\u95F4\u6CA1\u6709\u53EF\u89E3\u6790\u8BB0\u5F55");
     if (detailFilter.categories.length === 1 && !detailFilter.keyword && daysInclusive2(detailFilter.range) <= 35) {
-      const reference = categoryBoxReference(flattenRecords(this.plugin.repository.files.values()), records, detailFilter.categories[0], detailFilter.range.start);
+      const reference = categoryBoxReference(this.allRecords(), records, detailFilter.categories[0], detailFilter.range.start);
       if (reference) renderCategoryBox(parent, reference, (record) => void this.openRecord(record));
       else parent.createDiv({ cls: "ledger-box-unavailable", text: "\u5355\u7B14\u5206\u5E03\uFF1A\u6B64\u524D\u4E24\u4E2A\u5DF2\u7ED3\u675F\u5DE5\u8D44\u5468\u671F\u5C11\u4E8E 8 \u7B14\u540C\u7C7B\u4EA4\u6613\uFF0C\u6682\u4E0D\u7ED8\u5236\u7BB1\u7EBF\u56FE\u3002" });
     }
@@ -10112,12 +10269,29 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
       source.addEventListener("click", () => void this.openRecord(record));
     }
   }
+  refreshOverviewSection(parent, renderSection) {
+    var _a, _b, _c;
+    const scrollTop = this.contentEl.scrollTop;
+    const active = parent.ownerDocument.activeElement;
+    const focusedLabel = active && parent.contains(active) ? (_b = (_a = active.closest(".ledger-field")) == null ? void 0 : _a.querySelector("span")) == null ? void 0 : _b.textContent : null;
+    disposeChartAnimations(parent);
+    parent.empty();
+    renderSection();
+    if (focusedLabel) {
+      const field = Array.from(parent.querySelectorAll(".ledger-field")).find((field2) => {
+        var _a2;
+        return ((_a2 = field2.querySelector("span")) == null ? void 0 : _a2.textContent) === focusedLabel;
+      });
+      (_c = field == null ? void 0 : field.querySelector("select, input")) == null ? void 0 : _c.focus({ preventScroll: true });
+    }
+    this.contentEl.scrollTop = scrollTop;
+  }
   renderCompare(parent) {
     var _a, _b, _c, _d;
     const controls = parent.createDiv({ cls: "ledger-section-controls" });
     addSelect(controls, "\u6BD4\u8F83\u65B9\u5F0F", this.compareMode, [["auto", "\u6309\u6240\u9009\u671F\u95F4\u81EA\u52A8\u6BD4\u8F83"], ["custom", "\u4E24\u4E2A\u81EA\u5B9A\u4E49\u671F\u95F4"]], (value) => {
       this.compareMode = value;
-      this.render();
+      this.refreshOverviewSection(parent, () => this.renderCompare(parent));
     });
     let current;
     let previous;
@@ -10127,25 +10301,25 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
       addDateInput(dates2, "\u672C\u671F\u5F00\u59CB", this.customCurrent.start, (value) => {
         if (isValidIsoDate(value)) {
           this.customCurrent.start = value;
-          this.render();
+          this.refreshOverviewSection(parent, () => this.renderCompare(parent));
         }
       });
       addDateInput(dates2, "\u672C\u671F\u7ED3\u675F", this.customCurrent.end, (value) => {
         if (isValidIsoDate(value)) {
           this.customCurrent.end = value;
-          this.render();
+          this.refreshOverviewSection(parent, () => this.renderCompare(parent));
         }
       });
       addDateInput(dates2, "\u57FA\u671F\u5F00\u59CB", this.customPrevious.start, (value) => {
         if (isValidIsoDate(value)) {
           this.customPrevious.start = value;
-          this.render();
+          this.refreshOverviewSection(parent, () => this.renderCompare(parent));
         }
       });
       addDateInput(dates2, "\u57FA\u671F\u7ED3\u675F", this.customPrevious.end, (value) => {
         if (isValidIsoDate(value)) {
           this.customPrevious.end = value;
-          this.render();
+          this.refreshOverviewSection(parent, () => this.renderCompare(parent));
         }
       });
       current = this.customCurrent;
@@ -10156,9 +10330,8 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
     }
     if (current.start > current.end || previous.start > previous.end) return renderEmpty(parent, "\u6BD4\u8F83\u65E5\u671F\u8303\u56F4\u65E0\u6548\uFF1A\u5F00\u59CB\u65E5\u671F\u4E0D\u80FD\u665A\u4E8E\u7ED3\u675F\u65E5\u671F");
     parent.createDiv({ cls: "ledger-note", text: `${description}\uFF1A\u672C\u671F ${current.start} \u81F3 ${current.end}\uFF1B\u57FA\u671F ${previous.start} \u81F3 ${previous.end}` });
-    const files = [...this.plugin.repository.files.values()];
-    const currentRecords = filteredRecords(files, { ...this.filter, range: current, keyword: "" });
-    const previousRecords = filteredRecords(files, { ...this.filter, range: previous, keyword: "" });
+    const currentRecords = this.matchingRecords({ ...this.filter, range: current, keyword: "" });
+    const previousRecords = this.matchingRecords({ ...this.filter, range: previous, keyword: "" });
     const total3 = compareValue(currentRecords.reduce((sum3, record) => sum3 + record.cents, 0), previousRecords.reduce((sum3, record) => sum3 + record.cents, 0));
     const cards = parent.createDiv({ cls: "ledger-compare-summary" });
     this.metric(cards, "\u672C\u671F", formatCents(total3.currentCents), `${currentRecords.length} \u7B14`);
@@ -10413,6 +10586,17 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
       if (next) this.pullHint.setText(`\u7EE7\u7EED\u4E0A\u62C9\uFF0C\u67E5\u770B${next[1]}`);
     }
   }
+  allRecords() {
+    const revision = this.plugin.repository.contentRevision;
+    if (revision === void 0 || revision !== this.recordCacheRevision) {
+      this.recordCache = flattenRecords(this.plugin.repository.files.values());
+      this.recordCacheRevision = revision != null ? revision : -1;
+    }
+    return this.recordCache;
+  }
+  matchingRecords(filter) {
+    return this.allRecords().filter((record) => recordMatches(record, filter));
+  }
   sortDetails(records) {
     const copy = [...records];
     if (this.detailSort === "amount-desc") return copy.sort((a, b) => b.cents - a.cents || b.date.localeCompare(a.date));
@@ -10421,7 +10605,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
   }
   starredRecords() {
     const starred = new Set(this.plugin.settings.starredRecordIds);
-    return filteredRecords(this.plugin.repository.files.values(), this.filter).filter((record) => starred.has(record.id)).sort((a, b) => b.cents - a.cents || b.date.localeCompare(a.date) || b.line - a.line);
+    return this.matchingRecords(this.filter).filter((record) => starred.has(record.id)).sort((a, b) => b.cents - a.cents || b.date.localeCompare(a.date) || b.line - a.line);
   }
   isStarred(record) {
     return this.plugin.settings.starredRecordIds.includes(record.id);
@@ -10450,7 +10634,10 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
     let longPressTimer = null;
     let longPressTriggered = false;
     const clearLongPress = () => {
-      if (longPressTimer !== null) window.clearTimeout(longPressTimer);
+      if (longPressTimer !== null) {
+        window.clearTimeout(longPressTimer);
+        this.longPressTimers.delete(longPressTimer);
+      }
       longPressTimer = null;
     };
     element.addEventListener("contextmenu", (event) => {
@@ -10466,14 +10653,21 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
       clearLongPress();
       longPressTriggered = false;
       longPressTimer = window.setTimeout(() => {
+        if (longPressTimer !== null) this.longPressTimers.delete(longPressTimer);
         longPressTimer = null;
+        if (this.closed || !element.isConnected) return;
         longPressTriggered = true;
         this.showRecordMenu(record, { x: event.clientX, y: event.clientY });
       }, 560);
+      this.longPressTimers.add(longPressTimer);
     });
     element.addEventListener("pointerup", clearLongPress);
     element.addEventListener("pointercancel", clearLongPress);
     element.addEventListener("pointerleave", clearLongPress);
+  }
+  clearLongPressTimers() {
+    for (const timer of this.longPressTimers) window.clearTimeout(timer);
+    this.longPressTimers.clear();
   }
   showRecordMenu(record, event) {
     const starred = this.isStarred(record);
@@ -10760,8 +10954,9 @@ var LedgerStatisticsPlugin = class extends import_obsidian10.Plugin {
     (_a = this.assetQuotes) == null ? void 0 : _a.stop();
     (_b = this.budgetMonitor) == null ? void 0 : _b.stop();
     for (const leaf of this.app.workspace.getLeavesOfType(LEDGER_VIEW_TYPE)) {
-      if (leaf.view instanceof LedgerStatisticsView) leaf.view.cancelFinanceRequest();
+      if (leaf.view instanceof LedgerStatisticsView) void leaf.view.onClose();
     }
+    disposeAssetGestures();
     this.repository.dispose();
   }
   async saveSettings(rescan, refresh = true) {

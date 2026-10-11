@@ -1,10 +1,10 @@
 import { formatCents, LedgerRecord } from "./core";
 import { categoryBoxStats } from "./category-analysis";
+import { deferChartAnimation } from "./chart-animation";
 
 // Structure sources: lieflat-charts/templates/basics-gallery.html,
 // F1 (rung bars) and F15 (tick box). Keep the plugin's existing Wire tokens.
 const NS = "http://www.w3.org/2000/svg";
-const observers = new WeakMap<Element, IntersectionObserver>();
 function el(parent: SVGElement, tag: string, attrs: Record<string, string | number>) {
   const node = document.createElementNS(NS, tag);
   Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, String(value)));
@@ -22,16 +22,10 @@ function plot(parent: HTMLElement, label: string, width = 400, height = 320): SV
   const svg = document.createElementNS(NS, "svg");
   svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
   svg.setAttribute("role", "img"); svg.setAttribute("aria-label", label);
-  svg.classList.add("ledger-svg", "ledger-category-plot", "is-pending");
+  svg.classList.add("ledger-svg", "ledger-category-plot");
   parent.append(svg);
-  const observer = new IntersectionObserver(entries => {
-    if (entries.some(entry => entry.isIntersecting)) { svg.classList.remove("is-pending"); observer.disconnect(); observers.delete(svg); }
-  });
-  observers.set(svg, observer); observer.observe(svg);
+  deferChartAnimation(svg);
   return svg;
-}
-export function disposeCategoryCharts(root: HTMLElement): void {
-  root.querySelectorAll(".ledger-category-plot").forEach(svg => { observers.get(svg)?.disconnect(); observers.delete(svg); });
 }
 const money = (cents: number) => formatCents(Math.round(cents));
 const INK = "var(--mono-ink)", PAPER = "var(--mono-paper)", MUTED = "var(--mono-muted)", GRID = "var(--mono-grid)", HERO = "var(--ledger-accent)";

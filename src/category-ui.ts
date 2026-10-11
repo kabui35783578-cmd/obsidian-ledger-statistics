@@ -4,12 +4,14 @@ import type { CategoryAnalysis, CategoryGroup } from "./category-analysis";
 import { createButton, renderDonut, renderDumbbell, renderHorizontalBars, renderTrendChart } from "./ui";
 import { renderSelectedBox, renderWeekdayRungs } from "./category-charts";
 import { styleLedgerModal } from "./ui-surface";
+import { deferChartAnimation } from "./chart-animation";
 
 const money = (value: number | null) => value === null ? "—" : formatCents(Math.round(value));
 const signedMoney = (value: number) => `${value > 0 ? "+" : ""}${money(value)}`;
 
 function card(parent: HTMLElement, title: string, subtitle: string, cls = ""): HTMLElement {
   const shell = parent.createDiv({ cls: `ledger-mono-card ledger-category-card ${cls}` });
+  deferChartAnimation(shell);
   const badges: Record<string, string> = { "同期变化": "CATEGORY · PERIOD COMPARISON", "单笔金额分布": "LUPI BASICS · F15 TICK BOX", "重复项目": "REPEATED ITEMS · LOCAL RECORDS", "星期分布": "LUPI BASICS · F1 RUNG BARS" };
   shell.createDiv({ cls: "ledger-mono-badge", text: badges[title] ?? "CATEGORY DETAIL" });
   shell.createEl("h3", { text: title });

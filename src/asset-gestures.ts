@@ -1,9 +1,18 @@
 interface Point { x: number; y: number; }
+const resizeCleanups = new Map<HTMLElement, () => void>();
+
+/** Release chart-local resize work before its owner replaces or closes the DOM. */
+export function disposeAssetGestures(root?: Element): void {
+  for (const [viewport, cleanup] of resizeCleanups) {
+    if (!root || root === viewport || root.contains(viewport)) cleanup();
+  }
+}
 export function clampAssetZoom(value: number): number { return Math.max(.1, Math.min(4, value)); }
 export function zoomScrollOffset(scroll: number, anchor: number, previous: number, next: number): number { return (scroll + anchor) * next / previous - anchor; }
 
 /** Chart-local touch gestures: no window listeners, page zoom, or persistent state. */
-export function enableAssetGestures(viewport: HTMLElement, svg: SVGSVGElement, tools: HTMLElement | null, fit = false, allowPageScroll = false, fitWidthRatio = 1): void {
+export function enableAssetGestures(viewport: HTMLElement, svg: SVGSVGElement, tools: HTMLElement | null, fit = false, allowPageScroll = false, fitWidthRatio = 1, canvas: HTMLElement | null = null): void {
+  resizeCleanups.get(viewport)?.();
   let scale = 1, base = 0, baseHeight = 0, fitHeightLimit = 0, homeScale = 1, manuallyZoomed = false, dragged = false, suppressUntil = 0, origin: Point = { x: 0, y: 0 };
   const points = new Map<number, Point>();
   const minus = tools?.createEl("button", { cls: "ledger-button", text: "−", attr: { "aria-label": "缩小桑基图" } });
@@ -13,12 +22,24 @@ export function enableAssetGestures(viewport: HTMLElement, svg: SVGSVGElement, t
   const measure = (): void => {
     if (base) return;
     const rect = svg.getBoundingClientRect?.();
-    base = rect?.width || Math.max(viewport.clientWidth || 0, 1080);
-    baseHeight = rect?.height || 0;
+    // A modal's opening animation can scale getBoundingClientRect(). Use the
+    // explicit canvas dimensions so this temporary transform never becomes
+    // the chart's permanent zoom baseline.
+    base = (canvas ? parseFloat(svg.style.width) : 0) || rect?.width || Math.max(viewport.clientWidth || 0, 1080);
+    baseHeight = canvas && svg.viewBox?.baseVal.width ? base * svg.viewBox.baseVal.height / svg.viewBox.baseVal.width : rect?.height || 0;
   };
   const zoomAt = (value: number, anchor: Point, automatic = false): void => {
     if (!automatic) manuallyZoomed = true;
-    measure(); const next = automatic ? Math.max(.01, Math.min(4, value)) : fit ? Math.max(Math.min(.1, homeScale), Math.min(4, value)) : clampAssetZoom(value), x = zoomScrollOffset(viewport.scrollLeft, anchor.x, scale, next), y = zoomScrollOffset(viewport.scrollTop, anchor.y, scale, next);
+    measure(); const next = automatic ? Math.max(.01, Math.min(4, value)) : fit ? Math.max(Math.min(.1, homeScale), Math.min(4, value)) : clampAssetZoom(value);
+    const oldPadX = canvas ? parseFloat(canvas.style.paddingLeft) || 0 : 0, oldPadY = canvas ? parseFloat(canvas.style.paddingTop) || 0 : 0;
+    const padX = canvas ? viewport.clientWidth / 2 : 0, padY = canvas ? viewport.clientHeight / 2 : 0;
+    const x = zoomScrollOffset(viewport.scrollLeft - oldPadX, anchor.x, scale, next) + padX;
+    const y = zoomScrollOffset(viewport.scrollTop - oldPadY, anchor.y, scale, next) + padY;
+    if (canvas) {
+      canvas.style.width = `${base * next}px`;
+      canvas.style.paddingLeft = canvas.style.paddingRight = `${padX}px`;
+      canvas.style.paddingTop = canvas.style.paddingBottom = `${padY}px`;
+    }
     svg.style.minWidth = "0"; svg.style.width = `${base * next}px`;
     // A zoomed diagram owns its gestures. pan-y lets browsers cancel a diagonal
     // drag before our pointer handler can pan horizontally (especially on iOS).
@@ -33,10 +54,15 @@ export function enableAssetGestures(viewport: HTMLElement, svg: SVGSVGElement, t
     // shrinking height feeds rounding back into fit and repeatedly shrinks it.
     const cap = typeof getComputedStyle === "function" ? getComputedStyle(viewport).maxHeight : "";
     const pixels = cap.match(/[\d.]+px/g)?.map(value => parseFloat(value));
-    if (pixels?.length && !cap.includes("vh")) fitHeightLimit = Math.min(...pixels);
+    if (canvas) fitHeightLimit = viewport.clientHeight;
+    else if (pixels?.length && !cap.includes("vh")) fitHeightLimit = Math.min(...pixels);
     else if (!fitHeightLimit) fitHeightLimit = viewport.clientHeight;
     const target = Math.min(1, viewport.clientWidth / base * fitWidthRatio, baseHeight && fitHeightLimit ? fitHeightLimit / baseHeight : 1);
-    homeScale = target; zoomAt(target, { x: 0, y: 0 }, true); viewport.scrollLeft = viewport.scrollTop = 0;
+    homeScale = target; zoomAt(target, { x: 0, y: 0 }, true);
+    // The expanded canvas has room on every side, even at fit. Center the
+    // diagram initially, then retain this origin when zooming around a touch.
+    viewport.scrollLeft = canvas ? base * target / 2 : 0;
+    viewport.scrollTop = canvas ? baseHeight * target / 2 : 0;
   };
   const center = (): Point => ({ x: viewport.clientWidth / 2, y: viewport.clientHeight / 2 });
   minus?.addEventListener("click", () => zoomAt(scale / 1.25, center()));
@@ -46,17 +72,24 @@ export function enableAssetGestures(viewport: HTMLElement, svg: SVGSVGElement, t
     reset?.setAttribute("aria-label", "查看桑基图全图");
     fitChart();
     if (typeof ResizeObserver !== "undefined") {
-      let frame = 0;
+      let frame = 0, disposed = false;
       const observer = new ResizeObserver(() => {
+        if (disposed) return;
         // Detachment triggers a zero-size observation; release the old chart.
-        if (!viewport.isConnected) { observer.disconnect(); if (frame) cancelAnimationFrame(frame); return; }
+        if (!viewport.isConnected) { cleanup(); return; }
         if (manuallyZoomed || frame) return;
         // Fit changes this observed element's height; write in the next frame
         // so browser resize delivery does not report a layout feedback loop.
         if (typeof requestAnimationFrame === "function") frame = requestAnimationFrame(() => {
-          frame = 0; if (viewport.isConnected && !manuallyZoomed) fitChart();
+          frame = 0; if (!disposed && viewport.isConnected && !manuallyZoomed) fitChart();
         }); else fitChart();
-      }); observer.observe(viewport);
+      });
+      const cleanup = (): void => {
+        disposed = true; observer.disconnect();
+        if (frame) { cancelAnimationFrame(frame); frame = 0; }
+        resizeCleanups.delete(viewport);
+      };
+      resizeCleanups.set(viewport, cleanup); observer.observe(viewport);
     }
   } else { viewport.setAttribute("data-zoom", "1"); viewport.style.touchAction = "none"; }
   viewport.setAttribute("aria-label", "资产桑基图，双指缩放，单指拖动");
@@ -91,6 +124,7 @@ export function enableAssetGestures(viewport: HTMLElement, svg: SVGSVGElement, t
           const totalX = after[0].x - touchOrigin.x, totalY = after[0].y - touchOrigin.y;
           const ownsDrag = chartTouch || viewport.style.touchAction === "none" || (viewport.scrollWidth > viewport.clientWidth + 1 && Math.abs(totalX) > Math.abs(totalY));
           if (ownsDrag && (dragged || Math.hypot(totalX, totalY) > 4)) {
+            manuallyZoomed = true;
             viewport.scrollLeft -= dragged ? after[0].x - touchPoints[0].x : totalX;
             viewport.scrollTop -= dragged ? after[0].y - touchPoints[0].y : totalY;
             dragged = chartTouch = true;
@@ -111,7 +145,7 @@ export function enableAssetGestures(viewport: HTMLElement, svg: SVGSVGElement, t
   viewport.addEventListener("wheel", event => { if (event.ctrlKey || event.metaKey) { event.preventDefault(); const rect = viewport.getBoundingClientRect(); zoomAt(scale * Math.exp(-event.deltaY * .002), { x: event.clientX - rect.left, y: event.clientY - rect.top }); } }, { passive: false });
   viewport.addEventListener("pointerdown", event => {
     if (nativeTouch && event.pointerType === "touch") return;
-    if (event.pointerType !== "touch" && event.pointerType !== "pen") return;
+    if (event.pointerType !== "touch" && event.pointerType !== "pen" && !(canvas && event.pointerType === "mouse" && event.button === 0)) return;
     if (!points.size) { dragged = false; origin = { x: event.clientX, y: event.clientY }; }
     points.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (points.size > 1) { dragged = true; for (const id of points.keys()) viewport.setPointerCapture?.(id); }
@@ -130,7 +164,7 @@ export function enableAssetGestures(viewport: HTMLElement, svg: SVGSVGElement, t
       dragged = true; event.preventDefault();
     } else {
       const dx = next.x - (dragged ? previous.x : origin.x), dy = next.y - (dragged ? previous.y : origin.y);
-      if (dragged || Math.hypot(next.x - origin.x, next.y - origin.y) > 4) { dragged = true; viewport.setPointerCapture?.(event.pointerId); viewport.scrollLeft -= dx; viewport.scrollTop -= dy; event.preventDefault(); }
+      if (dragged || Math.hypot(next.x - origin.x, next.y - origin.y) > 4) { manuallyZoomed = true; dragged = true; viewport.setPointerCapture?.(event.pointerId); viewport.scrollLeft -= dx; viewport.scrollTop -= dy; event.preventDefault(); }
     }
   });
   const end = (event: PointerEvent): void => { if (!points.has(event.pointerId)) return; points.delete(event.pointerId); if (dragged) suppressUntil = Date.now() + 350; };

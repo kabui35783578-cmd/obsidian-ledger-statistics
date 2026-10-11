@@ -10,6 +10,7 @@ import { normalizeReportPreferences } from "./report";
 import { normalizeReportCaches } from "./report-ai";
 import { AssetSnapshot, AssetState, SecurityKind, applyAssetQuote, assetId, buildAssetSnapshot, calibrateAccount, normalizeAssets, quoteKey, renameAssetLinks, setDefaultCash, storeAssetSnapshot } from "./assets";
 import { AssetQuoteMonitor } from "./asset-quotes";
+import { disposeAssetGestures } from "./asset-gestures";
 
 export default class LedgerStatisticsPlugin extends Plugin {
   settings: LedgerSettings = DEFAULT_SETTINGS;
@@ -96,8 +97,9 @@ export default class LedgerStatisticsPlugin extends Plugin {
     this.assetQuotes?.stop();
     this.budgetMonitor?.stop();
     for (const leaf of this.app.workspace.getLeavesOfType(LEDGER_VIEW_TYPE)) {
-      if (leaf.view instanceof LedgerStatisticsView) leaf.view.cancelFinanceRequest();
+      if (leaf.view instanceof LedgerStatisticsView) void leaf.view.onClose();
     }
+    disposeAssetGestures();
     this.repository.dispose();
   }
 

@@ -89,6 +89,40 @@ test('home overdraft uses the reference names and renders net assets plus debt a
   assert.equal(sources.length,2);assert.ok(+sources[0].attributes.height>0);assert.ok(+sources[1].attributes.height>0);
 }));
 
+test('home shows source and leaf amounts while central amounts appear only in the expanded view', () => withDocument(() => {
+  const snap = snapshot(); snap.accounts[0].cents = 60000; snap.accounts[1].cents = 30000; snap.accounts[2].cents = 10000;
+  const root = new Element(); renderAssetOverviewSankey(root, snap, false, false, () => {});
+  const text = root.all().filter(n => n.tag === 'text');
+  const nodeAmount = name => { const i = text.findIndex(n => n.textContent === name); assert.ok(i >= 0); return text[i + 1].textContent; };
+  assert.equal(nodeAmount('净资产'), '¥800.00');
+  assert.equal(nodeAmount('负债'), '¥100.00');
+  const labels = root.all().find(n => n.attributes.class === 'ledger-assets-sankey-labels').all().filter(n => n.tag === 'text').map(n => n.textContent);
+  assert.deepEqual(labels, ['净资产', '¥800.00', '负债', '¥100.00', '总资产', '流动资金', '投资理财']);
+  assert.ok(text.some(n => n.textContent === '¥600.00'), 'Account leaf amounts stay visible');
+  const expanded = new Element(); renderAssetSankey(expanded, snap, false, false, () => {}, false, false, true);
+  const expandedLabels = expanded.all().find(n => n.attributes.class === 'ledger-assets-sankey-labels').all().map(n => n.textContent);
+  assert.ok(expandedLabels.includes('总资产 ¥900.00'));
+  assert.ok(expandedLabels.includes('流动资金 ¥600.00'));
+  assert.ok(expandedLabels.includes('投资理财 ¥300.00'));
+  const hidden = new Element(); renderAssetOverviewSankey(hidden, snap, false, true, () => {});
+  const privateText = hidden.all().map(n => `${n.textContent} ${n.attributes['aria-label'] ?? ''}`).join(' ');
+  assert.ok(!/¥|800\.00|900\.00|600\.00|300\.00/.test(privateText));
+}));
+
+test('summary labels paint above every outgoing flow in home and expanded diagrams', () => withDocument(() => {
+  for (const expanded of [false, true]) {
+    const root = new Element();
+    if (expanded) renderAssetSankey(root, snapshot(), false, false, () => {}, false, false, true);
+    else renderAssetOverviewSankey(root, snapshot(), false, false, () => {});
+    const svg = root.all().find(n => n.tag === 'svg');
+    const labels = svg.children.at(-1);
+    assert.equal(labels.attributes.class, 'ledger-assets-sankey-labels');
+    assert.equal(labels.attributes['pointer-events'], 'none');
+    assert.ok(labels.all().some(n => n.tag === 'text' && n.textContent.includes('投资理财')));
+    assert.ok(svg.children.slice(0, -1).some(n => n.tag === 'path'));
+  }
+}));
+
 test('Sankey keeps real proportions for small values and provides touch and keyboard targets', () => withDocument(() => {
   const root = new Element(), expanded = []; renderAssetSankey(root, snapshot(), false, false, (id, holdingId) => expanded.push([id, holdingId]));
   const nodes = root.all(), rectangles = nodes.filter(n => n.tag === 'rect' && n.attributes.x === '945');

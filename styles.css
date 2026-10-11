@@ -83,6 +83,8 @@
 .ledger-statistics-view .view-content {
   padding: clamp(18px, 3vw, 40px);
   overflow: auto;
+  /* Local module updates restore scroll explicitly; animated charts must not move the browser's anchor. */
+  overflow-anchor: none;
   background: var(--mono-paper) !important;
   color: var(--mono-ink);
 }
@@ -296,9 +298,60 @@
   margin-bottom: 18px;
 }
 
-.ledger-overview-section,
 .ledger-calendar-details {
   margin-top: 28px;
+}
+
+.ledger-overview-section {
+  margin-top: 40px;
+}
+
+.ledger-overview-section:first-child {
+  margin-top: 0;
+}
+
+.ledger-overview-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 0 0 12px;
+  border-bottom: 2px solid var(--mono-grid);
+  color: var(--mono-ink);
+}
+
+.ledger-overview-heading .ledger-section-title {
+  margin: 0;
+  color: inherit;
+  font-size: 23px;
+  font-weight: 800;
+  line-height: 1.4;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.ledger-overview-heading-icon {
+  display: flex;
+  flex: 0 0 auto;
+  color: var(--ledger-accent);
+}
+
+.ledger-overview-heading-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.ledger-overview-body {
+  display: flow-root;
+  padding-top: 18px;
+}
+
+@container (max-width: 600px) {
+  .ledger-overview-section { margin-top: 32px; }
+  .ledger-overview-heading { min-height: 42px; gap: 10px; padding-bottom: 10px; }
+  .ledger-overview-heading .ledger-section-title { font-size: 20px; }
+  .ledger-overview-heading-icon svg { width: 20px; height: 20px; }
+  .ledger-overview-body { padding-top: 14px; }
 }
 
 .ledger-section-title {
@@ -2287,6 +2340,11 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
   text-align: center;
 }
 
+.ledger-animation-pending,
+.ledger-animation-pending * {
+  animation-play-state: paused !important;
+}
+
 .ledger-reveal {
   animation: ledger-reveal 900ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
 }
@@ -3506,9 +3564,6 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
 .ledger-category-chart-cell .ledger-legend-left { grid-column: 1; }
 .ledger-category-chart-cell .ledger-legend-right { grid-column: 2; }
 .ledger-category-plot { max-height: 330px; margin: 10px auto 0; }
-.ledger-category-plot.is-pending .ledger-pop,
-.ledger-category-plot.is-pending .ledger-draw,
-.ledger-category-plot.is-pending .ledger-fade { animation-play-state: paused; }
 @media (max-width: 700px) {
   .ledger-category-grid { grid-template-columns: minmax(0, 1fr); }
   .ledger-category-analysis .ledger-category-metrics,
@@ -3706,8 +3761,11 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
 }
 .ledger-assets-sankey-expanded .ledger-assets-sankey-scroll {
   flex: 1; min-height: 0; max-height: 100%; max-width: none;
-  display: flex; align-items: safe center;
+  display: block; overflow-anchor: none;
 }
+.ledger-assets-sankey-canvas { box-sizing: content-box; }
+.ledger-assets-sankey-expanded .ledger-assets-sankey-scroll { cursor: grab; }
+.ledger-assets-sankey-expanded .ledger-assets-sankey-scroll:active { cursor: grabbing; }
 .ledger-assets-sankey-expanded .ledger-assets-sankey { flex-shrink: 0; }
 .ledger-assets-expanded-sankey text { font-size: 22px; }
 .ledger-assets-sankey-help { color: var(--asset-muted); font-size: 12px; margin-bottom: 8px; }
