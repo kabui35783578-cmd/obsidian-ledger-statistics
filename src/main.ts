@@ -4,6 +4,7 @@ import { sharedRequestGate } from "./request-gate";
 import { flattenRecords, migrateStarredIds, renameStarredIds } from "./core";
 import { LedgerRepository } from "./repository";
 import { createBalanceCalibration, isBalanceCalibration } from "./balance";
+import { reconcileSalaryCycles, SalaryCycleState } from "./salary-history";
 import { DEFAULT_SETTINGS, LedgerSettingTab, LedgerSettings, normalizeLedgerView } from "./settings";
 import { LedgerStatisticsView, LEDGER_VIEW_TYPE } from "./view";
 import { normalizeReportPreferences } from "./report";
@@ -22,6 +23,7 @@ export default class LedgerStatisticsPlugin extends Plugin {
   private assetQueue: Promise<void> = Promise.resolve();
   private assetQuotes!: AssetQuoteMonitor;
   private assetsStopped = false;
+  private salaryHistoryDirty = false;
 
   openAiSettings(): void {
     this.settingTab?.selectAiSection();
@@ -53,6 +55,7 @@ export default class LedgerStatisticsPlugin extends Plugin {
     this.settings.insightHistory = Array.isArray(this.settings.insightHistory) ? this.settings.insightHistory.filter((item) => item && typeof item.id === "string" && typeof item.cycle === "string" && typeof item.date === "string" && Number.isFinite(item.impact)) : [];
     if (!isBalanceCalibration(this.settings.balanceCalibration)) this.settings.balanceCalibration = null;
     if (typeof this.settings.balanceCalibrationNote !== "string") this.settings.balanceCalibrationNote = "";
+    if (this.syncSalaryCycles()) await this.saveSettings(false, false);
     this.budgetMonitor = new BudgetMonitor(() => this.settings, (url) => requestUrl({ url, method: "GET", throw: true }),
       () => this.saveSettings(false, false), (message) => new Notice(message), sharedRequestGate(`bark:${this.app.vault.getName()}`));
     this.repository = new LedgerRepository(this.app, this.settings.ledgerFolder, () => {
@@ -107,11 +110,14 @@ export default class LedgerStatisticsPlugin extends Plugin {
     this.repository?.dispose();
   }
 
-  async saveSettings(rescan: boolean, refresh = true): Promise<void> {
+  async saveSettings(rescan: boolean, refresh = true, now = new Date()): Promise<void> {
+    this.syncSalaryCycles(now);
     const data = JSON.parse(JSON.stringify(withoutLegacyAiSecret(this.settings)));
     const saved = this.saveQueue.then(() => this.saveData(data));
     this.saveQueue = saved.catch(() => {});
     await saved;
+    this.salaryHistoryDirty = ["salaryCycleStart", "salaryCycles", "salaryCents", "balanceCalibration", "balanceCalibrationNote"].some(key =>
+      JSON.stringify(this.settings[key as keyof LedgerSettings]) !== JSON.stringify(data[key]));
     if (rescan) await this.repository.setFolder(this.settings.ledgerFolder);
     if (refresh) this.refreshViews();
     this.checkBudget();
@@ -122,6 +128,7 @@ export default class LedgerStatisticsPlugin extends Plugin {
   }
 
   private tick(): void {
+    if (this.syncSalaryCycles() || this.salaryHistoryDirty) void this.saveSettings(false).catch(() => new Notice("工资周期保存失败，请检查同步或磁盘后重新保存设置。"));
     for (const leaf of this.app.workspace.getLeavesOfType(LEDGER_VIEW_TYPE)) {
       if (leaf.view instanceof LedgerStatisticsView) leaf.view.refreshDate();
     }
@@ -137,6 +144,18 @@ export default class LedgerStatisticsPlugin extends Plugin {
     return buildAssetSnapshot(this.settings.assets, flattenRecords(this.repository.files.values()));
   }
 
+  private syncSalaryCycles(now = new Date()): boolean {
+    const next = reconcileSalaryCycles(this.settings, now);
+    const changed = Object.entries(next).some(([key, value]) => JSON.stringify(this.settings[key as keyof LedgerSettings]) !== JSON.stringify(value));
+    if (changed) { Object.assign(this.settings, next); this.salaryHistoryDirty = true; }
+    return changed;
+  }
+
+  private currentSalaryState(): SalaryCycleState {
+    const { salaryCycleStart, salaryCycles, salaryCents, balanceCalibration, balanceCalibrationNote } = this.settings;
+    return { salaryCycleStart, salaryCycles, salaryCents, balanceCalibration, balanceCalibrationNote };
+  }
+
   refreshAssetQuotes(force = false): Promise<void> { return this.assetQuotes.refresh(force); }
   lookupAssetQuote(kind: SecurityKind, code: string) { return this.assetQuotes.lookup(kind, code); }
 
@@ -146,10 +165,13 @@ export default class LedgerStatisticsPlugin extends Plugin {
   calibrateBalance(cents: number, now = new Date()): Promise<void> {
     const operation = this.assetQueue.then(async () => {
       if (this.assetsStopped) throw new Error("插件已关闭，请重新打开");
+      if (!Number.isSafeInteger(cents)) throw new Error("余额无效");
+      const beforeSettings = { ...this.currentSalaryState(), assets: this.settings.assets };
+      this.syncSalaryCycles(now);
       const records = flattenRecords(this.repository.files.values());
       const calibration = createBalanceCalibration(records, now, cents);
       if (!isBalanceCalibration(calibration)) throw new Error("余额无效");
-      const beforeAssets = this.settings.assets, beforeCalibration = this.settings.balanceCalibration;
+      const beforeAssets = this.settings.assets;
       const next = JSON.parse(JSON.stringify(beforeAssets)) as AssetState;
       let cash = next.accounts.find(a => a.id === next.defaultCashId && a.kind === "cash" && !a.archived);
       if (!cash) {
@@ -161,8 +183,8 @@ export default class LedgerStatisticsPlugin extends Plugin {
       storeAssetSnapshot(next, buildAssetSnapshot(next, records, now));
       this.settings.assets = next;
       this.settings.balanceCalibration = calibration;
-      try { await this.saveSettings(false, false); }
-      catch (error) { this.settings.assets = beforeAssets; this.settings.balanceCalibration = beforeCalibration; throw error; }
+      try { await this.saveSettings(false, false, now); }
+      catch (error) { Object.assign(this.settings, beforeSettings); throw error; }
       if (!this.assetsStopped) this.refreshViews();
       this.settingTab?.refreshBalanceSummary();
     });
@@ -170,13 +192,34 @@ export default class LedgerStatisticsPlugin extends Plugin {
     return operation;
   }
 
-  clearBalanceCalibration(): Promise<void> {
+  clearBalanceCalibration(now = new Date()): Promise<void> {
     const operation = this.assetQueue.then(async () => {
       if (this.assetsStopped) throw new Error("插件已关闭，请重新打开");
-      const before = this.settings.balanceCalibration;
+      const before = this.currentSalaryState();
+      this.syncSalaryCycles(now);
       this.settings.balanceCalibration = null;
-      try { await this.saveSettings(false, false); }
-      catch (error) { this.settings.balanceCalibration = before; throw error; }
+      try { await this.saveSettings(false, false, now); }
+      catch (error) { Object.assign(this.settings, before); throw error; }
+      if (!this.assetsStopped) this.refreshViews();
+      this.settingTab?.refreshBalanceSummary();
+    });
+    this.assetQueue = operation.catch(() => {});
+    return operation;
+  }
+
+  updateSalaryCycle(change: { salaryCents?: number; note?: string }, now = new Date()): Promise<void> {
+    const operation = this.assetQueue.then(async () => {
+      if (this.assetsStopped) throw new Error("插件已关闭，请重新打开");
+      const before = { ...this.currentSalaryState(), financeAdviceCache: this.settings.financeAdviceCache };
+      if (change.salaryCents !== undefined && (!Number.isSafeInteger(change.salaryCents) || change.salaryCents < 0)) throw new Error("工资金额无效");
+      this.syncSalaryCycles(now);
+      if (change.salaryCents !== undefined) {
+        this.settings.salaryCents = change.salaryCents;
+        this.settings.financeAdviceCache = null;
+      }
+      if (change.note !== undefined) this.settings.balanceCalibrationNote = change.note;
+      try { await this.saveSettings(false, false, now); }
+      catch (error) { Object.assign(this.settings, before); throw error; }
       if (!this.assetsStopped) this.refreshViews();
       this.settingTab?.refreshBalanceSummary();
     });

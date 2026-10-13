@@ -24,6 +24,8 @@ export function normalizeLedgerView(value: unknown): LedgerViewId {
 export type DefaultDatePreset = "today" | "week" | "month" | "salary" | "year";
 
 export interface LedgerSettings {
+  salaryCycleStart: string;
+  salaryCycles: import("./salary-history").SalaryCycleRecord[];
   assets: AssetState;
   reportPreferences: ReportPreferences;
   reportCaches: ReportCache[];
@@ -51,6 +53,8 @@ export interface LedgerSettings {
 }
 
 export const DEFAULT_SETTINGS: LedgerSettings = {
+  salaryCycleStart: "",
+  salaryCycles: [],
   assets: emptyAssets(),
   reportPreferences: defaultReportPreferences(),
   reportCaches: [],
@@ -228,27 +232,27 @@ export class LedgerSettingTab extends PluginSettingTab {
         }));
 
     let refreshBalanceSummary = (): void => {};
+    let shownSalaryCycle = this.plugin.settings.salaryCycleStart;
+    let salaryInput: HTMLInputElement;
+    let noteInput: HTMLTextAreaElement;
     new Setting(balancePanel)
       .setName("每个工资周期到账工资")
-      .setDesc("工资日固定每月 15 日。填写实际到账金额；用于周期参考和洞察判断。余额校准不会改动此数。")
+      .setDesc("工资日固定每月 15 日。填写本周期实际到账金额；按周期保存，历史周期不随之后的工资修改而变化。新周期默认沿用此金额。")
       .addText((text) => {
+        salaryInput = text.inputEl;
         text
           .setPlaceholder("例如 8000")
           .setValue(this.moneyValue(this.plugin.settings.salaryCents))
           .onChange(async (value) => {
             const trimmed = value.trim();
             if (!trimmed) {
-              this.plugin.settings.salaryCents = 0;
-              this.plugin.settings.financeAdviceCache = null;
-              await this.plugin.saveSettings(false);
+              await this.plugin.updateSalaryCycle({ salaryCents: 0 });
               refreshBalanceSummary();
               return;
             }
             const cents = parseMoneyToCents(trimmed);
             if (cents === null || cents < 0) return;
-            this.plugin.settings.salaryCents = cents;
-            this.plugin.settings.financeAdviceCache = null;
-            await this.plugin.saveSettings(false);
+            await this.plugin.updateSalaryCycle({ salaryCents: cents });
             refreshBalanceSummary();
           });
         text.inputEl.setAttribute("inputmode", "decimal");
@@ -294,13 +298,13 @@ export class LedgerSettingTab extends PluginSettingTab {
 
     new Setting(balancePanel)
       .setName("余额校准差额备注")
-      .setDesc("记录差额资金的大致去向。点击工资瀑布图的“余额校准差额”查看；只作文字说明，不影响统计或 AI 判断。备注会保留，重新校准或进入新周期后请按需更新。")
+      .setDesc("记录本周期差额资金的大致去向，按工资周期保存。新周期备注自动留空，历史备注可在工资周期收支中回看；只作说明，不影响统计或 AI 判断。")
       .addTextArea((text) => {
+        noteInput = text.inputEl;
         text.setPlaceholder("例如：还款 2000 元、转给家人 1000 元，其余为未逐笔记账的日常支出。")
           .setValue(this.plugin.settings.balanceCalibrationNote)
           .onChange(async (value) => {
-            this.plugin.settings.balanceCalibrationNote = value;
-            await this.plugin.saveSettings(false, false);
+            await this.plugin.updateSalaryCycle({ note: value });
           });
         text.inputEl.rows = 5;
         text.inputEl.addClass("ledger-balance-note-input");
@@ -309,6 +313,12 @@ export class LedgerSettingTab extends PluginSettingTab {
 
     const balanceSummary = balancePanel.createDiv({ cls: "ledger-balance-summary", attr: { "aria-live": "polite" } });
     refreshBalanceSummary = () => {
+      if (shownSalaryCycle !== this.plugin.settings.salaryCycleStart) {
+        shownSalaryCycle = this.plugin.settings.salaryCycleStart;
+        salaryInput.value = this.moneyValue(this.plugin.settings.salaryCents);
+        noteInput.value = this.plugin.settings.balanceCalibrationNote;
+        calibrationInput.value = "";
+      }
       balanceSummary.empty();
       const now = new Date();
       const cycle = salaryDayRange(now);

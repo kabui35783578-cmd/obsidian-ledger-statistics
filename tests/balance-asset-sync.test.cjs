@@ -9,7 +9,7 @@ const copy = value => JSON.parse(JSON.stringify(value));
 
 function plugin() {
   const p = Object.create(Plugin.prototype);
-  p.settings = { assets: a.emptyAssets(), balanceCalibration: null, salaryCents: 600000 };
+  p.settings = { assets: a.emptyAssets(), balanceCalibration: null, salaryCents: 600000, salaryCycleStart: '', salaryCycles: [], balanceCalibrationNote: '' };
   p.settings.assets.accounts = [
     { id: 'wechat', name: '微信', kind: 'cash', balanceCents: -23000, baselineAt: now(9).toISOString(), includedEventIds: [], includedRecordIds: [] },
     { id: 'loan', name: '贷款', kind: 'liability', balanceCents: 50000, baselineAt: now(9).toISOString(), includedEventIds: [], includedRecordIds: [] }

@@ -97,7 +97,10 @@ test('all saves strip legacy fields while preserving data and the secret referen
   plugin.refreshViews = () => {};
   plugin.checkBudget = () => {};
   await plugin.saveSettings(false);
-  assert.deepEqual(saved, [{ financeAiSecretId: 'local-key', assets: { accounts: [{ id: 'cash' }] } }]);
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].financeAiSecretId, 'local-key');
+  assert.deepEqual(saved[0].assets, { accounts: [{ id: 'cash' }] });
+  assert.equal(Object.hasOwn(saved[0], 'financeAiApiKey'), false);
   assert.equal(plugin.settings.financeAiApiKey, 'must-not-persist');
   assert.doesNotMatch(JSON.stringify(withoutLegacyAiSecret(plugin.settings)), /must-not-persist/);
 });

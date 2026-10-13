@@ -7,6 +7,7 @@ import { assessFinanceAdvice, createFinanceAdviceCache } from "./advice-lifecycl
 import { markInsightSeen, withInsightHistory, unmatchedStarIds } from "./insights";
 import { BalanceCalibrationNoteModal, FixedExpenseModal, StarRepairModal } from "./management";
 import { balanceStatus } from "./balance";
+import { salaryCycleDetails, salaryCycleRange, shiftSalaryCycle } from "./salary-history";
 import { insightAsOf, withDailyInsight } from "./daily-insight";
 import { withWeeklyInsight } from "./weekly-insight";
 import { ReportPanel } from "./report-ui";
@@ -120,6 +121,7 @@ export class LedgerStatisticsView extends ItemView {
   private activeView: LedgerViewId;
   private preset: DatePreset;
   private periodOffset = 0;
+  private selectedSalaryCycleStart: string | null = null;
   private filter: FilterState;
   private categoryChart: "bar" | "donut" | "table" = "bar";
   private categorySort: "amount" | "count" = "amount";
@@ -469,13 +471,7 @@ export class LedgerStatisticsView extends ItemView {
     this.metric(metrics, "笔数", String(stats.count), "点击查看全部明细", () => this.goDetails());
     this.metric(metrics, "日均", formatCents(stats.averagePerRecordedDayCents), `分母：${stats.recordedDays} 个有日记账文件的日期`, () => this.goDetails());
     this.metric(metrics, "最大单笔", stats.maxRecord ? formatCents(stats.maxRecord.cents) : "—", stats.maxRecord ? `${stats.maxRecord.category} · ${stats.maxRecord.date}` : "暂无记录", () => this.goDetails());
-    const now = new Date();
-    const currentCycle = salaryDayRange(now);
-    const cycleRecords = this.allRecords();
-    const balance = balanceStatus(cycleRecords, now, this.plugin.settings.salaryCents, this.plugin.settings.balanceCalibration);
-    const waterfall = salaryWaterfall(cycleRecords, currentCycle, this.plugin.settings.salaryCents, balance);
-    renderSalaryWaterfall(this.overviewSection(parent, "工资周期收支", "wallet"), waterfall, currentCycle, (category) => this.drillCategoryInRange(category, currentCycle),
-      () => new BalanceCalibrationNoteModal(this.plugin).open());
+    this.renderSalaryCycle(this.overviewSection(parent, "工资周期收支", "wallet"));
     if (records.length === 0) {
       renderEmpty(parent, "当前筛选条件下没有记录。缺少文件的日期不会按零消费处理。");
     }
@@ -483,6 +479,52 @@ export class LedgerStatisticsView extends ItemView {
     this.renderTrend(this.overviewSection(parent, "支出趋势", "chart-line"));
     const starred = this.starredRecords();
     if (starred.length) renderStarredExpenses(this.overviewSection(parent, "星标支出", "star"), starred, (record) => void this.openRecord(record));
+  }
+
+  private renderSalaryCycle(parent: HTMLElement): void {
+    const now = new Date();
+    const currentStart = salaryDayRange(now).start;
+    const start = this.selectedSalaryCycleStart ?? (this.preset === "salary" && this.filter.range.start <= currentStart ? this.filter.range.start : currentStart);
+    const records = this.allRecords();
+    const details = salaryCycleDetails(this.plugin.settings, start, records, now);
+    const { cycle, range, balance, historical, salaryRecorded } = details;
+    const openNote = (): void => { new BalanceCalibrationNoteModal(this.plugin, { note: cycle.note, range, historical }).open(); };
+    const renderControls = (controls: HTMLElement): void => {
+      const selectCycle = (nextStart: string): void => {
+        this.selectedSalaryCycleStart = nextStart === currentStart ? null : nextStart;
+        if (this.preset === "salary") {
+          const anchor = new Date(`${nextStart}T12:00:00`), current = new Date(`${currentStart}T12:00:00`);
+          this.periodOffset = (current.getFullYear() - anchor.getFullYear()) * 12 + current.getMonth() - anchor.getMonth();
+          this.filter.range = salaryCycleRange(nextStart, now);
+          const scrollTop = this.contentEl.scrollTop;
+          this.render();
+          this.contentEl.scrollTop = scrollTop;
+        } else this.refreshOverviewSection(parent, () => this.renderSalaryCycle(parent));
+      };
+      const previous = controls.createEl("button", { cls: "ledger-button", text: "上一周期", attr: { type: "button", "aria-label": "查看上一工资周期" } });
+      const earliestStart = [currentStart, ...(this.plugin.settings.salaryCycles ?? []).map(c => c.cycleStart),
+        ...records.filter(r => isValidIsoDate(r.date)).map(r => salaryDayRange(new Date(`${r.date}T12:00:00`)).start)].sort()[0];
+      previous.disabled = start <= earliestStart;
+      previous.addEventListener("click", () => selectCycle(shiftSalaryCycle(start, 1)));
+      controls.createSpan({ cls: "ledger-salary-cycle-label", text: `${range.start} — ${range.end}${historical ? " · 历史周期" : " · 本周期"}` });
+      const next = controls.createEl("button", { cls: "ledger-button", text: "下一周期", attr: { type: "button", "aria-label": "查看下一工资周期" } });
+      next.disabled = !historical;
+      next.addEventListener("click", () => selectCycle(shiftSalaryCycle(start, -1)));
+      const current = controls.createEl("button", { cls: "ledger-button", text: "回到本周期", attr: { type: "button" } });
+      current.disabled = !historical;
+      current.addEventListener("click", () => selectCycle(currentStart));
+      if (balance.calibrated || cycle.note.trim()) {
+        const note = controls.createEl("button", { cls: "ledger-button", text: "差额备注", attr: { type: "button" } });
+        note.addEventListener("click", openNote);
+      }
+    };
+    renderSalaryWaterfall(parent, salaryWaterfall(records, range, cycle.salaryCents, balance), range,
+      category => this.drillCategoryInRange(category, range), openNote, { historical, salaryRecorded, renderControls });
+    if (balance.calibratedAt) parent.createDiv({ cls: "ledger-salary-history-hint", text: `该期最后校准：${new Date(balance.calibratedAt).toLocaleString("zh-CN")}` });
+    if (historical) parent.createDiv({ cls: "ledger-salary-history-hint", text: !salaryRecorded
+      ? "该期工资未独立保存，暂用升级时或当前设置的工资参考；旧版已覆盖的校准无法恢复。"
+      : balance.calibrated ? "使用该期保存的工资、最后一次校准和备注；期末余额按校准及该期后续已记账支出推算。补记或修改旧账会重新计算差额。"
+      : "使用该期保存的工资；该期未校准或已取消校准，余额按工资减已记账支出推算。" });
   }
 
   private overviewSection(parent: HTMLElement, title: string, icon: string): HTMLElement {
@@ -960,6 +1002,7 @@ export class LedgerStatisticsView extends ItemView {
   }
 
   private applyPreset(preset: DatePreset): void {
+    this.selectedSalaryCycleStart = null;
     this.clearDrillContext();
     this.preset = preset;
     this.periodOffset = 0;
@@ -968,6 +1011,7 @@ export class LedgerStatisticsView extends ItemView {
   }
 
   private shiftPeriod(direction: 1 | -1): void {
+    this.selectedSalaryCycleStart = null;
     if (this.preset === "custom") return;
     this.clearDrillContext();
     this.periodOffset += direction;

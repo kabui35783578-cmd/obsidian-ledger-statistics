@@ -1031,6 +1031,82 @@ function balanceStatus(records, now, salaryCents, calibration) {
   };
 }
 
+// src/salary-history.ts
+function validStart(value) {
+  return typeof value === "string" && isValidIsoDate(value) && value.endsWith("-15");
+}
+function salaryCycleRange(start, now = /* @__PURE__ */ new Date()) {
+  const anchor = /* @__PURE__ */ new Date(`${start}T12:00:00`);
+  const end = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 14, 12);
+  const fullEnd = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}-14`;
+  return { start, end: start === salaryDayRange(now).start ? salaryDayRange(now).end : fullEnd };
+}
+function shiftSalaryCycle(start, offset) {
+  return salaryDayRange(/* @__PURE__ */ new Date(`${start}T12:00:00`), offset).start;
+}
+function normalizeSalaryCycles(value) {
+  const cycles = /* @__PURE__ */ new Map();
+  if (Array.isArray(value)) for (const item of value) {
+    if (!item || !validStart(item.cycleStart) || !Number.isSafeInteger(item.salaryCents) || item.salaryCents < 0) continue;
+    const calibration = isBalanceCalibration(item.calibration) && item.calibration.cycleStart === item.cycleStart && salaryDayRange(new Date(item.calibration.calibratedAt)).start === item.cycleStart ? { ...item.calibration } : null;
+    cycles.set(item.cycleStart, {
+      cycleStart: item.cycleStart,
+      salaryCents: item.salaryCents,
+      salarySource: item.salarySource === "legacy" ? "legacy" : "saved",
+      calibration,
+      note: typeof item.note === "string" ? item.note : ""
+    });
+  }
+  return [...cycles.values()].sort((a, b) => a.cycleStart.localeCompare(b.cycleStart));
+}
+function reconcileSalaryCycles(state, now = /* @__PURE__ */ new Date()) {
+  var _a, _b;
+  const currentStart = salaryDayRange(now).start;
+  const cycles = new Map(normalizeSalaryCycles(state.salaryCycles).map((c) => [c.cycleStart, c]));
+  const calibration = isBalanceCalibration(state.balanceCalibration) && validStart(state.balanceCalibration.cycleStart) && salaryDayRange(new Date(state.balanceCalibration.calibratedAt)).start === state.balanceCalibration.cycleStart ? state.balanceCalibration : null;
+  const note = typeof state.balanceCalibrationNote === "string" ? state.balanceCalibrationNote : "";
+  const observed = validStart(state.salaryCycleStart);
+  const activeStart = observed ? state.salaryCycleStart : (_a = calibration == null ? void 0 : calibration.cycleStart) != null ? _a : currentStart;
+  const salaryCents = Number.isSafeInteger(state.salaryCents) && state.salaryCents >= 0 ? state.salaryCents : 0;
+  if (observed || !cycles.has(activeStart)) cycles.set(activeStart, {
+    cycleStart: activeStart,
+    salaryCents,
+    salarySource: !observed && activeStart !== currentStart ? "legacy" : "saved",
+    calibration: (calibration == null ? void 0 : calibration.cycleStart) === activeStart ? { ...calibration } : null,
+    note
+  });
+  const current = activeStart === currentStart ? cycles.get(activeStart) : (_b = cycles.get(currentStart)) != null ? _b : {
+    cycleStart: currentStart,
+    salaryCents,
+    salarySource: "saved",
+    calibration: null,
+    note: ""
+  };
+  cycles.set(currentStart, current);
+  return {
+    salaryCycleStart: currentStart,
+    salaryCents: current.salaryCents,
+    balanceCalibration: current.calibration,
+    balanceCalibrationNote: current.note,
+    salaryCycles: [...cycles.values()].sort((a, b) => a.cycleStart.localeCompare(b.cycleStart))
+  };
+}
+function salaryCycleDetails(state, start, records, now = /* @__PURE__ */ new Date()) {
+  const reconciled = reconcileSalaryCycles(state, now);
+  const historical = start !== reconciled.salaryCycleStart;
+  const saved = reconciled.salaryCycles.find((c) => c.cycleStart === start);
+  const cycle = saved != null ? saved : { cycleStart: start, salaryCents: reconciled.salaryCents, salarySource: "legacy", calibration: null, note: "" };
+  const range = salaryCycleRange(start, now);
+  const asOf = historical ? /* @__PURE__ */ new Date(`${range.end}T23:59:59.999`) : now;
+  return {
+    range,
+    cycle,
+    historical,
+    salaryRecorded: !!saved && cycle.salarySource === "saved",
+    balance: balanceStatus(records, asOf, cycle.salaryCents, cycle.calibration)
+  };
+}
+
 // src/settings.ts
 var import_obsidian4 = require("obsidian");
 
@@ -2301,22 +2377,24 @@ var RecordPicker = class extends import_obsidian3.FuzzySuggestModal {
   }
 };
 var BalanceCalibrationNoteModal = class extends import_obsidian3.Modal {
-  constructor(plugin) {
+  constructor(plugin, cycle) {
     super(plugin.app);
     this.plugin = plugin;
+    this.cycle = cycle;
   }
   onOpen() {
+    var _a, _b, _c, _d;
     styleLedgerModal(this);
     this.containerEl.addClass("ledger-balance-note-container");
     this.modalEl.addClass("ledger-balance-note-modal");
-    this.setTitle("\u4F59\u989D\u6821\u51C6\u5DEE\u989D\u5907\u6CE8");
+    this.setTitle(this.cycle ? `${this.cycle.range.start} \u2014 ${this.cycle.range.end} \xB7 \u5DEE\u989D\u5907\u6CE8` : "\u4F59\u989D\u6821\u51C6\u5DEE\u989D\u5907\u6CE8");
     this.contentEl.empty();
-    const note = this.plugin.settings.balanceCalibrationNote.trim();
+    const note = ((_b = (_a = this.cycle) == null ? void 0 : _a.note) != null ? _b : this.plugin.settings.balanceCalibrationNote).trim();
     this.contentEl.createDiv({
       cls: "ledger-balance-note-content",
-      text: note || "\u5C1A\u672A\u586B\u5199\u5907\u6CE8\u3002\u53EF\u5728\u63D2\u4EF6\u8BBE\u7F6E \u2192 \u4F59\u989D\u6821\u51C6 \u2192 \u4F59\u989D\u6821\u51C6\u5DEE\u989D\u5907\u6CE8\u4E2D\u8BB0\u5F55\u8D44\u91D1\u53BB\u5411\u3002"
+      text: note || (((_c = this.cycle) == null ? void 0 : _c.historical) ? "\u8BE5\u5DE5\u8D44\u5468\u671F\u672A\u4FDD\u5B58\u5DEE\u989D\u5907\u6CE8\u3002" : "\u5C1A\u672A\u586B\u5199\u5907\u6CE8\u3002\u53EF\u5728\u63D2\u4EF6\u8BBE\u7F6E \u2192 \u4F59\u989D\u6821\u51C6 \u2192 \u4F59\u989D\u6821\u51C6\u5DEE\u989D\u5907\u6CE8\u4E2D\u8BB0\u5F55\u8D44\u91D1\u53BB\u5411\u3002")
     });
-    if (note) this.contentEl.createEl("p", { cls: "ledger-balance-note-hint", text: "\u4EC5\u4F5C\u8BF4\u660E \xB7 \u53EF\u5728\u4F59\u989D\u6821\u51C6\u8BBE\u7F6E\u4E2D\u4FEE\u6539" });
+    if (note) this.contentEl.createEl("p", { cls: "ledger-balance-note-hint", text: ((_d = this.cycle) == null ? void 0 : _d.historical) ? "\u8BE5\u5DE5\u8D44\u5468\u671F\u4FDD\u5B58\u7684\u5907\u6CE8 \xB7 \u4EC5\u4F5C\u8BF4\u660E" : "\u4EC5\u4F5C\u8BF4\u660E \xB7 \u53EF\u5728\u4F59\u989D\u6821\u51C6\u8BBE\u7F6E\u4E2D\u4FEE\u6539" });
   }
   // Obsidian calls these mobile hooks from open()/close(), although they are
   // absent from the public typings. CSS alone cannot cancel their animation
@@ -5841,6 +5919,8 @@ function normalizeLedgerView(value) {
   return "overview";
 }
 var DEFAULT_SETTINGS = {
+  salaryCycleStart: "",
+  salaryCycles: [],
   assets: emptyAssets(),
   reportPreferences: defaultReportPreferences(),
   reportCaches: [],
@@ -5987,21 +6067,21 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
     }));
     let refreshBalanceSummary = () => {
     };
-    new import_obsidian4.Setting(balancePanel).setName("\u6BCF\u4E2A\u5DE5\u8D44\u5468\u671F\u5230\u8D26\u5DE5\u8D44").setDesc("\u5DE5\u8D44\u65E5\u56FA\u5B9A\u6BCF\u6708 15 \u65E5\u3002\u586B\u5199\u5B9E\u9645\u5230\u8D26\u91D1\u989D\uFF1B\u7528\u4E8E\u5468\u671F\u53C2\u8003\u548C\u6D1E\u5BDF\u5224\u65AD\u3002\u4F59\u989D\u6821\u51C6\u4E0D\u4F1A\u6539\u52A8\u6B64\u6570\u3002").addText((text2) => {
+    let shownSalaryCycle = this.plugin.settings.salaryCycleStart;
+    let salaryInput;
+    let noteInput;
+    new import_obsidian4.Setting(balancePanel).setName("\u6BCF\u4E2A\u5DE5\u8D44\u5468\u671F\u5230\u8D26\u5DE5\u8D44").setDesc("\u5DE5\u8D44\u65E5\u56FA\u5B9A\u6BCF\u6708 15 \u65E5\u3002\u586B\u5199\u672C\u5468\u671F\u5B9E\u9645\u5230\u8D26\u91D1\u989D\uFF1B\u6309\u5468\u671F\u4FDD\u5B58\uFF0C\u5386\u53F2\u5468\u671F\u4E0D\u968F\u4E4B\u540E\u7684\u5DE5\u8D44\u4FEE\u6539\u800C\u53D8\u5316\u3002\u65B0\u5468\u671F\u9ED8\u8BA4\u6CBF\u7528\u6B64\u91D1\u989D\u3002").addText((text2) => {
+      salaryInput = text2.inputEl;
       text2.setPlaceholder("\u4F8B\u5982 8000").setValue(this.moneyValue(this.plugin.settings.salaryCents)).onChange(async (value) => {
         const trimmed = value.trim();
         if (!trimmed) {
-          this.plugin.settings.salaryCents = 0;
-          this.plugin.settings.financeAdviceCache = null;
-          await this.plugin.saveSettings(false);
+          await this.plugin.updateSalaryCycle({ salaryCents: 0 });
           refreshBalanceSummary();
           return;
         }
         const cents = parseMoneyToCents(trimmed);
         if (cents === null || cents < 0) return;
-        this.plugin.settings.salaryCents = cents;
-        this.plugin.settings.financeAdviceCache = null;
-        await this.plugin.saveSettings(false);
+        await this.plugin.updateSalaryCycle({ salaryCents: cents });
         refreshBalanceSummary();
       });
       text2.inputEl.setAttribute("inputmode", "decimal");
@@ -6046,10 +6126,10 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
       calibrationInput.value = "";
       refreshBalanceSummary();
     }));
-    new import_obsidian4.Setting(balancePanel).setName("\u4F59\u989D\u6821\u51C6\u5DEE\u989D\u5907\u6CE8").setDesc("\u8BB0\u5F55\u5DEE\u989D\u8D44\u91D1\u7684\u5927\u81F4\u53BB\u5411\u3002\u70B9\u51FB\u5DE5\u8D44\u7011\u5E03\u56FE\u7684\u201C\u4F59\u989D\u6821\u51C6\u5DEE\u989D\u201D\u67E5\u770B\uFF1B\u53EA\u4F5C\u6587\u5B57\u8BF4\u660E\uFF0C\u4E0D\u5F71\u54CD\u7EDF\u8BA1\u6216 AI \u5224\u65AD\u3002\u5907\u6CE8\u4F1A\u4FDD\u7559\uFF0C\u91CD\u65B0\u6821\u51C6\u6216\u8FDB\u5165\u65B0\u5468\u671F\u540E\u8BF7\u6309\u9700\u66F4\u65B0\u3002").addTextArea((text2) => {
+    new import_obsidian4.Setting(balancePanel).setName("\u4F59\u989D\u6821\u51C6\u5DEE\u989D\u5907\u6CE8").setDesc("\u8BB0\u5F55\u672C\u5468\u671F\u5DEE\u989D\u8D44\u91D1\u7684\u5927\u81F4\u53BB\u5411\uFF0C\u6309\u5DE5\u8D44\u5468\u671F\u4FDD\u5B58\u3002\u65B0\u5468\u671F\u5907\u6CE8\u81EA\u52A8\u7559\u7A7A\uFF0C\u5386\u53F2\u5907\u6CE8\u53EF\u5728\u5DE5\u8D44\u5468\u671F\u6536\u652F\u4E2D\u56DE\u770B\uFF1B\u53EA\u4F5C\u8BF4\u660E\uFF0C\u4E0D\u5F71\u54CD\u7EDF\u8BA1\u6216 AI \u5224\u65AD\u3002").addTextArea((text2) => {
+      noteInput = text2.inputEl;
       text2.setPlaceholder("\u4F8B\u5982\uFF1A\u8FD8\u6B3E 2000 \u5143\u3001\u8F6C\u7ED9\u5BB6\u4EBA 1000 \u5143\uFF0C\u5176\u4F59\u4E3A\u672A\u9010\u7B14\u8BB0\u8D26\u7684\u65E5\u5E38\u652F\u51FA\u3002").setValue(this.plugin.settings.balanceCalibrationNote).onChange(async (value) => {
-        this.plugin.settings.balanceCalibrationNote = value;
-        await this.plugin.saveSettings(false, false);
+        await this.plugin.updateSalaryCycle({ note: value });
       });
       text2.inputEl.rows = 5;
       text2.inputEl.addClass("ledger-balance-note-input");
@@ -6057,6 +6137,12 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
     });
     const balanceSummary = balancePanel.createDiv({ cls: "ledger-balance-summary", attr: { "aria-live": "polite" } });
     refreshBalanceSummary = () => {
+      if (shownSalaryCycle !== this.plugin.settings.salaryCycleStart) {
+        shownSalaryCycle = this.plugin.settings.salaryCycleStart;
+        salaryInput.value = this.moneyValue(this.plugin.settings.salaryCents);
+        noteInput.value = this.plugin.settings.balanceCalibrationNote;
+        calibrationInput.value = "";
+      }
       balanceSummary.empty();
       const now = /* @__PURE__ */ new Date();
       const cycle = salaryDayRange(now);
@@ -6708,12 +6794,15 @@ function svgEl(tag2, attrs = {}) {
 function deterministic(index, salt) {
   return Math.abs((index * 73856093 ^ salt * 19349663) % 1e3) / 1e3;
 }
-function monoCard(parent, badge, title, subtitle) {
+function monoCard(parent, badge, title, subtitle, renderControls) {
   const shell = parent.createDiv({ cls: "ledger-mono-card ledger-reveal" });
   deferChartAnimation(shell);
-  shell.createDiv({ cls: "ledger-mono-badge", text: badge });
-  shell.createEl("h3", { text: title });
-  shell.createDiv({ cls: "ledger-mono-sub", text: subtitle });
+  const header = renderControls ? shell.createDiv({ cls: "ledger-mono-card-header" }) : shell;
+  const copy = renderControls ? header.createDiv({ cls: "ledger-mono-card-heading" }) : shell;
+  copy.createDiv({ cls: "ledger-mono-badge", text: badge });
+  copy.createEl("h3", { text: title });
+  copy.createDiv({ cls: "ledger-mono-sub", text: subtitle });
+  if (renderControls) renderControls(header.createDiv({ cls: "ledger-salary-cycle-controls" }));
   const chart = shell.createDiv({ cls: "ledger-mono-chart" });
   return { shell, chart };
 }
@@ -7174,20 +7263,23 @@ function renderTrendChart(parent, points, type, onClick) {
   renderMobileTrend(chart, points, isLine, onClick, cumulative);
   sourceLine(shell, `${cumulative ? "CUMULATIVE LINE" : isLine ? "HAIRLINE LINE" : "HAIRLINE AREA"} \xB7 MONO-BASIC \xB7 LOCAL LEDGER`);
 }
-function renderSalaryWaterfall(parent, steps, range, onCategory, onCalibrationNote) {
+function renderSalaryWaterfall(parent, steps, range, onCategory, onCalibrationNote, options) {
   var _a, _b, _c;
   const spent = -steps.filter((step) => step.kind === "expense").reduce((sum3, step) => sum3 + step.deltaCents, 0);
   const remaining = (_b = (_a = steps.at(-1)) == null ? void 0 : _a.toCents) != null ? _b : 0;
   const calibrated = ((_c = steps.at(-1)) == null ? void 0 : _c.label) === "\u5B9E\u9645\u4F59\u989D";
+  const remainingLabel = (options == null ? void 0 : options.historical) && calibrated ? "\u671F\u672B\u4F59\u989D\uFF08\u6821\u51C6\u63A8\u7B97\uFF09" : calibrated ? "\u5B9E\u9645\u4F59\u989D" : "\u8D26\u9762\u5269\u4F59";
+  const stepLabel = (step) => step.kind === "remaining" ? remainingLabel : step.label;
   const signedAdjustment = (cents) => `${cents < 0 ? "\u2212" : "+"}${formatCents(Math.abs(cents))}`;
   const { shell, chart } = monoCard(
     parent,
     "LUPI BASICS \xB7 F9 RUNG WATERFALL",
-    !calibrated && remaining < 0 ? `\u672C\u5DE5\u8D44\u5468\u671F\u652F\u51FA\u8D85\u51FA\u5DE5\u8D44 ${formatCents(-remaining)}` : `\u672C\u5DE5\u8D44\u5468\u671F\u5DF2\u652F\u51FA ${formatCents(spent)}`,
-    `${range.start} \u2014 ${range.end} \xB7 \u5DE5\u8D44\u4E3A\u8BBE\u7F6E\u503C \xB7 \u5206\u7C7B\u53EA\u8BA1\u5DF2\u5165\u8D26\u652F\u51FA${calibrated ? " \xB7 \u672B\u6BB5\u6309\u4F59\u989D\u6821\u51C6" : ""} \xB7 \u4E0E\u9876\u90E8\u7B5B\u9009\u65E0\u5173`
+    !calibrated && remaining < 0 ? `\u6240\u9009\u5DE5\u8D44\u5468\u671F\u652F\u51FA\u8D85\u51FA\u5DE5\u8D44 ${formatCents(-remaining)}` : `\u6240\u9009\u5DE5\u8D44\u5468\u671F\u5DF2\u652F\u51FA ${formatCents(spent)}`,
+    `${range.start} \u2014 ${range.end} \xB7 ${(options == null ? void 0 : options.historical) && options.salaryRecorded ? "\u5DE5\u8D44\u4E3A\u8BE5\u671F\u4FDD\u5B58\u503C" : (options == null ? void 0 : options.historical) ? "\u5DE5\u8D44\u4E3A\u53C2\u8003\u503C" : "\u5DE5\u8D44\u4E3A\u672C\u5468\u671F\u8BBE\u7F6E\u503C"} \xB7 \u5206\u7C7B\u53EA\u8BA1\u5DF2\u5165\u8D26\u652F\u51FA${calibrated ? " \xB7 \u672B\u6BB5\u6309\u8BE5\u671F\u4F59\u989D\u6821\u51C6" : ""}`,
+    options == null ? void 0 : options.renderControls
   );
   if (!steps.length) {
-    renderEmpty(chart, "\u8BF7\u5148\u5728\u8BBE\u7F6E\u4E2D\u586B\u5199\u6BCF\u4E2A\u5DE5\u8D44\u5468\u671F\u5230\u8D26\u5DE5\u8D44");
+    renderEmpty(chart, (options == null ? void 0 : options.historical) ? "\u8BE5\u671F\u672A\u4FDD\u5B58\u6709\u6548\u5DE5\u8D44\uFF0C\u652F\u51FA\u4ECD\u53EF\u5728\u671F\u95F4\u6982\u89C8\u548C\u660E\u7EC6\u4E2D\u67E5\u770B\u3002" : "\u8BF7\u5148\u5728\u8BBE\u7F6E\u4E2D\u586B\u5199\u6BCF\u4E2A\u5DE5\u8D44\u5468\u671F\u5230\u8D26\u5DE5\u8D44");
     return;
   }
   const width = 840;
@@ -7200,7 +7292,7 @@ function renderSalaryWaterfall(parent, steps, range, onCategory, onCalibrationNo
   const scale = (value) => bottom - (value - low) / (high - low) * (bottom - top);
   const xAt = (index) => 74 + index * (width - 148) / Math.max(1, steps.length - 1);
   const unit = niceCurrencyUnit(Math.max(...steps.map((step) => Math.abs(step.deltaCents))), 25);
-  const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": `\u5DE5\u8D44\u5468\u671F\u7011\u5E03\u56FE\uFF0C\u5DF2\u8BB0\u8D26\u652F\u51FA ${formatCents(spent)}\uFF0C${calibrated ? "\u5B9E\u9645\u4F59\u989D" : "\u8D26\u9762\u5269\u4F59"} ${formatCents(remaining)}` });
+  const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": `\u5DE5\u8D44\u5468\u671F\u7011\u5E03\u56FE\uFF0C\u5DF2\u8BB0\u8D26\u652F\u51FA ${formatCents(spent)}\uFF0C${remainingLabel} ${formatCents(remaining)}` });
   svg.classList.add("ledger-svg", "ledger-waterfall-svg", "ledger-waterfall-desktop");
   svg.append(svgEl("line", { x1: 32, y1: scale(0), x2: width - 30, y2: scale(0), stroke: GRID, "stroke-width": 1, class: "ledger-fade" }));
   steps.forEach((step, index) => {
@@ -7232,7 +7324,7 @@ function renderSalaryWaterfall(parent, steps, range, onCategory, onCalibrationNo
     const value = svgEl("text", { x, y: Math.max(19, scale(Math.max(a, b)) - 11), "text-anchor": "middle", class: "ledger-waterfall-value" });
     value.textContent = step.kind === "expense" ? `\u2212${formatCents(-step.deltaCents)}` : step.kind === "calibration" ? signedAdjustment(step.deltaCents) : formatCents(step.toCents);
     const label2 = svgEl("text", { x, y: 298, "text-anchor": "middle", class: "ledger-waterfall-label" });
-    label2.textContent = step.label;
+    label2.textContent = stepLabel(step);
     group2.append(value, label2);
     if (step.categories.length === 1) accessibleTarget(group2, `${step.label}\u652F\u51FA ${formatCents(-step.deltaCents)}\uFF0C\u6253\u5F00\u5206\u7C7B\u660E\u7EC6`, () => onCategory(step.categories[0]));
     if (step.kind === "calibration" && onCalibrationNote) {
@@ -7249,7 +7341,7 @@ function renderSalaryWaterfall(parent, steps, range, onCategory, onCalibrationNo
   steps.forEach((step) => {
     const row = mobile.createDiv({ cls: `ledger-waterfall-mobile-step is-${step.kind}` });
     const head = row.createDiv({ cls: "ledger-waterfall-mobile-head" });
-    head.createSpan({ text: step.label });
+    head.createSpan({ text: stepLabel(step) });
     head.createEl("strong", { text: step.kind === "expense" ? `\u2212${formatCents(-step.deltaCents)}` : step.kind === "calibration" ? signedAdjustment(step.deltaCents) : formatCents(step.toCents) });
     if (step.kind === "expense") row.createDiv({ cls: "ledger-waterfall-mobile-balance", text: `\u6263\u9664\u540E\u5269\u4F59 ${formatCents(step.toCents)}` });
     if (step.kind === "calibration") {
@@ -7272,7 +7364,7 @@ function renderSalaryWaterfall(parent, steps, range, onCategory, onCalibrationNo
     }
   });
   shell.createDiv({ cls: "ledger-waterfall-note", text: calibrated ? "\u5DF2\u652F\u51FA\u4E0E\u5206\u7C7B\u91D1\u989D\u53EA\u6765\u81EA\u8D26\u672C\uFF1B\u4F59\u989D\u6821\u51C6\u5DEE\u989D\u5355\u72EC\u6865\u63A5\u5230\u5B9E\u9645\u4F59\u989D\uFF0C\u4E0D\u5F53\u4F5C\u65B0\u6D88\u8D39\uFF0C\u4E5F\u4E0D\u5F71\u54CD\u6D1E\u5BDF\u5224\u65AD\u3002" : "\u53EA\u6263\u9664\u5DF2\u8BB0\u5F55\u7684\u4EA4\u6613\uFF1B\u56FA\u5B9A\u652F\u51FA\u5982\u5DF2\u5165\u8D26\uFF0C\u4E0D\u4F1A\u518D\u6B21\u6263\u9664\u3002\u672A\u6821\u51C6\u65F6\u7684\u8D26\u9762\u5269\u4F59\u53EA\u662F\u63A8\u7B97\u503C\u3002" });
-  sourceLine(shell, "RUNG WATERFALL \xB7 WIRE \xB7 CURRENT SALARY CYCLE \xB7 LOCAL LEDGER");
+  sourceLine(shell, "RUNG WATERFALL \xB7 WIRE \xB7 SELECTED SALARY CYCLE \xB7 LOCAL LEDGER");
 }
 function renderCategoryBox(parent, data, onOpenRecord) {
   const high = data.largestCurrent.cents > data.upperFenceCents;
@@ -9584,6 +9676,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
     super(leaf);
     this.plugin = plugin;
     this.periodOffset = 0;
+    this.selectedSalaryCycleStart = null;
     this.categoryChart = "bar";
     this.categorySort = "amount";
     this.trendChart = "line";
@@ -9923,18 +10016,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
     this.metric(metrics, "\u7B14\u6570", String(stats2.count), "\u70B9\u51FB\u67E5\u770B\u5168\u90E8\u660E\u7EC6", () => this.goDetails());
     this.metric(metrics, "\u65E5\u5747", formatCents(stats2.averagePerRecordedDayCents), `\u5206\u6BCD\uFF1A${stats2.recordedDays} \u4E2A\u6709\u65E5\u8BB0\u8D26\u6587\u4EF6\u7684\u65E5\u671F`, () => this.goDetails());
     this.metric(metrics, "\u6700\u5927\u5355\u7B14", stats2.maxRecord ? formatCents(stats2.maxRecord.cents) : "\u2014", stats2.maxRecord ? `${stats2.maxRecord.category} \xB7 ${stats2.maxRecord.date}` : "\u6682\u65E0\u8BB0\u5F55", () => this.goDetails());
-    const now = /* @__PURE__ */ new Date();
-    const currentCycle = salaryDayRange(now);
-    const cycleRecords = this.allRecords();
-    const balance = balanceStatus(cycleRecords, now, this.plugin.settings.salaryCents, this.plugin.settings.balanceCalibration);
-    const waterfall = salaryWaterfall(cycleRecords, currentCycle, this.plugin.settings.salaryCents, balance);
-    renderSalaryWaterfall(
-      this.overviewSection(parent, "\u5DE5\u8D44\u5468\u671F\u6536\u652F", "wallet"),
-      waterfall,
-      currentCycle,
-      (category) => this.drillCategoryInRange(category, currentCycle),
-      () => new BalanceCalibrationNoteModal(this.plugin).open()
-    );
+    this.renderSalaryCycle(this.overviewSection(parent, "\u5DE5\u8D44\u5468\u671F\u6536\u652F", "wallet"));
     if (records.length === 0) {
       renderEmpty(parent, "\u5F53\u524D\u7B5B\u9009\u6761\u4EF6\u4E0B\u6CA1\u6709\u8BB0\u5F55\u3002\u7F3A\u5C11\u6587\u4EF6\u7684\u65E5\u671F\u4E0D\u4F1A\u6309\u96F6\u6D88\u8D39\u5904\u7406\u3002");
     }
@@ -9942,6 +10024,61 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
     this.renderTrend(this.overviewSection(parent, "\u652F\u51FA\u8D8B\u52BF", "chart-line"));
     const starred = this.starredRecords();
     if (starred.length) renderStarredExpenses(this.overviewSection(parent, "\u661F\u6807\u652F\u51FA", "star"), starred, (record) => void this.openRecord(record));
+  }
+  renderSalaryCycle(parent) {
+    var _a;
+    const now = /* @__PURE__ */ new Date();
+    const currentStart = salaryDayRange(now).start;
+    const start = (_a = this.selectedSalaryCycleStart) != null ? _a : this.preset === "salary" && this.filter.range.start <= currentStart ? this.filter.range.start : currentStart;
+    const records = this.allRecords();
+    const details = salaryCycleDetails(this.plugin.settings, start, records, now);
+    const { cycle, range, balance, historical, salaryRecorded } = details;
+    const openNote = () => {
+      new BalanceCalibrationNoteModal(this.plugin, { note: cycle.note, range, historical }).open();
+    };
+    const renderControls = (controls) => {
+      var _a2;
+      const selectCycle = (nextStart) => {
+        this.selectedSalaryCycleStart = nextStart === currentStart ? null : nextStart;
+        if (this.preset === "salary") {
+          const anchor = /* @__PURE__ */ new Date(`${nextStart}T12:00:00`), current2 = /* @__PURE__ */ new Date(`${currentStart}T12:00:00`);
+          this.periodOffset = (current2.getFullYear() - anchor.getFullYear()) * 12 + current2.getMonth() - anchor.getMonth();
+          this.filter.range = salaryCycleRange(nextStart, now);
+          const scrollTop = this.contentEl.scrollTop;
+          this.render();
+          this.contentEl.scrollTop = scrollTop;
+        } else this.refreshOverviewSection(parent, () => this.renderSalaryCycle(parent));
+      };
+      const previous = controls.createEl("button", { cls: "ledger-button", text: "\u4E0A\u4E00\u5468\u671F", attr: { type: "button", "aria-label": "\u67E5\u770B\u4E0A\u4E00\u5DE5\u8D44\u5468\u671F" } });
+      const earliestStart = [
+        currentStart,
+        ...((_a2 = this.plugin.settings.salaryCycles) != null ? _a2 : []).map((c) => c.cycleStart),
+        ...records.filter((r) => isValidIsoDate(r.date)).map((r) => salaryDayRange(/* @__PURE__ */ new Date(`${r.date}T12:00:00`)).start)
+      ].sort()[0];
+      previous.disabled = start <= earliestStart;
+      previous.addEventListener("click", () => selectCycle(shiftSalaryCycle(start, 1)));
+      controls.createSpan({ cls: "ledger-salary-cycle-label", text: `${range.start} \u2014 ${range.end}${historical ? " \xB7 \u5386\u53F2\u5468\u671F" : " \xB7 \u672C\u5468\u671F"}` });
+      const next = controls.createEl("button", { cls: "ledger-button", text: "\u4E0B\u4E00\u5468\u671F", attr: { type: "button", "aria-label": "\u67E5\u770B\u4E0B\u4E00\u5DE5\u8D44\u5468\u671F" } });
+      next.disabled = !historical;
+      next.addEventListener("click", () => selectCycle(shiftSalaryCycle(start, -1)));
+      const current = controls.createEl("button", { cls: "ledger-button", text: "\u56DE\u5230\u672C\u5468\u671F", attr: { type: "button" } });
+      current.disabled = !historical;
+      current.addEventListener("click", () => selectCycle(currentStart));
+      if (balance.calibrated || cycle.note.trim()) {
+        const note = controls.createEl("button", { cls: "ledger-button", text: "\u5DEE\u989D\u5907\u6CE8", attr: { type: "button" } });
+        note.addEventListener("click", openNote);
+      }
+    };
+    renderSalaryWaterfall(
+      parent,
+      salaryWaterfall(records, range, cycle.salaryCents, balance),
+      range,
+      (category) => this.drillCategoryInRange(category, range),
+      openNote,
+      { historical, salaryRecorded, renderControls }
+    );
+    if (balance.calibratedAt) parent.createDiv({ cls: "ledger-salary-history-hint", text: `\u8BE5\u671F\u6700\u540E\u6821\u51C6\uFF1A${new Date(balance.calibratedAt).toLocaleString("zh-CN")}` });
+    if (historical) parent.createDiv({ cls: "ledger-salary-history-hint", text: !salaryRecorded ? "\u8BE5\u671F\u5DE5\u8D44\u672A\u72EC\u7ACB\u4FDD\u5B58\uFF0C\u6682\u7528\u5347\u7EA7\u65F6\u6216\u5F53\u524D\u8BBE\u7F6E\u7684\u5DE5\u8D44\u53C2\u8003\uFF1B\u65E7\u7248\u5DF2\u8986\u76D6\u7684\u6821\u51C6\u65E0\u6CD5\u6062\u590D\u3002" : balance.calibrated ? "\u4F7F\u7528\u8BE5\u671F\u4FDD\u5B58\u7684\u5DE5\u8D44\u3001\u6700\u540E\u4E00\u6B21\u6821\u51C6\u548C\u5907\u6CE8\uFF1B\u671F\u672B\u4F59\u989D\u6309\u6821\u51C6\u53CA\u8BE5\u671F\u540E\u7EED\u5DF2\u8BB0\u8D26\u652F\u51FA\u63A8\u7B97\u3002\u8865\u8BB0\u6216\u4FEE\u6539\u65E7\u8D26\u4F1A\u91CD\u65B0\u8BA1\u7B97\u5DEE\u989D\u3002" : "\u4F7F\u7528\u8BE5\u671F\u4FDD\u5B58\u7684\u5DE5\u8D44\uFF1B\u8BE5\u671F\u672A\u6821\u51C6\u6216\u5DF2\u53D6\u6D88\u6821\u51C6\uFF0C\u4F59\u989D\u6309\u5DE5\u8D44\u51CF\u5DF2\u8BB0\u8D26\u652F\u51FA\u63A8\u7B97\u3002" });
   }
   overviewSection(parent, title, icon) {
     const section = parent.createEl("section", { cls: "ledger-overview-section", attr: { "aria-label": title } });
@@ -10461,6 +10598,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
     if (onClick) card2.addEventListener("click", onClick);
   }
   applyPreset(preset) {
+    this.selectedSalaryCycleStart = null;
     this.clearDrillContext();
     this.preset = preset;
     this.periodOffset = 0;
@@ -10468,6 +10606,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
     this.filter.range = this.rangeForPreset(preset, now, this.periodOffset);
   }
   shiftPeriod(direction) {
+    this.selectedSalaryCycleStart = null;
     if (this.preset === "custom") return;
     this.clearDrillContext();
     this.periodOffset += direction;
@@ -10914,6 +11053,7 @@ var LedgerStatisticsPlugin = class extends import_obsidian10.Plugin {
     this.saveQueue = Promise.resolve();
     this.assetQueue = Promise.resolve();
     this.assetsStopped = false;
+    this.salaryHistoryDirty = false;
   }
   openAiSettings() {
     var _a;
@@ -10945,6 +11085,7 @@ var LedgerStatisticsPlugin = class extends import_obsidian10.Plugin {
     this.settings.insightHistory = Array.isArray(this.settings.insightHistory) ? this.settings.insightHistory.filter((item) => item && typeof item.id === "string" && typeof item.cycle === "string" && typeof item.date === "string" && Number.isFinite(item.impact)) : [];
     if (!isBalanceCalibration(this.settings.balanceCalibration)) this.settings.balanceCalibration = null;
     if (typeof this.settings.balanceCalibrationNote !== "string") this.settings.balanceCalibrationNote = "";
+    if (this.syncSalaryCycles()) await this.saveSettings(false, false);
     this.budgetMonitor = new BudgetMonitor(
       () => this.settings,
       (url) => (0, import_obsidian10.requestUrl)({ url, method: "GET", throw: true }),
@@ -11010,12 +11151,14 @@ var LedgerStatisticsPlugin = class extends import_obsidian10.Plugin {
     disposeAssetGestures();
     (_c = this.repository) == null ? void 0 : _c.dispose();
   }
-  async saveSettings(rescan, refresh = true) {
+  async saveSettings(rescan, refresh = true, now = /* @__PURE__ */ new Date()) {
+    this.syncSalaryCycles(now);
     const data = JSON.parse(JSON.stringify(withoutLegacyAiSecret(this.settings)));
     const saved = this.saveQueue.then(() => this.saveData(data));
     this.saveQueue = saved.catch(() => {
     });
     await saved;
+    this.salaryHistoryDirty = ["salaryCycleStart", "salaryCycles", "salaryCents", "balanceCalibration", "balanceCalibrationNote"].some((key) => JSON.stringify(this.settings[key]) !== JSON.stringify(data[key]));
     if (rescan) await this.repository.setFolder(this.settings.ledgerFolder);
     if (refresh) this.refreshViews();
     this.checkBudget();
@@ -11026,6 +11169,7 @@ var LedgerStatisticsPlugin = class extends import_obsidian10.Plugin {
   }
   tick() {
     var _a;
+    if (this.syncSalaryCycles() || this.salaryHistoryDirty) void this.saveSettings(false).catch(() => new import_obsidian10.Notice("\u5DE5\u8D44\u5468\u671F\u4FDD\u5B58\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u540C\u6B65\u6216\u78C1\u76D8\u540E\u91CD\u65B0\u4FDD\u5B58\u8BBE\u7F6E\u3002"));
     for (const leaf of this.app.workspace.getLeavesOfType(LEDGER_VIEW_TYPE)) {
       if (leaf.view instanceof LedgerStatisticsView) leaf.view.refreshDate();
     }
@@ -11041,6 +11185,19 @@ var LedgerStatisticsPlugin = class extends import_obsidian10.Plugin {
   assetSnapshot() {
     return buildAssetSnapshot(this.settings.assets, flattenRecords(this.repository.files.values()));
   }
+  syncSalaryCycles(now = /* @__PURE__ */ new Date()) {
+    const next = reconcileSalaryCycles(this.settings, now);
+    const changed = Object.entries(next).some(([key, value]) => JSON.stringify(this.settings[key]) !== JSON.stringify(value));
+    if (changed) {
+      Object.assign(this.settings, next);
+      this.salaryHistoryDirty = true;
+    }
+    return changed;
+  }
+  currentSalaryState() {
+    const { salaryCycleStart, salaryCycles, salaryCents, balanceCalibration, balanceCalibrationNote } = this.settings;
+    return { salaryCycleStart, salaryCycles, salaryCents, balanceCalibration, balanceCalibrationNote };
+  }
   refreshAssetQuotes(force = false) {
     return this.assetQuotes.refresh(force);
   }
@@ -11055,10 +11212,13 @@ var LedgerStatisticsPlugin = class extends import_obsidian10.Plugin {
     const operation = this.assetQueue.then(async () => {
       var _a;
       if (this.assetsStopped) throw new Error("\u63D2\u4EF6\u5DF2\u5173\u95ED\uFF0C\u8BF7\u91CD\u65B0\u6253\u5F00");
+      if (!Number.isSafeInteger(cents)) throw new Error("\u4F59\u989D\u65E0\u6548");
+      const beforeSettings = { ...this.currentSalaryState(), assets: this.settings.assets };
+      this.syncSalaryCycles(now);
       const records = flattenRecords(this.repository.files.values());
       const calibration = createBalanceCalibration(records, now, cents);
       if (!isBalanceCalibration(calibration)) throw new Error("\u4F59\u989D\u65E0\u6548");
-      const beforeAssets = this.settings.assets, beforeCalibration = this.settings.balanceCalibration;
+      const beforeAssets = this.settings.assets;
       const next = JSON.parse(JSON.stringify(beforeAssets));
       let cash = next.accounts.find((a) => a.id === next.defaultCashId && a.kind === "cash" && !a.archived);
       if (!cash) {
@@ -11071,10 +11231,9 @@ var LedgerStatisticsPlugin = class extends import_obsidian10.Plugin {
       this.settings.assets = next;
       this.settings.balanceCalibration = calibration;
       try {
-        await this.saveSettings(false, false);
+        await this.saveSettings(false, false, now);
       } catch (error) {
-        this.settings.assets = beforeAssets;
-        this.settings.balanceCalibration = beforeCalibration;
+        Object.assign(this.settings, beforeSettings);
         throw error;
       }
       if (!this.assetsStopped) this.refreshViews();
@@ -11084,16 +11243,42 @@ var LedgerStatisticsPlugin = class extends import_obsidian10.Plugin {
     });
     return operation;
   }
-  clearBalanceCalibration() {
+  clearBalanceCalibration(now = /* @__PURE__ */ new Date()) {
     const operation = this.assetQueue.then(async () => {
       var _a;
       if (this.assetsStopped) throw new Error("\u63D2\u4EF6\u5DF2\u5173\u95ED\uFF0C\u8BF7\u91CD\u65B0\u6253\u5F00");
-      const before = this.settings.balanceCalibration;
+      const before = this.currentSalaryState();
+      this.syncSalaryCycles(now);
       this.settings.balanceCalibration = null;
       try {
-        await this.saveSettings(false, false);
+        await this.saveSettings(false, false, now);
       } catch (error) {
-        this.settings.balanceCalibration = before;
+        Object.assign(this.settings, before);
+        throw error;
+      }
+      if (!this.assetsStopped) this.refreshViews();
+      (_a = this.settingTab) == null ? void 0 : _a.refreshBalanceSummary();
+    });
+    this.assetQueue = operation.catch(() => {
+    });
+    return operation;
+  }
+  updateSalaryCycle(change, now = /* @__PURE__ */ new Date()) {
+    const operation = this.assetQueue.then(async () => {
+      var _a;
+      if (this.assetsStopped) throw new Error("\u63D2\u4EF6\u5DF2\u5173\u95ED\uFF0C\u8BF7\u91CD\u65B0\u6253\u5F00");
+      const before = { ...this.currentSalaryState(), financeAdviceCache: this.settings.financeAdviceCache };
+      if (change.salaryCents !== void 0 && (!Number.isSafeInteger(change.salaryCents) || change.salaryCents < 0)) throw new Error("\u5DE5\u8D44\u91D1\u989D\u65E0\u6548");
+      this.syncSalaryCycles(now);
+      if (change.salaryCents !== void 0) {
+        this.settings.salaryCents = change.salaryCents;
+        this.settings.financeAdviceCache = null;
+      }
+      if (change.note !== void 0) this.settings.balanceCalibrationNote = change.note;
+      try {
+        await this.saveSettings(false, false, now);
+      } catch (error) {
+        Object.assign(this.settings, before);
         throw error;
       }
       if (!this.assetsStopped) this.refreshViews();

@@ -41,12 +41,15 @@ function deterministic(index: number, salt: number): number {
   return Math.abs(((index * 73856093) ^ (salt * 19349663)) % 1000) / 1000;
 }
 
-function monoCard(parent: HTMLElement, badge: string, title: string, subtitle: string): { shell: HTMLElement; chart: HTMLElement } {
+function monoCard(parent: HTMLElement, badge: string, title: string, subtitle: string, renderControls?: (parent: HTMLElement) => void): { shell: HTMLElement; chart: HTMLElement } {
   const shell = parent.createDiv({ cls: "ledger-mono-card ledger-reveal" });
   deferChartAnimation(shell);
-  shell.createDiv({ cls: "ledger-mono-badge", text: badge });
-  shell.createEl("h3", { text: title });
-  shell.createDiv({ cls: "ledger-mono-sub", text: subtitle });
+  const header = renderControls ? shell.createDiv({ cls: "ledger-mono-card-header" }) : shell;
+  const copy = renderControls ? header.createDiv({ cls: "ledger-mono-card-heading" }) : shell;
+  copy.createDiv({ cls: "ledger-mono-badge", text: badge });
+  copy.createEl("h3", { text: title });
+  copy.createDiv({ cls: "ledger-mono-sub", text: subtitle });
+  if (renderControls) renderControls(header.createDiv({ cls: "ledger-salary-cycle-controls" }));
   const chart = shell.createDiv({ cls: "ledger-mono-chart" });
   return { shell, chart };
 }
@@ -509,19 +512,22 @@ export function renderTrendChart(parent: HTMLElement, points: TrendPoint[], type
   sourceLine(shell, `${cumulative ? "CUMULATIVE LINE" : isLine ? "HAIRLINE LINE" : "HAIRLINE AREA"} · MONO-BASIC · LOCAL LEDGER`);
 }
 
-export function renderSalaryWaterfall(parent: HTMLElement, steps: WaterfallStep[], range: { start: string; end: string }, onCategory: (category: string) => void, onCalibrationNote?: () => void): void {
+export function renderSalaryWaterfall(parent: HTMLElement, steps: WaterfallStep[], range: { start: string; end: string }, onCategory: (category: string) => void, onCalibrationNote?: () => void, options?: { historical: boolean; salaryRecorded: boolean; renderControls?: (parent: HTMLElement) => void }): void {
   const spent = -steps.filter((step) => step.kind === "expense").reduce((sum, step) => sum + step.deltaCents, 0);
   const remaining = steps.at(-1)?.toCents ?? 0;
   const calibrated = steps.at(-1)?.label === "实际余额";
+  const remainingLabel = options?.historical && calibrated ? "期末余额（校准推算）" : calibrated ? "实际余额" : "账面剩余";
+  const stepLabel = (step: WaterfallStep): string => step.kind === "remaining" ? remainingLabel : step.label;
   const signedAdjustment = (cents: number): string => `${cents < 0 ? "−" : "+"}${formatCents(Math.abs(cents))}`;
   const { shell, chart } = monoCard(
     parent,
     "LUPI BASICS · F9 RUNG WATERFALL",
-    !calibrated && remaining < 0 ? `本工资周期支出超出工资 ${formatCents(-remaining)}` : `本工资周期已支出 ${formatCents(spent)}`,
-    `${range.start} — ${range.end} · 工资为设置值 · 分类只计已入账支出${calibrated ? " · 末段按余额校准" : ""} · 与顶部筛选无关`
+    !calibrated && remaining < 0 ? `所选工资周期支出超出工资 ${formatCents(-remaining)}` : `所选工资周期已支出 ${formatCents(spent)}`,
+    `${range.start} — ${range.end} · ${options?.historical && options.salaryRecorded ? "工资为该期保存值" : options?.historical ? "工资为参考值" : "工资为本周期设置值"} · 分类只计已入账支出${calibrated ? " · 末段按该期余额校准" : ""}`,
+    options?.renderControls
   );
   if (!steps.length) {
-    renderEmpty(chart, "请先在设置中填写每个工资周期到账工资");
+    renderEmpty(chart, options?.historical ? "该期未保存有效工资，支出仍可在期间概览和明细中查看。" : "请先在设置中填写每个工资周期到账工资");
     return;
   }
   const width = 840;
@@ -534,7 +540,7 @@ export function renderSalaryWaterfall(parent: HTMLElement, steps: WaterfallStep[
   const scale = (value: number): number => bottom - (value - low) / (high - low) * (bottom - top);
   const xAt = (index: number): number => 74 + index * (width - 148) / Math.max(1, steps.length - 1);
   const unit = niceCurrencyUnit(Math.max(...steps.map((step) => Math.abs(step.deltaCents))), 25);
-  const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": `工资周期瀑布图，已记账支出 ${formatCents(spent)}，${calibrated ? "实际余额" : "账面剩余"} ${formatCents(remaining)}` });
+  const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": `工资周期瀑布图，已记账支出 ${formatCents(spent)}，${remainingLabel} ${formatCents(remaining)}` });
   svg.classList.add("ledger-svg", "ledger-waterfall-svg", "ledger-waterfall-desktop");
   svg.append(svgEl("line", { x1: 32, y1: scale(0), x2: width - 30, y2: scale(0), stroke: GRID, "stroke-width": 1, class: "ledger-fade" }));
   steps.forEach((step, index) => {
@@ -561,7 +567,7 @@ export function renderSalaryWaterfall(parent: HTMLElement, steps: WaterfallStep[
     const value = svgEl("text", { x, y: Math.max(19, scale(Math.max(a, b)) - 11), "text-anchor": "middle", class: "ledger-waterfall-value" });
     value.textContent = step.kind === "expense" ? `−${formatCents(-step.deltaCents)}` : step.kind === "calibration" ? signedAdjustment(step.deltaCents) : formatCents(step.toCents);
     const label = svgEl("text", { x, y: 298, "text-anchor": "middle", class: "ledger-waterfall-label" });
-    label.textContent = step.label;
+    label.textContent = stepLabel(step);
     group.append(value, label);
     if (step.categories.length === 1) accessibleTarget(group, `${step.label}支出 ${formatCents(-step.deltaCents)}，打开分类明细`, () => onCategory(step.categories[0]));
     if (step.kind === "calibration" && onCalibrationNote) {
@@ -579,7 +585,7 @@ export function renderSalaryWaterfall(parent: HTMLElement, steps: WaterfallStep[
   steps.forEach((step) => {
     const row = mobile.createDiv({ cls: `ledger-waterfall-mobile-step is-${step.kind}` });
     const head = row.createDiv({ cls: "ledger-waterfall-mobile-head" });
-    head.createSpan({ text: step.label });
+    head.createSpan({ text: stepLabel(step) });
     head.createEl("strong", { text: step.kind === "expense" ? `−${formatCents(-step.deltaCents)}` : step.kind === "calibration" ? signedAdjustment(step.deltaCents) : formatCents(step.toCents) });
     if (step.kind === "expense") row.createDiv({ cls: "ledger-waterfall-mobile-balance", text: `扣除后剩余 ${formatCents(step.toCents)}` });
     if (step.kind === "calibration") {
@@ -599,7 +605,7 @@ export function renderSalaryWaterfall(parent: HTMLElement, steps: WaterfallStep[
   shell.createDiv({ cls: "ledger-waterfall-note", text: calibrated
     ? "已支出与分类金额只来自账本；余额校准差额单独桥接到实际余额，不当作新消费，也不影响洞察判断。"
     : "只扣除已记录的交易；固定支出如已入账，不会再次扣除。未校准时的账面剩余只是推算值。" });
-  sourceLine(shell, "RUNG WATERFALL · WIRE · CURRENT SALARY CYCLE · LOCAL LEDGER");
+  sourceLine(shell, "RUNG WATERFALL · WIRE · SELECTED SALARY CYCLE · LOCAL LEDGER");
 }
 
 export function renderCategoryBox(parent: HTMLElement, data: BoxReference, onOpenRecord: (record: LedgerRecord) => void): void {

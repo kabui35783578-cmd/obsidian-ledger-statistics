@@ -87,3 +87,40 @@ test('comparison mode and all four dates change in place without navigating to t
   change(v, body, '比较方式', 'auto');
   assert.equal(v.compareMode, 'auto');
 });
+
+test('salary history navigation stays in place, returns to the live cycle and prevents future periods', () => {
+  const { v, body } = fixture();
+  v.plugin.settings.salaryCents = 0;
+  v.plugin.settings.salaryCycles = [{ cycleStart: require('../dist/core.cjs').salaryDayRange(new Date(), 1).start, salaryCents: 0, salarySource: 'saved', calibration: null, note: '' }];
+  v.allRecords = () => [];
+  v.renderSalaryCycle(body);
+  const firstLabel = body.querySelector('.ledger-salary-cycle-label').textContent;
+  const button = text => body.querySelectorAll('button').find(b => b.textContent === text);
+  assert.equal(button('下一周期').disabled, true);
+  button('上一周期').listeners.click();
+  assert.match(body.querySelector('.ledger-salary-cycle-label').textContent, /历史周期/);
+  const fixed = v.selectedSalaryCycleStart;
+  const render = v.render;
+  v.render = () => {};
+  v.refreshDate(new Date(Date.now() + 86400000 * 35));
+  v.render = render;
+  assert.equal(v.selectedSalaryCycleStart, fixed, 'an explicitly selected historical cycle stays fixed');
+  button('回到本周期').listeners.click();
+  assert.equal(body.querySelector('.ledger-salary-cycle-label').textContent, firstLabel);
+  assert.equal(v.selectedSalaryCycleStart, null);
+  assert.equal(v.contentEl.scrollTop, 2400);
+});
+
+test('top salary filter and its arrows select the same cycle as the waterfall', () => {
+  const { v, body } = fixture();
+  v.render = () => {};
+  v.plugin.settings.salaryCents = 0;
+  v.allRecords = () => [];
+  v.selectedSalaryCycleStart = '2025-01-15';
+  v.applyPreset('salary');
+  v.shiftPeriod(1);
+  v.renderSalaryCycle(body);
+  assert.equal(v.selectedSalaryCycleStart, null);
+  assert.ok(body.querySelector('.ledger-salary-cycle-label').textContent.startsWith(v.filter.range.start));
+  assert.match(body.querySelector('.ledger-salary-cycle-label').textContent, /历史周期/);
+});

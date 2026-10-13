@@ -112,3 +112,18 @@ test('note animation hooks finish immediately without fading or translating the 
   assert.equal(backdrop.style.opacity, '0.85', 'no flash from fading the backdrop before detaching');
   assert.equal(modal.contentEl.children[0], note);
 });
+
+test('historical note modal uses the selected cycle, even after the current cycle note changes', () => {
+  const modal = Object.create(BalanceCalibrationNoteModal.prototype);
+  modal.plugin = { settings: { balanceCalibrationNote: '新周期备注' } };
+  modal.cycle = { note: '上期还款\n家用', range: { start: '2026-09-15', end: '2026-10-14' }, historical: true };
+  modal.contentEl = new Element(); modal.containerEl = new Element(); modal.modalEl = new Element();
+  modal.setTitle = title => { modal.title = title; };
+  modal.onOpen();
+  assert.match(modal.title, /2026-09-15.*2026-10-14/);
+  assert.equal(modal.contentEl.children[0].textContent, '上期还款\n家用');
+  assert.doesNotMatch(modal.contentEl.children[1].textContent, /设置中修改/);
+  modal.cycle.note = '';
+  modal.onOpen();
+  assert.equal(modal.contentEl.children[0].textContent, '该工资周期未保存差额备注。');
+});

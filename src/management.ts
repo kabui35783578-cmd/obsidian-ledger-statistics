@@ -19,19 +19,19 @@ class RecordPicker extends FuzzySuggestModal<LedgerRecord> {
 }
 
 export class BalanceCalibrationNoteModal extends Modal {
-  constructor(private plugin: LedgerStatisticsPlugin) { super(plugin.app); }
+  constructor(private plugin: LedgerStatisticsPlugin, private cycle?: { note: string; range: { start: string; end: string }; historical: boolean }) { super(plugin.app); }
   onOpen(): void {
     styleLedgerModal(this);
     this.containerEl.addClass("ledger-balance-note-container");
     this.modalEl.addClass("ledger-balance-note-modal");
-    this.setTitle("余额校准差额备注");
+    this.setTitle(this.cycle ? `${this.cycle.range.start} — ${this.cycle.range.end} · 差额备注` : "余额校准差额备注");
     this.contentEl.empty();
-    const note = this.plugin.settings.balanceCalibrationNote.trim();
+    const note = (this.cycle?.note ?? this.plugin.settings.balanceCalibrationNote).trim();
     this.contentEl.createDiv({
       cls: "ledger-balance-note-content",
-      text: note || "尚未填写备注。可在插件设置 → 余额校准 → 余额校准差额备注中记录资金去向。"
+      text: note || (this.cycle?.historical ? "该工资周期未保存差额备注。" : "尚未填写备注。可在插件设置 → 余额校准 → 余额校准差额备注中记录资金去向。")
     });
-    if (note) this.contentEl.createEl("p", { cls: "ledger-balance-note-hint", text: "仅作说明 · 可在余额校准设置中修改" });
+    if (note) this.contentEl.createEl("p", { cls: "ledger-balance-note-hint", text: this.cycle?.historical ? "该工资周期保存的备注 · 仅作说明" : "仅作说明 · 可在余额校准设置中修改" });
   }
   // Obsidian calls these mobile hooks from open()/close(), although they are
   // absent from the public typings. CSS alone cannot cancel their animation
