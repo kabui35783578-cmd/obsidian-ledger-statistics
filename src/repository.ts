@@ -84,6 +84,10 @@ export class LedgerRepository {
     const parsed = await this.read(file, path);
     if (!this.disposed && generation === this.generation && this.revisions.get(path) === revision
       && file.path === path && this.app.vault.getAbstractFileByPath(path) === file && this.isLedgerFile(file) && parsed) {
+      // Sync may emit modify repeatedly for identical content. Preserve the
+      // revision and DOM unless the parsed records or diagnostics really change.
+      const previous = this.cache.get(path);
+      if (previous && JSON.stringify(previous) === JSON.stringify(parsed)) return;
       this.cache.set(path, parsed);
       this.contentVersion++;
       this.scheduleNotify();
@@ -97,16 +101,18 @@ export class LedgerRepository {
   private async handleRename(file: TAbstractFile, oldPath: string): Promise<void> {
     this.invalidatePath(oldPath);
     if (file instanceof TFile) await this.handleCreateOrModify(file);
-    else await this.rescan();
+    else if (this.affectsLedgerFolder(oldPath) || this.affectsLedgerFolder(file.path)) await this.rescan();
   }
 
   private invalidatePath(path: string): void {
-    for (const key of new Set([...this.cache.keys(), ...this.revisions.keys(), path])) {
+    if (this.disposed) return;
+    let changed = false;
+    for (const key of new Set([...this.cache.keys(), ...this.revisions.keys()])) {
       if (key !== path && !key.startsWith(`${path}/`)) continue;
       this.revisions.set(key, (this.revisions.get(key) ?? 0) + 1);
-      if (this.cache.delete(key)) this.contentVersion++;
+      if (this.cache.delete(key)) { this.contentVersion++; changed = true; }
     }
-    this.scheduleNotify();
+    if (changed) this.scheduleNotify();
   }
 
   private async read(file: TFile, path: string): Promise<ParsedLedgerFile | null> {
@@ -126,6 +132,11 @@ export class LedgerRepository {
   private isLedgerFile(file: TFile): boolean {
     const folder = this.folder.replace(/^\/+|\/+$/g, "");
     return file.extension.toLowerCase() === "md" && (folder === "" || file.path.startsWith(`${folder}/`));
+  }
+
+  private affectsLedgerFolder(path: string): boolean {
+    const folder = this.folder.replace(/^\/+|\/+$/g, "");
+    return !folder || !path || path === folder || path.startsWith(`${folder}/`) || folder.startsWith(`${path}/`);
   }
 
   private scheduleNotify(): void {

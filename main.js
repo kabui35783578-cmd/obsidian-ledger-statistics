@@ -935,6 +935,8 @@ var LedgerRepository = class {
     this.revisions.set(path, revision);
     const parsed = await this.read(file, path);
     if (!this.disposed && generation === this.generation && this.revisions.get(path) === revision && file.path === path && this.app.vault.getAbstractFileByPath(path) === file && this.isLedgerFile(file) && parsed) {
+      const previous = this.cache.get(path);
+      if (previous && JSON.stringify(previous) === JSON.stringify(parsed)) return;
       this.cache.set(path, parsed);
       this.contentVersion++;
       this.scheduleNotify();
@@ -946,16 +948,21 @@ var LedgerRepository = class {
   async handleRename(file, oldPath) {
     this.invalidatePath(oldPath);
     if (file instanceof import_obsidian.TFile) await this.handleCreateOrModify(file);
-    else await this.rescan();
+    else if (this.affectsLedgerFolder(oldPath) || this.affectsLedgerFolder(file.path)) await this.rescan();
   }
   invalidatePath(path) {
     var _a;
-    for (const key of /* @__PURE__ */ new Set([...this.cache.keys(), ...this.revisions.keys(), path])) {
+    if (this.disposed) return;
+    let changed = false;
+    for (const key of /* @__PURE__ */ new Set([...this.cache.keys(), ...this.revisions.keys()])) {
       if (key !== path && !key.startsWith(`${path}/`)) continue;
       this.revisions.set(key, ((_a = this.revisions.get(key)) != null ? _a : 0) + 1);
-      if (this.cache.delete(key)) this.contentVersion++;
+      if (this.cache.delete(key)) {
+        this.contentVersion++;
+        changed = true;
+      }
     }
-    this.scheduleNotify();
+    if (changed) this.scheduleNotify();
   }
   async read(file, path) {
     try {
@@ -973,6 +980,10 @@ var LedgerRepository = class {
   isLedgerFile(file) {
     const folder = this.folder.replace(/^\/+|\/+$/g, "");
     return file.extension.toLowerCase() === "md" && (folder === "" || file.path.startsWith(`${folder}/`));
+  }
+  affectsLedgerFolder(path) {
+    const folder = this.folder.replace(/^\/+|\/+$/g, "");
+    return !folder || !path || path === folder || path.startsWith(`${folder}/`) || folder.startsWith(`${path}/`);
   }
   scheduleNotify() {
     if (this.disposed) return;
@@ -11294,6 +11305,7 @@ var LedgerStatisticsPlugin = class extends import_obsidian10.Plugin {
       const before = this.settings.assets, next = JSON.parse(JSON.stringify(before));
       change(next);
       storeAssetSnapshot(next, buildAssetSnapshot(next, flattenRecords(this.repository.files.values())));
+      if (JSON.stringify(next) === JSON.stringify(before)) return;
       this.settings.assets = next;
       try {
         await this.saveSettings(false, false);

@@ -233,6 +233,9 @@ export default class LedgerStatisticsPlugin extends Plugin {
       const before = this.settings.assets, next = JSON.parse(JSON.stringify(before)) as AssetState;
       change(next);
       storeAssetSnapshot(next, buildAssetSnapshot(next, flattenRecords(this.repository.files.values())));
+      // Unrelated vault renames also reach asset-link maintenance. A no-op must
+      // not write data.json and feed another sync event or rebuild every view.
+      if (JSON.stringify(next) === JSON.stringify(before)) return;
       this.settings.assets = next;
       try { await this.saveSettings(false, false); }
       catch (error) { this.settings.assets = before; throw error; }
