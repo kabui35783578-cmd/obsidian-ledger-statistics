@@ -849,6 +849,21 @@ export function trendPoints(records: LedgerRecord[], granularity: "day" | "week"
   return [...map.values()].sort((a, b) => a.key.localeCompare(b.key));
 }
 
+/** Calendar-day mean for the elapsed part of the selected range, including zero-spend dates. */
+export function dailySpendingAverage(records: LedgerRecord[], range: DateRange, today: string): { cents: number; days: number } | null {
+  if (![range.start, range.end, today].every(isValidIsoDate)) return null;
+  const end = range.end < today ? range.end : today;
+  if (range.start > end) return null;
+  const days = Math.round((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${range.start}T00:00:00Z`)) / 86_400_000) + 1;
+  const total = records.filter(record => record.date >= range.start && record.date <= end).reduce((sum, record) => sum + record.cents, 0);
+  return { cents: Math.round(total / days), days };
+}
+
+export function normalizeTrendDateNotes(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter(([date, note]) => isValidIsoDate(date) && typeof note === "string" && note.trim()));
+}
+
 /** Each point describes all posted spending from the selected start to that point. */
 export function cumulativeTrendPoints(records: LedgerRecord[], range: DateRange, granularity: "day" | "week" | "month"): TrendPoint[] {
   if (!isValidIsoDate(range.start) || !isValidIsoDate(range.end) || range.start > range.end) return [];

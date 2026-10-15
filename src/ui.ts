@@ -359,9 +359,30 @@ function trendConclusion(points: TrendPoint[]): string {
   return `${peak.label}是这段时间的支出峰值`;
 }
 
-function renderMobileTrend(parent: HTMLElement, points: TrendPoint[], isLine: boolean, onClick: (point: TrendPoint) => void, cumulative = false): void {
+export interface TrendChartOptions {
+  dailyAverage?: { cents: number; days: number } | null;
+  dateNotes?: Record<string, string>;
+}
+
+function appendDailyAverage(svg: SVGSVGElement, average: { cents: number; days: number } | null | undefined, left: number, right: number, y: number, mobile = false): void {
+  if (!average) return;
+  const group = svgEl("g", { class: "ledger-trend-average", "aria-label": `日均支出 ${formatCents(average.cents)}，按 ${average.days} 个自然日计算` });
+  group.append(svgEl("line", { x1: left, x2: right, y1: y, y2: y, stroke: HERO, "stroke-width": 1.4, "stroke-dasharray": "6 5" }));
+  const label = svgEl("text", { x: left + 5, y: Math.max(16, y - 8), class: mobile ? "ledger-mobile-axis-value ledger-trend-average-label" : "ledger-foot-label ledger-trend-average-label" });
+  label.textContent = `日均 ${formatCents(average.cents)}`;
+  group.append(label);
+  svg.append(group);
+}
+
+function appendTrendNoteMarker(group: SVGGElement, x: number, y: number, note: string | undefined): void {
+  if (!note) return;
+  group.classList.add("has-note");
+  group.append(svgEl("circle", { cx: x, cy: y, r: 7, fill: "none", stroke: HERO, "stroke-width": 1.5, class: "ledger-trend-note-marker", "pointer-events": "none" }));
+}
+
+function renderMobileTrend(parent: HTMLElement, points: TrendPoint[], isLine: boolean, onClick: (point: TrendPoint) => void, cumulative = false, options: TrendChartOptions = {}): void {
   const viewport = parent.createDiv({ cls: "ledger-mobile-trend-scroll" });
-  const max = Math.max(...points.map((point) => point.cents), 1);
+  const max = Math.max(...points.map((point) => point.cents), options.dailyAverage?.cents ?? 0, 1);
   const width = points.length > 10 ? points.length * 34 + 74 : 360;
   const height = 252;
   const left = cumulative ? Math.max(44, formatCents(max).replace(".00", "").length * 6.5 + 14) : 44;
@@ -384,6 +405,7 @@ function renderMobileTrend(parent: HTMLElement, points: TrendPoint[], isLine: bo
   const coords: Array<{ x: number; y: number }> = [];
   const peakIndex = cumulative ? points.length - 1 : points.reduce((best, point, index) => point.cents > points[best].cents ? index : best, 0);
   const labelEvery = Math.max(1, Math.ceil(points.length / 6));
+  appendDailyAverage(svg, options.dailyAverage, left, right, base - (options.dailyAverage?.cents ?? 0) / max * plotHeight, true);
   points.forEach((point, index) => {
     const x = left + slot * index + slot / 2;
     const y = base - point.cents / max * plotHeight;
@@ -392,6 +414,8 @@ function renderMobileTrend(parent: HTMLElement, points: TrendPoint[], isLine: bo
     if (isLine) {
       const group = svgEl("g", { class: "ledger-trend-point" });
       group.append(svgEl("circle", { cx: x, cy: y, r: index === peakIndex ? 4.8 : 3, fill: index === peakIndex ? HERO : INK, class: "ledger-pop ledger-trend-dot" }));
+      const note = cumulative ? options.dateNotes?.[point.end] : undefined;
+      appendTrendNoteMarker(group, x, y, note);
       if (index === peakIndex) {
         const peak = svgEl("text", { x, y: Math.max(19, y - 11), "text-anchor": cumulative ? "end" : "middle", class: "ledger-mobile-value-label ledger-peak-label ledger-persistent-peak" });
         peak.textContent = formatCents(point.cents);
@@ -399,7 +423,7 @@ function renderMobileTrend(parent: HTMLElement, points: TrendPoint[], isLine: bo
       }
       group.append(trendTooltip(x, y, width, `${cumulative ? "累计 " : ""}${formatCents(point.cents)}`, true));
       const hit = svgEl("circle", { cx: x, cy: y, r: 22, fill: "transparent" });
-      interactiveTrendTarget(svg, group, hit, `${point.label} ${cumulative ? "累计 " : ""}${formatCents(point.cents)}，${point.count} 笔`, () => onClick(point), true);
+      interactiveTrendTarget(svg, group, hit, `${point.label} ${cumulative ? "累计 " : ""}${formatCents(point.cents)}，${point.count} 笔${cumulative ? `，${note ? `备注：${note}` : "添加备注"}` : ""}`, () => onClick(point), !cumulative);
       group.append(hit);
       svg.append(group);
     } else {
@@ -422,33 +446,35 @@ function renderMobileTrend(parent: HTMLElement, points: TrendPoint[], isLine: bo
   const outline = svgEl("path", { d: `M${coords.map((point) => `${point.x} ${point.y}`).join(" L ")}`, fill: "none", stroke: INK, "stroke-width": isLine ? 1.8 : 1.2, pathLength: 1, class: "ledger-draw" });
   if (isLine) svg.insertBefore(outline, svg.firstChild); else svg.append(outline);
   const foot = svgEl("text", { x: width / 2, y: height - 10, "text-anchor": "middle", class: "ledger-mobile-foot-label" });
-  foot.textContent = isLine
+  foot.textContent = cumulative ? "轻点日期圆点 · 查看金额并编辑备注" : isLine
     ? (points.length > 10 ? "左右滑动 · 轻点顶点显示金额" : "轻点顶点显示金额 · 再点一次查看明细")
     : (points.length > 10 ? "左右滑动查看完整时间范围" : "点击数据点查看对应明细");
   svg.append(foot);
   viewport.append(svg);
 }
 
-export function renderTrendChart(parent: HTMLElement, points: TrendPoint[], type: "line" | "bar" | "cumulative", onClick: (point: TrendPoint) => void): void {
+export function renderTrendChart(parent: HTMLElement, points: TrendPoint[], type: "line" | "bar" | "cumulative", onClick: (point: TrendPoint) => void, options: TrendChartOptions = {}): void {
   const cumulative = type === "cumulative";
   const isLine = type !== "bar";
+  const average = type === "line" ? options.dailyAverage : null;
   const { shell, chart } = monoCard(
     parent,
     cumulative ? "CUMULATIVE SPENDING · LOCAL LEDGER" : isLine ? "LUPI BASICS · F2 HAIRLINE LINE" : "LUPI BASICS · F3 HAIRLINE AREA",
     cumulative ? `累计支出${points.length ? ` · ${formatCents(points.at(-1)!.cents)}` : ""}` : trendConclusion(points),
-    cumulative ? "从所选期间起累加 · 圆点表示截至该日期的已记支出 · 未新增记录时累计值保持不变" : isLine ? "一个圆点 = 一个时间桶 · 发丝折线保持逐日读数" : "一根发丝 = 一个时间桶 · 从地板生长到当期金额"
+    cumulative ? "每天一个圆点 · 点击查看金额并编辑日期备注 · 带外圈的点已有备注" : isLine ? `一个圆点 = 一个时间桶${average ? ` · 虚线：日均 ${formatCents(average.cents)}（所选期间已过 ${average.days} 个自然日，含零支出日）` : " · 发丝折线保持逐日读数"}` : "一根发丝 = 一个时间桶 · 从地板生长到当期金额"
   );
   if (points.length === 0) return renderEmpty(chart, "当前筛选条件下没有可绘制的数据");
-  const width = 820;
+  const width = cumulative ? Math.max(820, points.length * 34 + 80) : 820;
   const height = 330;
   const left = 54;
   const top = 34;
   const base = 254;
   const plotWidth = width - left - 26;
   const plotHeight = base - top;
-  const max = Math.max(...points.map((point) => point.cents), 1);
+  const max = Math.max(...points.map((point) => point.cents), average?.cents ?? 0, 1);
   const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": cumulative ? "累计支出折线图" : isLine ? "支出发丝折线图" : "支出发丝柱状图" });
   svg.classList.add("ledger-svg", "ledger-hairline-chart", "ledger-desktop-chart");
+  if (cumulative && points.length > 24) svg.style.minWidth = `${width}px`;
   for (let tick = 0; tick <= 4; tick += 1) {
     const y = base - tick / 4 * plotHeight;
     svg.append(svgEl("line", { x1: left, y1: y, x2: left + plotWidth, y2: y, stroke: GRID, "stroke-width": 0.6 }));
@@ -459,6 +485,7 @@ export function renderTrendChart(parent: HTMLElement, points: TrendPoint[], type
   const slot = plotWidth / Math.max(points.length, 1);
   const coords: Array<{ x: number; y: number }> = [];
   const peaks = cumulative ? [points.length - 1] : [...points.keys()].sort((a, b) => points[b].cents - points[a].cents).filter((index, position, chosen) => position === 0 || chosen.slice(0, position).every((other) => Math.abs(other - index) >= 3)).slice(0, 2);
+  appendDailyAverage(svg, average, left, left + plotWidth, base - (average?.cents ?? 0) / max * plotHeight);
   points.forEach((point, index) => {
     const x = left + slot * index + slot / 2;
     const y = base - point.cents / max * plotHeight;
@@ -475,6 +502,8 @@ export function renderTrendChart(parent: HTMLElement, points: TrendPoint[], type
     if (isLine) {
       const group = svgEl("g", { class: "ledger-trend-point" });
       group.append(svgEl("circle", { cx: x, cy: y, r: peaks.includes(index) ? 4.2 : 2.2, fill: peaks.includes(index) ? HERO : index % 7 >= 5 ? PAPER : INK, stroke: peaks.includes(index) ? HERO : INK, "stroke-width": 1, class: "ledger-pop ledger-trend-dot" }));
+      const note = cumulative ? options.dateNotes?.[point.end] : undefined;
+      appendTrendNoteMarker(group, x, y, note);
       if (index === peaks[0]) {
         const peak = svgEl("text", { x, y: Math.max(18, y - 12), "text-anchor": cumulative ? "end" : "middle", class: "ledger-value-label ledger-peak-label ledger-persistent-peak" });
         peak.textContent = formatCents(point.cents);
@@ -482,7 +511,7 @@ export function renderTrendChart(parent: HTMLElement, points: TrendPoint[], type
       }
       group.append(trendTooltip(x, y, width, `${cumulative ? "累计 " : ""}${formatCents(point.cents)}`));
       const hit = svgEl("circle", { cx: x, cy: y, r: 14, fill: "transparent" });
-      interactiveTrendTarget(svg, group, hit, `${point.label} ${cumulative ? "累计 " : ""}${formatCents(point.cents)}，${point.count} 笔`, () => onClick(point));
+      interactiveTrendTarget(svg, group, hit, `${point.label} ${cumulative ? "累计 " : ""}${formatCents(point.cents)}，${point.count} 笔${cumulative ? `，${note ? `备注：${note}` : "添加备注"}` : ""}`, () => onClick(point));
       group.append(hit);
       svg.append(group);
     } else {
@@ -505,10 +534,10 @@ export function renderTrendChart(parent: HTMLElement, points: TrendPoint[], type
   const outline = svgEl("path", { d: `M${coords.map((point) => `${point.x} ${point.y}`).join(" L ")}`, fill: "none", stroke: INK, "stroke-width": isLine ? 1.2 : 1, pathLength: 1, class: "ledger-draw" });
   if (isLine) svg.insertBefore(outline, svg.firstChild); else svg.append(outline);
   const foot = svgEl("text", { x: width / 2, y: height - 10, "text-anchor": "middle", class: "ledger-foot-label" });
-  foot.textContent = cumulative ? "悬停查看累计金额 · 点击查看截至该日期的明细" : isLine ? "HOVER A DOT · REVEAL THE EXACT AMOUNT" : "ONE HAIRLINE = ONE PERIOD, FLOOR TO PEAK";
+  foot.textContent = cumulative ? "点击日期圆点 · 查看金额并编辑备注" : isLine ? "HOVER A DOT · REVEAL THE EXACT AMOUNT" : "ONE HAIRLINE = ONE PERIOD, FLOOR TO PEAK";
   svg.append(foot);
-  chart.append(svg);
-  renderMobileTrend(chart, points, isLine, onClick, cumulative);
+  chart.createDiv({ cls: "ledger-desktop-chart ledger-trend-desktop-scroll" }).append(svg);
+  renderMobileTrend(chart, points, isLine, onClick, cumulative, { ...options, dailyAverage: average });
   sourceLine(shell, `${cumulative ? "CUMULATIVE LINE" : isLine ? "HAIRLINE LINE" : "HAIRLINE AREA"} · MONO-BASIC · LOCAL LEDGER`);
 }
 

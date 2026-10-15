@@ -1,7 +1,7 @@
 import { Notice, Plugin, requestUrl } from "obsidian";
 import { BudgetMonitor } from "./budget-monitor";
 import { sharedRequestGate } from "./request-gate";
-import { flattenRecords, migrateStarredIds, renameStarredIds } from "./core";
+import { flattenRecords, isValidIsoDate, migrateStarredIds, normalizeTrendDateNotes, renameStarredIds } from "./core";
 import { LedgerRepository } from "./repository";
 import { createBalanceCalibration, isBalanceCalibration } from "./balance";
 import { reconcileSalaryCycles, SalaryCycleState } from "./salary-history";
@@ -21,6 +21,7 @@ export default class LedgerStatisticsPlugin extends Plugin {
   private settingTab?: LedgerSettingTab;
   private saveQueue: Promise<void> = Promise.resolve();
   private assetQueue: Promise<void> = Promise.resolve();
+  private trendNoteQueue: Promise<void> = Promise.resolve();
   private assetQuotes!: AssetQuoteMonitor;
   private assetsStopped = false;
   private salaryHistoryDirty = false;
@@ -36,6 +37,7 @@ export default class LedgerStatisticsPlugin extends Plugin {
     const stored = await this.loadData();
     const migratedSecrets = migrateAiSecret(stored ?? {}, this.app.secretStorage);
     this.settings = Object.assign({}, DEFAULT_SETTINGS, migratedSecrets.data);
+    this.settings.trendDateNotes = normalizeTrendDateNotes(this.settings.trendDateNotes);
     if (migratedSecrets.changed) await this.saveSettings(false, false);
     this.settings.defaultView = normalizeLedgerView(this.settings.defaultView);
     this.settings.assets = normalizeAssets(this.settings.assets);
@@ -121,6 +123,25 @@ export default class LedgerStatisticsPlugin extends Plugin {
     if (rescan) await this.repository.setFolder(this.settings.ledgerFolder);
     if (refresh) this.refreshViews();
     this.checkBudget();
+  }
+
+  updateTrendDateNote(date: string, note: string): Promise<void> {
+    const operation = this.trendNoteQueue.then(async () => {
+      if (this.assetsStopped) throw new Error("插件已关闭，请重新打开");
+      if (!isValidIsoDate(date)) throw new Error("备注日期无效");
+      const before = this.settings.trendDateNotes;
+      const next = { ...before };
+      if (note.trim()) next[date] = note.trim(); else delete next[date];
+      if (JSON.stringify(before) === JSON.stringify(next)) return;
+      this.settings.trendDateNotes = next;
+      try { await this.saveSettings(false, false); }
+      catch (error) { this.settings.trendDateNotes = before; throw error; }
+      for (const leaf of this.app.workspace.getLeavesOfType(LEDGER_VIEW_TYPE)) {
+        if (leaf.view instanceof LedgerStatisticsView) leaf.view.refreshTrendDateNotes();
+      }
+    });
+    this.trendNoteQueue = operation.catch(() => {});
+    return operation;
   }
 
   private checkBudget(): void {

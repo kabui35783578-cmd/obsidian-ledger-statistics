@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { cumulativeTrendPoints } = require('../dist/core.cjs');
+const { cumulativeTrendPoints, dailySpendingAverage, normalizeTrendDateNotes } = require('../dist/core.cjs');
 const { renderTrendChart } = require('../dist/ui.cjs');
 const record = (date, cents) => ({ date, cents });
 
@@ -39,6 +39,24 @@ test('an empty or invalid range has no invented cumulative series', () => {
     { start: '2026-10-04', end: '2026-10-01' },
     { start: '2026-02-30', end: '2026-03-01' }
   ]) assert.deepEqual(cumulativeTrendPoints(records, range, 'day'), []);
+});
+
+test('daily average includes zero-spend days, clips future records and dates, and handles leap years', () => {
+  const records = [record('2026-09-30', 9999), record('2026-10-01', 5000), record('2026-10-03', 3000), record('2026-10-16', 9999)];
+  assert.deepEqual(dailySpendingAverage(records, { start: '2026-10-01', end: '2026-10-31' }, '2026-10-04'), { cents: 2000, days: 4 });
+  assert.deepEqual(dailySpendingAverage(records, { start: '2026-10-01', end: '2026-10-03' }, '2026-10-15'), { cents: 2667, days: 3 });
+  assert.deepEqual(dailySpendingAverage([record('2024-02-29', 101)], { start: '2024-02-28', end: '2024-03-01' }, '2024-03-02'), { cents: 34, days: 3 });
+  assert.deepEqual(dailySpendingAverage([], { start: '2026-10-01', end: '2026-10-01' }, '2026-10-01'), { cents: 0, days: 1 });
+  assert.equal(dailySpendingAverage(records, { start: '2026-10-16', end: '2026-10-31' }, '2026-10-15'), null);
+  assert.equal(dailySpendingAverage(records, { start: '2026-02-30', end: '2026-03-02' }, '2026-10-15'), null);
+  assert.equal(dailySpendingAverage(records, { start: '2026-10-04', end: '2026-10-01' }, '2026-10-15'), null);
+});
+
+test('synced date notes keep literal multiline text and reject invalid data', () => {
+  for (const value of [null, [], 123, 'note']) assert.deepEqual(normalizeTrendDateNotes(value), {});
+  assert.deepEqual(normalizeTrendDateNotes({
+    '2026-10-01': '第一行\n<script>literal</script>', '2026-02-30': 'bad', '2026-10-02': 123, '2026-10-03': '  ', '__proto__': 'bad'
+  }), { '2026-10-01': '第一行\n<script>literal</script>' });
 });
 
 class Element {
@@ -80,13 +98,50 @@ test('cumulative charts share the native style, label totals, and preserve deskt
       const event = { preventDefault() {}, stopPropagation() {} };
       const before = clicked.length;
       target.listeners.click(event);
-      if (svg.classList.contains('ledger-mobile-trend')) {
-        assert.equal(clicked.length, before);
-        assert.ok(groups[1].classList.contains('is-active'));
-        target.listeners.click(event);
-      }
+      assert.equal(clicked.length, before + 1, 'A single click opens the note editor on both desktop and mobile');
       assert.equal(clicked.at(-1), points[1]);
       assert.deepEqual([clicked.at(-1).start, clicked.at(-1).end], ['2026-10-01', '2026-10-02']);
     }
+  } finally { global.document = previous; }
+});
+
+test('both layouts show a dashed daily mean at the correct height, including weekly totals', () => {
+  const previous = global.document;
+  global.document = { createElementNS: (_, tag) => new Element(tag) };
+  try {
+    const points = [{ key: '2026-10', start: '2026-10-01', end: '2026-10-07', label: '10-01周', cents: 70000, count: 7 }];
+    for (const type of ['line', 'bar', 'cumulative']) {
+      const root = new Element('div');
+      renderTrendChart(root, points, type, () => {}, { dailyAverage: { cents: 10000, days: 7 }, dateNotes: { '2026-10-07': '聚餐\n家庭' } });
+      const charts = root.all().filter(el => el.tag === 'svg');
+      for (const svg of charts) {
+        const average = svg.all().find(el => el.classList.contains('ledger-trend-average'));
+        if (type !== 'line') { assert.equal(average, undefined); continue; }
+        assert.match(average.attributes['aria-label'], /日均支出 ¥100.00.*7 个自然日/);
+        const line = average.children[0];
+        assert.equal(line.attributes['stroke-dasharray'], '6 5');
+        assert.equal(line.attributes.y1, line.attributes.y2);
+        const [base, height] = svg.classList.contains('ledger-mobile-trend') ? [194, 156] : [254, 220];
+        assert.ok(Math.abs(Number(line.attributes.y1) - (base - height / 7)) < 0.00001);
+      }
+      if (type === 'cumulative') {
+        assert.equal(root.all().filter(el => el.classList.contains('ledger-trend-note-marker')).length, 2);
+        assert.ok(root.all().filter(el => el.classList.contains('ledger-trend-hit-target')).every(el => el.attributes['aria-label'].includes('备注：聚餐\n家庭')));
+      }
+    }
+  } finally { global.document = previous; }
+});
+
+test('long cumulative ranges reserve space for each daily hit target instead of shrinking the year to a single screen', () => {
+  const previous = global.document;
+  global.document = { createElementNS: (_, tag) => new Element(tag) };
+  try {
+    const points = cumulativeTrendPoints([record('2026-01-01', 100)], { start: '2026-01-01', end: '2026-10-15' }, 'day');
+    const root = new Element('div');
+    renderTrendChart(root, points, 'cumulative', () => {});
+    const desktop = root.all().find(el => el.tag === 'svg' && el.classList.contains('ledger-desktop-chart'));
+    assert.equal(desktop.all().filter(el => el.classList.contains('ledger-trend-hit-target')).length, 288);
+    assert.ok(Number.parseFloat(desktop.style.minWidth) >= points.length * 34);
+    assert.ok(desktop.parentElement.classList.contains('ledger-trend-desktop-scroll'));
   } finally { global.document = previous; }
 });

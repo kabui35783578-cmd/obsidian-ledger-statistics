@@ -71,6 +71,8 @@ test('trend graph and aggregation change in place at the current scroll position
     assert.equal(v.trendChart, graph);
     assert.equal(body.querySelectorAll('.ledger-mono-card').length, 1, 'Render only the selected trend chart');
   }
+  assert.equal(body.querySelectorAll('.ledger-field').length, 1, 'Cumulative spending always uses daily points');
+  change(v, body, '图形', 'line');
   for (const unit of ['day', 'week', 'month', 'auto']) { change(v, body, '汇总', unit); assert.equal(v.trendUnit, unit); }
 });
 
@@ -86,6 +88,21 @@ test('comparison mode and all four dates change in place without navigating to t
   ]) { change(v, body, label, value); assert.equal(v[range][key], value); }
   change(v, body, '比较方式', 'auto');
   assert.equal(v.compareMode, 'auto');
+});
+
+test('saving a trend note refreshes only its chart and retains vertical and horizontal scroll', () => {
+  const { v, body } = fixture();
+  v.trendChart = 'cumulative';
+  v.contentEl.querySelector = selector => selector === '.ledger-trend-host' ? body : null;
+  const addScrollers = () => {
+    for (const cls of ['ledger-trend-desktop-scroll', 'ledger-mobile-trend-scroll']) body.createDiv({ cls }).scrollLeft = 0;
+  };
+  addScrollers();
+  body.children[0].scrollLeft = 780; body.children[1].scrollLeft = 340;
+  v.renderTrend = addScrollers;
+  v.refreshTrendDateNotes();
+  assert.equal(v.contentEl.scrollTop, 2400);
+  assert.deepEqual(body.children.map(el => el.scrollLeft), [780, 340]);
 });
 
 test('salary history navigation stays in place, returns to the live cycle and prevents future periods', () => {

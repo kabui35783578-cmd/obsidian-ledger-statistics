@@ -1740,6 +1740,22 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
   transition: transform 140ms ease;
 }
 
+.ledger-trend-average { pointer-events: none; }
+.ledger-trend-desktop-scroll { max-width: 100%; overflow-x: auto; }
+.ledger-trend-average-label {
+  fill: #F5572F;
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: var(--mono-paper);
+  stroke-width: 4px;
+}
+.modal.ledger-dialog.ledger-trend-note-modal { width: min(480px, calc(100vw - 24px)); }
+.ledger-trend-note-amount { font-size: 28px; font-weight: 750; margin: 8px 0; }
+.ledger-trend-note-label { display: block; font-weight: 600; }
+.ledger-trend-note-input { display: block; width: 100%; box-sizing: border-box; margin-top: 8px; min-height: 120px; resize: vertical; font-weight: 400; }
+.ledger-trend-note-status { min-height: 1.5em; color: var(--text-error); font-size: 13px; }
+.ledger-trend-note-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+
 .ledger-trend-point:hover .ledger-trend-dot,
 .ledger-trend-point:focus-within .ledger-trend-dot,
 .ledger-trend-point.is-active .ledger-trend-dot {

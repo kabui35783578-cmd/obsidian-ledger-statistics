@@ -727,6 +727,18 @@ function trendPoints(records, granularity) {
   }
   return [...map.values()].sort((a, b) => a.key.localeCompare(b.key));
 }
+function dailySpendingAverage(records, range, today) {
+  if (![range.start, range.end, today].every(isValidIsoDate)) return null;
+  const end = range.end < today ? range.end : today;
+  if (range.start > end) return null;
+  const days = Math.round((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${range.start}T00:00:00Z`)) / 864e5) + 1;
+  const total3 = records.filter((record) => record.date >= range.start && record.date <= end).reduce((sum3, record) => sum3 + record.cents, 0);
+  return { cents: Math.round(total3 / days), days };
+}
+function normalizeTrendDateNotes(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter(([date, note]) => isValidIsoDate(date) && typeof note === "string" && note.trim()));
+}
 function cumulativeTrendPoints(records, range, granularity) {
   var _a, _b;
   if (!isValidIsoDate(range.start) || !isValidIsoDate(range.end) || range.start > range.end) return [];
@@ -2421,6 +2433,49 @@ var BalanceCalibrationNoteModal = class extends import_obsidian3.Modal {
   }
   // Content is replaced on next open; dismissal does not mutate its layout.
   onClose() {
+  }
+};
+var TrendDateNoteModal = class extends import_obsidian3.Modal {
+  constructor(plugin, point, dailyCents, showRecords) {
+    super(plugin.app);
+    this.plugin = plugin;
+    this.point = point;
+    this.dailyCents = dailyCents;
+    this.showRecords = showRecords;
+  }
+  onOpen() {
+    var _a;
+    styleLedgerModal(this);
+    this.modalEl.addClass("ledger-trend-note-modal");
+    this.setTitle(`${this.point.end} \xB7 \u7D2F\u8BA1\u652F\u51FA`);
+    const root = this.contentEl;
+    root.empty();
+    root.createDiv({ cls: "ledger-trend-note-amount", text: formatCents(this.point.cents) });
+    root.createEl("p", { cls: "ledger-note", text: `${this.point.start} \u81F3 ${this.point.end} \xB7 \u5F53\u65E5\u652F\u51FA ${formatCents(this.dailyCents)}` });
+    const label2 = root.createEl("label", { cls: "ledger-trend-note-label", text: "\u65E5\u671F\u5907\u6CE8" });
+    const input2 = label2.createEl("textarea", { cls: "ledger-trend-note-input", attr: { rows: "5", placeholder: "\u5199\u4E0B\u8FD9\u4E00\u5929\u7684\u5907\u6CE8\u2026", "aria-label": `${this.point.end} \u65E5\u671F\u5907\u6CE8` } });
+    input2.value = (_a = this.plugin.settings.trendDateNotes[this.point.end]) != null ? _a : "";
+    root.createEl("p", { cls: "ledger-note", text: "\u5907\u6CE8\u6309\u65E5\u671F\u4FDD\u5B58\uFF0C\u5207\u6362\u671F\u95F4\u6216\u5206\u7C7B\u4ECD\u53EF\u67E5\u770B\u3002\u6E05\u7A7A\u540E\u4FDD\u5B58\u53EF\u5220\u9664\u5907\u6CE8\u3002" });
+    const status = root.createDiv({ cls: "ledger-trend-note-status", attr: { role: "status", "aria-live": "polite" } });
+    const actions = root.createDiv({ cls: "ledger-trend-note-actions" });
+    const details = actions.createEl("button", { text: "\u67E5\u770B\u7D2F\u8BA1\u660E\u7EC6" });
+    details.addEventListener("click", () => this.showRecords());
+    const cancel = actions.createEl("button", { text: "\u53D6\u6D88" });
+    cancel.addEventListener("click", () => this.close());
+    const save = actions.createEl("button", { text: "\u4FDD\u5B58\u5907\u6CE8", cls: "mod-cta" });
+    save.addEventListener("click", async () => {
+      if (save.disabled) return;
+      save.disabled = cancel.disabled = details.disabled = input2.disabled = true;
+      status.textContent = "\u6B63\u5728\u4FDD\u5B58\u2026";
+      try {
+        await this.plugin.updateTrendDateNote(this.point.end, input2.value);
+        this.close();
+      } catch (e) {
+        status.textContent = "\u4FDD\u5B58\u5931\u8D25\uFF0C\u8F93\u5165\u5DF2\u4FDD\u7559\uFF0C\u8BF7\u91CD\u8BD5\u3002";
+        save.disabled = cancel.disabled = details.disabled = input2.disabled = false;
+      }
+    });
+    input2.focus();
   }
 };
 var FixedExpenseModal = class extends import_obsidian3.Modal {
@@ -5945,6 +6000,7 @@ var DEFAULT_SETTINGS = {
   salaryCents: 0,
   balanceCalibration: null,
   balanceCalibrationNote: "",
+  trendDateNotes: {},
   financeAiEnabled: false,
   financeAiEndpoint: "https://api.openai.com/v1/chat/completions",
   financeAiModel: "",
@@ -7118,9 +7174,24 @@ function trendConclusion(points) {
   const peak = points.reduce((best, point) => point.cents > best.cents ? point : best, points[0]);
   return `${peak.label}\u662F\u8FD9\u6BB5\u65F6\u95F4\u7684\u652F\u51FA\u5CF0\u503C`;
 }
-function renderMobileTrend(parent, points, isLine, onClick, cumulative = false) {
+function appendDailyAverage(svg, average2, left, right, y, mobile = false) {
+  if (!average2) return;
+  const group2 = svgEl("g", { class: "ledger-trend-average", "aria-label": `\u65E5\u5747\u652F\u51FA ${formatCents(average2.cents)}\uFF0C\u6309 ${average2.days} \u4E2A\u81EA\u7136\u65E5\u8BA1\u7B97` });
+  group2.append(svgEl("line", { x1: left, x2: right, y1: y, y2: y, stroke: HERO, "stroke-width": 1.4, "stroke-dasharray": "6 5" }));
+  const label2 = svgEl("text", { x: left + 5, y: Math.max(16, y - 8), class: mobile ? "ledger-mobile-axis-value ledger-trend-average-label" : "ledger-foot-label ledger-trend-average-label" });
+  label2.textContent = `\u65E5\u5747 ${formatCents(average2.cents)}`;
+  group2.append(label2);
+  svg.append(group2);
+}
+function appendTrendNoteMarker(group2, x, y, note) {
+  if (!note) return;
+  group2.classList.add("has-note");
+  group2.append(svgEl("circle", { cx: x, cy: y, r: 7, fill: "none", stroke: HERO, "stroke-width": 1.5, class: "ledger-trend-note-marker", "pointer-events": "none" }));
+}
+function renderMobileTrend(parent, points, isLine, onClick, cumulative = false, options = {}) {
+  var _a, _b, _c, _d;
   const viewport = parent.createDiv({ cls: "ledger-mobile-trend-scroll" });
-  const max2 = Math.max(...points.map((point) => point.cents), 1);
+  const max2 = Math.max(...points.map((point) => point.cents), (_b = (_a = options.dailyAverage) == null ? void 0 : _a.cents) != null ? _b : 0, 1);
   const width = points.length > 10 ? points.length * 34 + 74 : 360;
   const height = 252;
   const left = cumulative ? Math.max(44, formatCents(max2).replace(".00", "").length * 6.5 + 14) : 44;
@@ -7143,7 +7214,9 @@ function renderMobileTrend(parent, points, isLine, onClick, cumulative = false) 
   const coords = [];
   const peakIndex = cumulative ? points.length - 1 : points.reduce((best, point, index) => point.cents > points[best].cents ? index : best, 0);
   const labelEvery = Math.max(1, Math.ceil(points.length / 6));
+  appendDailyAverage(svg, options.dailyAverage, left, right, base - ((_d = (_c = options.dailyAverage) == null ? void 0 : _c.cents) != null ? _d : 0) / max2 * plotHeight, true);
   points.forEach((point, index) => {
+    var _a2;
     const x = left + slot * index + slot / 2;
     const y = base - point.cents / max2 * plotHeight;
     coords.push({ x, y });
@@ -7151,6 +7224,8 @@ function renderMobileTrend(parent, points, isLine, onClick, cumulative = false) 
     if (isLine) {
       const group2 = svgEl("g", { class: "ledger-trend-point" });
       group2.append(svgEl("circle", { cx: x, cy: y, r: index === peakIndex ? 4.8 : 3, fill: index === peakIndex ? HERO : INK, class: "ledger-pop ledger-trend-dot" }));
+      const note = cumulative ? (_a2 = options.dateNotes) == null ? void 0 : _a2[point.end] : void 0;
+      appendTrendNoteMarker(group2, x, y, note);
       if (index === peakIndex) {
         const peak = svgEl("text", { x, y: Math.max(19, y - 11), "text-anchor": cumulative ? "end" : "middle", class: "ledger-mobile-value-label ledger-peak-label ledger-persistent-peak" });
         peak.textContent = formatCents(point.cents);
@@ -7158,7 +7233,7 @@ function renderMobileTrend(parent, points, isLine, onClick, cumulative = false) 
       }
       group2.append(trendTooltip(x, y, width, `${cumulative ? "\u7D2F\u8BA1 " : ""}${formatCents(point.cents)}`, true));
       const hit = svgEl("circle", { cx: x, cy: y, r: 22, fill: "transparent" });
-      interactiveTrendTarget(svg, group2, hit, `${point.label} ${cumulative ? "\u7D2F\u8BA1 " : ""}${formatCents(point.cents)}\uFF0C${point.count} \u7B14`, () => onClick(point), true);
+      interactiveTrendTarget(svg, group2, hit, `${point.label} ${cumulative ? "\u7D2F\u8BA1 " : ""}${formatCents(point.cents)}\uFF0C${point.count} \u7B14${cumulative ? `\uFF0C${note ? `\u5907\u6CE8\uFF1A${note}` : "\u6DFB\u52A0\u5907\u6CE8"}` : ""}`, () => onClick(point), !cumulative);
       group2.append(hit);
       svg.append(group2);
     } else {
@@ -7182,30 +7257,33 @@ function renderMobileTrend(parent, points, isLine, onClick, cumulative = false) 
   if (isLine) svg.insertBefore(outline, svg.firstChild);
   else svg.append(outline);
   const foot = svgEl("text", { x: width / 2, y: height - 10, "text-anchor": "middle", class: "ledger-mobile-foot-label" });
-  foot.textContent = isLine ? points.length > 10 ? "\u5DE6\u53F3\u6ED1\u52A8 \xB7 \u8F7B\u70B9\u9876\u70B9\u663E\u793A\u91D1\u989D" : "\u8F7B\u70B9\u9876\u70B9\u663E\u793A\u91D1\u989D \xB7 \u518D\u70B9\u4E00\u6B21\u67E5\u770B\u660E\u7EC6" : points.length > 10 ? "\u5DE6\u53F3\u6ED1\u52A8\u67E5\u770B\u5B8C\u6574\u65F6\u95F4\u8303\u56F4" : "\u70B9\u51FB\u6570\u636E\u70B9\u67E5\u770B\u5BF9\u5E94\u660E\u7EC6";
+  foot.textContent = cumulative ? "\u8F7B\u70B9\u65E5\u671F\u5706\u70B9 \xB7 \u67E5\u770B\u91D1\u989D\u5E76\u7F16\u8F91\u5907\u6CE8" : isLine ? points.length > 10 ? "\u5DE6\u53F3\u6ED1\u52A8 \xB7 \u8F7B\u70B9\u9876\u70B9\u663E\u793A\u91D1\u989D" : "\u8F7B\u70B9\u9876\u70B9\u663E\u793A\u91D1\u989D \xB7 \u518D\u70B9\u4E00\u6B21\u67E5\u770B\u660E\u7EC6" : points.length > 10 ? "\u5DE6\u53F3\u6ED1\u52A8\u67E5\u770B\u5B8C\u6574\u65F6\u95F4\u8303\u56F4" : "\u70B9\u51FB\u6570\u636E\u70B9\u67E5\u770B\u5BF9\u5E94\u660E\u7EC6";
   svg.append(foot);
   viewport.append(svg);
 }
-function renderTrendChart(parent, points, type, onClick) {
+function renderTrendChart(parent, points, type, onClick, options = {}) {
+  var _a, _b;
   const cumulative = type === "cumulative";
   const isLine = type !== "bar";
+  const average2 = type === "line" ? options.dailyAverage : null;
   const { shell, chart } = monoCard(
     parent,
     cumulative ? "CUMULATIVE SPENDING \xB7 LOCAL LEDGER" : isLine ? "LUPI BASICS \xB7 F2 HAIRLINE LINE" : "LUPI BASICS \xB7 F3 HAIRLINE AREA",
     cumulative ? `\u7D2F\u8BA1\u652F\u51FA${points.length ? ` \xB7 ${formatCents(points.at(-1).cents)}` : ""}` : trendConclusion(points),
-    cumulative ? "\u4ECE\u6240\u9009\u671F\u95F4\u8D77\u7D2F\u52A0 \xB7 \u5706\u70B9\u8868\u793A\u622A\u81F3\u8BE5\u65E5\u671F\u7684\u5DF2\u8BB0\u652F\u51FA \xB7 \u672A\u65B0\u589E\u8BB0\u5F55\u65F6\u7D2F\u8BA1\u503C\u4FDD\u6301\u4E0D\u53D8" : isLine ? "\u4E00\u4E2A\u5706\u70B9 = \u4E00\u4E2A\u65F6\u95F4\u6876 \xB7 \u53D1\u4E1D\u6298\u7EBF\u4FDD\u6301\u9010\u65E5\u8BFB\u6570" : "\u4E00\u6839\u53D1\u4E1D = \u4E00\u4E2A\u65F6\u95F4\u6876 \xB7 \u4ECE\u5730\u677F\u751F\u957F\u5230\u5F53\u671F\u91D1\u989D"
+    cumulative ? "\u6BCF\u5929\u4E00\u4E2A\u5706\u70B9 \xB7 \u70B9\u51FB\u67E5\u770B\u91D1\u989D\u5E76\u7F16\u8F91\u65E5\u671F\u5907\u6CE8 \xB7 \u5E26\u5916\u5708\u7684\u70B9\u5DF2\u6709\u5907\u6CE8" : isLine ? `\u4E00\u4E2A\u5706\u70B9 = \u4E00\u4E2A\u65F6\u95F4\u6876${average2 ? ` \xB7 \u865A\u7EBF\uFF1A\u65E5\u5747 ${formatCents(average2.cents)}\uFF08\u6240\u9009\u671F\u95F4\u5DF2\u8FC7 ${average2.days} \u4E2A\u81EA\u7136\u65E5\uFF0C\u542B\u96F6\u652F\u51FA\u65E5\uFF09` : " \xB7 \u53D1\u4E1D\u6298\u7EBF\u4FDD\u6301\u9010\u65E5\u8BFB\u6570"}` : "\u4E00\u6839\u53D1\u4E1D = \u4E00\u4E2A\u65F6\u95F4\u6876 \xB7 \u4ECE\u5730\u677F\u751F\u957F\u5230\u5F53\u671F\u91D1\u989D"
   );
   if (points.length === 0) return renderEmpty(chart, "\u5F53\u524D\u7B5B\u9009\u6761\u4EF6\u4E0B\u6CA1\u6709\u53EF\u7ED8\u5236\u7684\u6570\u636E");
-  const width = 820;
+  const width = cumulative ? Math.max(820, points.length * 34 + 80) : 820;
   const height = 330;
   const left = 54;
   const top = 34;
   const base = 254;
   const plotWidth = width - left - 26;
   const plotHeight = base - top;
-  const max2 = Math.max(...points.map((point) => point.cents), 1);
+  const max2 = Math.max(...points.map((point) => point.cents), (_a = average2 == null ? void 0 : average2.cents) != null ? _a : 0, 1);
   const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": cumulative ? "\u7D2F\u8BA1\u652F\u51FA\u6298\u7EBF\u56FE" : isLine ? "\u652F\u51FA\u53D1\u4E1D\u6298\u7EBF\u56FE" : "\u652F\u51FA\u53D1\u4E1D\u67F1\u72B6\u56FE" });
   svg.classList.add("ledger-svg", "ledger-hairline-chart", "ledger-desktop-chart");
+  if (cumulative && points.length > 24) svg.style.minWidth = `${width}px`;
   for (let tick = 0; tick <= 4; tick += 1) {
     const y = base - tick / 4 * plotHeight;
     svg.append(svgEl("line", { x1: left, y1: y, x2: left + plotWidth, y2: y, stroke: GRID, "stroke-width": 0.6 }));
@@ -7216,7 +7294,9 @@ function renderTrendChart(parent, points, type, onClick) {
   const slot = plotWidth / Math.max(points.length, 1);
   const coords = [];
   const peaks = cumulative ? [points.length - 1] : [...points.keys()].sort((a, b) => points[b].cents - points[a].cents).filter((index, position, chosen) => position === 0 || chosen.slice(0, position).every((other) => Math.abs(other - index) >= 3)).slice(0, 2);
+  appendDailyAverage(svg, average2, left, left + plotWidth, base - ((_b = average2 == null ? void 0 : average2.cents) != null ? _b : 0) / max2 * plotHeight);
   points.forEach((point, index) => {
+    var _a2;
     const x = left + slot * index + slot / 2;
     const y = base - point.cents / max2 * plotHeight;
     coords.push({ x, y });
@@ -7237,6 +7317,8 @@ function renderTrendChart(parent, points, type, onClick) {
     if (isLine) {
       const group2 = svgEl("g", { class: "ledger-trend-point" });
       group2.append(svgEl("circle", { cx: x, cy: y, r: peaks.includes(index) ? 4.2 : 2.2, fill: peaks.includes(index) ? HERO : index % 7 >= 5 ? PAPER : INK, stroke: peaks.includes(index) ? HERO : INK, "stroke-width": 1, class: "ledger-pop ledger-trend-dot" }));
+      const note = cumulative ? (_a2 = options.dateNotes) == null ? void 0 : _a2[point.end] : void 0;
+      appendTrendNoteMarker(group2, x, y, note);
       if (index === peaks[0]) {
         const peak = svgEl("text", { x, y: Math.max(18, y - 12), "text-anchor": cumulative ? "end" : "middle", class: "ledger-value-label ledger-peak-label ledger-persistent-peak" });
         peak.textContent = formatCents(point.cents);
@@ -7244,7 +7326,7 @@ function renderTrendChart(parent, points, type, onClick) {
       }
       group2.append(trendTooltip(x, y, width, `${cumulative ? "\u7D2F\u8BA1 " : ""}${formatCents(point.cents)}`));
       const hit = svgEl("circle", { cx: x, cy: y, r: 14, fill: "transparent" });
-      interactiveTrendTarget(svg, group2, hit, `${point.label} ${cumulative ? "\u7D2F\u8BA1 " : ""}${formatCents(point.cents)}\uFF0C${point.count} \u7B14`, () => onClick(point));
+      interactiveTrendTarget(svg, group2, hit, `${point.label} ${cumulative ? "\u7D2F\u8BA1 " : ""}${formatCents(point.cents)}\uFF0C${point.count} \u7B14${cumulative ? `\uFF0C${note ? `\u5907\u6CE8\uFF1A${note}` : "\u6DFB\u52A0\u5907\u6CE8"}` : ""}`, () => onClick(point));
       group2.append(hit);
       svg.append(group2);
     } else {
@@ -7268,10 +7350,10 @@ function renderTrendChart(parent, points, type, onClick) {
   if (isLine) svg.insertBefore(outline, svg.firstChild);
   else svg.append(outline);
   const foot = svgEl("text", { x: width / 2, y: height - 10, "text-anchor": "middle", class: "ledger-foot-label" });
-  foot.textContent = cumulative ? "\u60AC\u505C\u67E5\u770B\u7D2F\u8BA1\u91D1\u989D \xB7 \u70B9\u51FB\u67E5\u770B\u622A\u81F3\u8BE5\u65E5\u671F\u7684\u660E\u7EC6" : isLine ? "HOVER A DOT \xB7 REVEAL THE EXACT AMOUNT" : "ONE HAIRLINE = ONE PERIOD, FLOOR TO PEAK";
+  foot.textContent = cumulative ? "\u70B9\u51FB\u65E5\u671F\u5706\u70B9 \xB7 \u67E5\u770B\u91D1\u989D\u5E76\u7F16\u8F91\u5907\u6CE8" : isLine ? "HOVER A DOT \xB7 REVEAL THE EXACT AMOUNT" : "ONE HAIRLINE = ONE PERIOD, FLOOR TO PEAK";
   svg.append(foot);
-  chart.append(svg);
-  renderMobileTrend(chart, points, isLine, onClick, cumulative);
+  chart.createDiv({ cls: "ledger-desktop-chart ledger-trend-desktop-scroll" }).append(svg);
+  renderMobileTrend(chart, points, isLine, onClick, cumulative, { ...options, dailyAverage: average2 });
   sourceLine(shell, `${cumulative ? "CUMULATIVE LINE" : isLine ? "HAIRLINE LINE" : "HAIRLINE AREA"} \xB7 MONO-BASIC \xB7 LOCAL LEDGER`);
 }
 function renderSalaryWaterfall(parent, steps, range, onCategory, onCalibrationNote, options) {
@@ -9763,6 +9845,16 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
     this.filter.excludedCategories = [...this.plugin.settings.excludedCategories];
     this.render();
   }
+  refreshTrendDateNotes() {
+    const host2 = this.contentEl.querySelector(".ledger-trend-host");
+    if (!host2 || this.trendChart !== "cumulative") return;
+    const scrollPositions = Array.from(host2.querySelectorAll(".ledger-trend-desktop-scroll, .ledger-mobile-trend-scroll"), (el3) => el3.scrollLeft);
+    this.refreshOverviewSection(host2, () => this.renderTrend(host2));
+    host2.querySelectorAll(".ledger-trend-desktop-scroll, .ledger-mobile-trend-scroll").forEach((el3, index) => {
+      var _a;
+      el3.scrollLeft = (_a = scrollPositions[index]) != null ? _a : 0;
+    });
+  }
   async onClose() {
     var _a, _b;
     this.closed = true;
@@ -10032,7 +10124,9 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
       renderEmpty(parent, "\u5F53\u524D\u7B5B\u9009\u6761\u4EF6\u4E0B\u6CA1\u6709\u8BB0\u5F55\u3002\u7F3A\u5C11\u6587\u4EF6\u7684\u65E5\u671F\u4E0D\u4F1A\u6309\u96F6\u6D88\u8D39\u5904\u7406\u3002");
     }
     this.renderCategory(this.overviewSection(parent, "\u5206\u7C7B\u7EDF\u8BA1", "chart-pie"));
-    this.renderTrend(this.overviewSection(parent, "\u652F\u51FA\u8D8B\u52BF", "chart-line"));
+    const trendHost = this.overviewSection(parent, "\u652F\u51FA\u8D8B\u52BF", "chart-line");
+    trendHost.addClass("ledger-trend-host");
+    this.renderTrend(trendHost);
     const starred = this.starredRecords();
     if (starred.length) renderStarredExpenses(this.overviewSection(parent, "\u661F\u6807\u652F\u51FA", "star"), starred, (record) => void this.openRecord(record));
   }
@@ -10297,7 +10391,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
       this.trendChart = value;
       this.refreshOverviewSection(parent, () => this.renderTrend(parent));
     });
-    addSelect(controls, "\u6C47\u603B", this.trendUnit, [["auto", "\u81EA\u52A8"], ["day", "\u6309\u65E5"], ["week", "\u6309\u5468"], ["month", "\u6309\u6708"]], (value) => {
+    if (this.trendChart !== "cumulative") addSelect(controls, "\u6C47\u603B", this.trendUnit, [["auto", "\u81EA\u52A8"], ["day", "\u6309\u65E5"], ["week", "\u6309\u5468"], ["month", "\u6309\u6708"]], (value) => {
       this.trendUnit = value;
       this.refreshOverviewSection(parent, () => this.renderTrend(parent));
     });
@@ -10306,16 +10400,22 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
     const showRecords = (point) => this.drillRange({ start: point.start, end: point.end });
     if (this.trendChart === "cumulative") {
       const cumulativeRange = { ...this.filter.range, end: this.filter.range.end < todayIso() ? this.filter.range.end : todayIso() };
-      renderTrendChart(parent, cumulativeTrendPoints(records, cumulativeRange, unit), "cumulative", (point) => {
-        showCategoryRecords(
-          this.app,
-          `\u7D2F\u8BA1\u652F\u51FA \xB7 ${point.start} \u81F3 ${point.end}`,
-          records.filter((record) => record.date >= point.start && record.date <= point.end),
-          (record) => void this.openRecord(record)
-        );
-      });
+      renderTrendChart(parent, cumulativeTrendPoints(records, cumulativeRange, "day"), "cumulative", (point) => {
+        const dailyCents = records.filter((record) => record.date === point.end).reduce((sum3, record) => sum3 + record.cents, 0);
+        new TrendDateNoteModal(this.plugin, point, dailyCents, () => {
+          showCategoryRecords(
+            this.app,
+            `\u7D2F\u8BA1\u652F\u51FA \xB7 ${point.start} \u81F3 ${point.end}`,
+            records.filter((record) => record.date >= point.start && record.date <= point.end),
+            (record) => void this.openRecord(record)
+          );
+        }).open();
+      }, { dateNotes: this.plugin.settings.trendDateNotes });
     } else {
-      renderTrendChart(parent, trendPoints(records, unit), this.trendChart, showRecords);
+      const posted = this.trendChart === "line" ? records.filter((record) => record.date <= todayIso()) : records;
+      renderTrendChart(parent, trendPoints(posted, unit), this.trendChart, showRecords, {
+        dailyAverage: dailySpendingAverage(records, this.filter.range, todayIso())
+      });
     }
     parent.createDiv({ cls: "ledger-note", text: this.filter.categories.length ? `\u5F53\u524D\u53EA\u663E\u793A\u5206\u7C7B\uFF1A${this.filter.categories[0]}` : "\u5F53\u524D\u663E\u793A\u5168\u90E8\u5206\u7C7B\uFF1B\u53EF\u5728\u9876\u90E8\u9009\u62E9\u6307\u5B9A\u5206\u7C7B\u3002" });
   }
@@ -11063,6 +11163,7 @@ var LedgerStatisticsPlugin = class extends import_obsidian10.Plugin {
     this.settings = DEFAULT_SETTINGS;
     this.saveQueue = Promise.resolve();
     this.assetQueue = Promise.resolve();
+    this.trendNoteQueue = Promise.resolve();
     this.assetsStopped = false;
     this.salaryHistoryDirty = false;
   }
@@ -11077,6 +11178,7 @@ var LedgerStatisticsPlugin = class extends import_obsidian10.Plugin {
     const stored = await this.loadData();
     const migratedSecrets = migrateAiSecret(stored != null ? stored : {}, this.app.secretStorage);
     this.settings = Object.assign({}, DEFAULT_SETTINGS, migratedSecrets.data);
+    this.settings.trendDateNotes = normalizeTrendDateNotes(this.settings.trendDateNotes);
     if (migratedSecrets.changed) await this.saveSettings(false, false);
     this.settings.defaultView = normalizeLedgerView(this.settings.defaultView);
     this.settings.assets = normalizeAssets(this.settings.assets);
@@ -11173,6 +11275,30 @@ var LedgerStatisticsPlugin = class extends import_obsidian10.Plugin {
     if (rescan) await this.repository.setFolder(this.settings.ledgerFolder);
     if (refresh) this.refreshViews();
     this.checkBudget();
+  }
+  updateTrendDateNote(date, note) {
+    const operation = this.trendNoteQueue.then(async () => {
+      if (this.assetsStopped) throw new Error("\u63D2\u4EF6\u5DF2\u5173\u95ED\uFF0C\u8BF7\u91CD\u65B0\u6253\u5F00");
+      if (!isValidIsoDate(date)) throw new Error("\u5907\u6CE8\u65E5\u671F\u65E0\u6548");
+      const before = this.settings.trendDateNotes;
+      const next = { ...before };
+      if (note.trim()) next[date] = note.trim();
+      else delete next[date];
+      if (JSON.stringify(before) === JSON.stringify(next)) return;
+      this.settings.trendDateNotes = next;
+      try {
+        await this.saveSettings(false, false);
+      } catch (error) {
+        this.settings.trendDateNotes = before;
+        throw error;
+      }
+      for (const leaf of this.app.workspace.getLeavesOfType(LEDGER_VIEW_TYPE)) {
+        if (leaf.view instanceof LedgerStatisticsView) leaf.view.refreshTrendDateNotes();
+      }
+    });
+    this.trendNoteQueue = operation.catch(() => {
+    });
+    return operation;
   }
   checkBudget() {
     var _a;

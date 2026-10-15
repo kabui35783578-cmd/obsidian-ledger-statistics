@@ -39,6 +39,7 @@ export interface LedgerSettings {
   salaryCents: number;
   balanceCalibration: BalanceCalibration | null;
   balanceCalibrationNote: string;
+  trendDateNotes: Record<string, string>;
   financeAiEnabled: boolean;
   financeAiEndpoint: string;
   financeAiModel: string;
@@ -68,6 +69,7 @@ export const DEFAULT_SETTINGS: LedgerSettings = {
   salaryCents: 0,
   balanceCalibration: null,
   balanceCalibrationNote: "",
+  trendDateNotes: {},
   financeAiEnabled: false,
   financeAiEndpoint: "https://api.openai.com/v1/chat/completions",
   financeAiModel: "",

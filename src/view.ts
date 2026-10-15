@@ -5,7 +5,7 @@ import type LedgerStatisticsPlugin from "./main";
 import { requestFinanceAdvice } from "./ai";
 import { assessFinanceAdvice, createFinanceAdviceCache } from "./advice-lifecycle";
 import { markInsightSeen, withInsightHistory, unmatchedStarIds } from "./insights";
-import { BalanceCalibrationNoteModal, FixedExpenseModal, StarRepairModal } from "./management";
+import { BalanceCalibrationNoteModal, FixedExpenseModal, StarRepairModal, TrendDateNoteModal } from "./management";
 import { balanceStatus } from "./balance";
 import { salaryCycleDetails, salaryCycleRange, shiftSalaryCycle } from "./salary-history";
 import { insightAsOf, withDailyInsight } from "./daily-insight";
@@ -31,6 +31,7 @@ import {
   categorySummaries,
   compareValue,
   cumulativeTrendPoints,
+  dailySpendingAverage,
   diagnosticsFor,
   flattenRecords,
   formatCents,
@@ -199,6 +200,14 @@ export class LedgerStatisticsView extends ItemView {
   requestRender(): void {
     this.filter.excludedCategories = [...this.plugin.settings.excludedCategories];
     this.render();
+  }
+
+  refreshTrendDateNotes(): void {
+    const host = this.contentEl.querySelector<HTMLElement>(".ledger-trend-host");
+    if (!host || this.trendChart !== "cumulative") return;
+    const scrollPositions = Array.from(host.querySelectorAll<HTMLElement>(".ledger-trend-desktop-scroll, .ledger-mobile-trend-scroll"), el => el.scrollLeft);
+    this.refreshOverviewSection(host, () => this.renderTrend(host));
+    host.querySelectorAll<HTMLElement>(".ledger-trend-desktop-scroll, .ledger-mobile-trend-scroll").forEach((el, index) => { el.scrollLeft = scrollPositions[index] ?? 0; });
   }
 
   async onClose(): Promise<void> {
@@ -476,7 +485,9 @@ export class LedgerStatisticsView extends ItemView {
       renderEmpty(parent, "当前筛选条件下没有记录。缺少文件的日期不会按零消费处理。");
     }
     this.renderCategory(this.overviewSection(parent, "分类统计", "chart-pie"));
-    this.renderTrend(this.overviewSection(parent, "支出趋势", "chart-line"));
+    const trendHost = this.overviewSection(parent, "支出趋势", "chart-line");
+    trendHost.addClass("ledger-trend-host");
+    this.renderTrend(trendHost);
     const starred = this.starredRecords();
     if (starred.length) renderStarredExpenses(this.overviewSection(parent, "星标支出", "star"), starred, (record) => void this.openRecord(record));
   }
@@ -713,7 +724,7 @@ export class LedgerStatisticsView extends ItemView {
       this.trendChart = value as "line" | "bar" | "cumulative";
       this.refreshOverviewSection(parent, () => this.renderTrend(parent));
     });
-    addSelect(controls, "汇总", this.trendUnit, [["auto", "自动"], ["day", "按日"], ["week", "按周"], ["month", "按月"]], (value) => {
+    if (this.trendChart !== "cumulative") addSelect(controls, "汇总", this.trendUnit, [["auto", "自动"], ["day", "按日"], ["week", "按周"], ["month", "按月"]], (value) => {
       this.trendUnit = value as "auto" | "day" | "week" | "month";
       this.refreshOverviewSection(parent, () => this.renderTrend(parent));
     });
@@ -722,12 +733,18 @@ export class LedgerStatisticsView extends ItemView {
     const showRecords = (point: { start: string; end: string }): void => this.drillRange({ start: point.start, end: point.end });
     if (this.trendChart === "cumulative") {
       const cumulativeRange = { ...this.filter.range, end: this.filter.range.end < todayIso() ? this.filter.range.end : todayIso() };
-      renderTrendChart(parent, cumulativeTrendPoints(records, cumulativeRange, unit), "cumulative", point => {
-        showCategoryRecords(this.app, `累计支出 · ${point.start} 至 ${point.end}`,
-          records.filter(record => record.date >= point.start && record.date <= point.end), record => void this.openRecord(record));
-      });
+      renderTrendChart(parent, cumulativeTrendPoints(records, cumulativeRange, "day"), "cumulative", point => {
+        const dailyCents = records.filter(record => record.date === point.end).reduce((sum, record) => sum + record.cents, 0);
+        new TrendDateNoteModal(this.plugin, point, dailyCents, () => {
+          showCategoryRecords(this.app, `累计支出 · ${point.start} 至 ${point.end}`,
+            records.filter(record => record.date >= point.start && record.date <= point.end), record => void this.openRecord(record));
+        }).open();
+      }, { dateNotes: this.plugin.settings.trendDateNotes });
     } else {
-      renderTrendChart(parent, trendPoints(records, unit), this.trendChart, showRecords);
+      const posted = this.trendChart === "line" ? records.filter(record => record.date <= todayIso()) : records;
+      renderTrendChart(parent, trendPoints(posted, unit), this.trendChart, showRecords, {
+        dailyAverage: dailySpendingAverage(records, this.filter.range, todayIso())
+      });
     }
     parent.createDiv({ cls: "ledger-note", text: this.filter.categories.length ? `当前只显示分类：${this.filter.categories[0]}` : "当前显示全部分类；可在顶部选择指定分类。" });
   }

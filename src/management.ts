@@ -1,6 +1,6 @@
 import { FuzzySuggestModal, Modal, Notice, Setting } from "obsidian";
 import type LedgerStatisticsPlugin from "./main";
-import { flattenRecords, formatCents, LedgerRecord, parseMoneyToCents, salaryCycleFullRange, salaryDayRange } from "./core";
+import { flattenRecords, formatCents, LedgerRecord, parseMoneyToCents, salaryCycleFullRange, salaryDayRange, TrendPoint } from "./core";
 import { relinkStar, unmatchedStarIds } from "./insights";
 import { styleLedgerModal } from "./ui-surface";
 
@@ -45,6 +45,43 @@ export class BalanceCalibrationNoteModal extends Modal {
   animateClose(): Promise<void> { return Promise.resolve(); }
   // Content is replaced on next open; dismissal does not mutate its layout.
   onClose(): void {}
+}
+
+export class TrendDateNoteModal extends Modal {
+  constructor(private plugin: LedgerStatisticsPlugin, private point: TrendPoint, private dailyCents: number, private showRecords: () => void) { super(plugin.app); }
+  onOpen(): void {
+    styleLedgerModal(this);
+    this.modalEl.addClass("ledger-trend-note-modal");
+    this.setTitle(`${this.point.end} · 累计支出`);
+    const root = this.contentEl;
+    root.empty();
+    root.createDiv({ cls: "ledger-trend-note-amount", text: formatCents(this.point.cents) });
+    root.createEl("p", { cls: "ledger-note", text: `${this.point.start} 至 ${this.point.end} · 当日支出 ${formatCents(this.dailyCents)}` });
+    const label = root.createEl("label", { cls: "ledger-trend-note-label", text: "日期备注" });
+    const input = label.createEl("textarea", { cls: "ledger-trend-note-input", attr: { rows: "5", placeholder: "写下这一天的备注…", "aria-label": `${this.point.end} 日期备注` } });
+    input.value = this.plugin.settings.trendDateNotes[this.point.end] ?? "";
+    root.createEl("p", { cls: "ledger-note", text: "备注按日期保存，切换期间或分类仍可查看。清空后保存可删除备注。" });
+    const status = root.createDiv({ cls: "ledger-trend-note-status", attr: { role: "status", "aria-live": "polite" } });
+    const actions = root.createDiv({ cls: "ledger-trend-note-actions" });
+    const details = actions.createEl("button", { text: "查看累计明细" });
+    details.addEventListener("click", () => this.showRecords());
+    const cancel = actions.createEl("button", { text: "取消" });
+    cancel.addEventListener("click", () => this.close());
+    const save = actions.createEl("button", { text: "保存备注", cls: "mod-cta" });
+    save.addEventListener("click", async () => {
+      if (save.disabled) return;
+      save.disabled = cancel.disabled = details.disabled = input.disabled = true;
+      status.textContent = "正在保存…";
+      try {
+        await this.plugin.updateTrendDateNote(this.point.end, input.value);
+        this.close();
+      } catch {
+        status.textContent = "保存失败，输入已保留，请重试。";
+        save.disabled = cancel.disabled = details.disabled = input.disabled = false;
+      }
+    });
+    input.focus();
+  }
 }
 
 export class FixedExpenseModal extends Modal {
