@@ -1,6 +1,6 @@
 import { FuzzySuggestModal, Modal, Notice, Setting } from "obsidian";
 import type LedgerStatisticsPlugin from "./main";
-import { flattenRecords, formatCents, LedgerRecord, parseMoneyToCents, salaryCycleFullRange, salaryDayRange, TrendPoint } from "./core";
+import { flattenRecords, formatCents, LedgerRecord, parseMoneyToCents, salaryCycleFullRange, salaryDayRange } from "./core";
 import { relinkStar, unmatchedStarIds } from "./insights";
 import { styleLedgerModal } from "./ui-surface";
 
@@ -48,39 +48,79 @@ export class BalanceCalibrationNoteModal extends Modal {
 }
 
 export class TrendDateNoteModal extends Modal {
-  constructor(private plugin: LedgerStatisticsPlugin, private point: TrendPoint, private dailyCents: number, private showRecords: () => void) { super(plugin.app); }
+  private cleanupViewport?: () => void;
+  private noteInput?: HTMLTextAreaElement;
+  constructor(private plugin: LedgerStatisticsPlugin, private date: string, private showRecords: () => void) { super(plugin.app); }
   onOpen(): void {
     styleLedgerModal(this);
+    this.containerEl.addClass("ledger-trend-note-container");
     this.modalEl.addClass("ledger-trend-note-modal");
-    this.setTitle(`${this.point.end} · 累计支出`);
+    this.setTitle(`${this.date} · 备注`);
     const root = this.contentEl;
     root.empty();
-    root.createDiv({ cls: "ledger-trend-note-amount", text: formatCents(this.point.cents) });
-    root.createEl("p", { cls: "ledger-note", text: `${this.point.start} 至 ${this.point.end} · 当日支出 ${formatCents(this.dailyCents)}` });
-    const label = root.createEl("label", { cls: "ledger-trend-note-label", text: "日期备注" });
-    const input = label.createEl("textarea", { cls: "ledger-trend-note-input", attr: { rows: "5", placeholder: "写下这一天的备注…", "aria-label": `${this.point.end} 日期备注` } });
-    input.value = this.plugin.settings.trendDateNotes[this.point.end] ?? "";
-    root.createEl("p", { cls: "ledger-note", text: "备注按日期保存，切换期间或分类仍可查看。清空后保存可删除备注。" });
+    const note = root.createDiv({ cls: "ledger-trend-note-text", attr: { tabindex: "0" } });
+    const input = this.noteInput = root.createEl("textarea", { cls: "ledger-trend-note-input", attr: { rows: "5", placeholder: "写下这一天的备注…", "aria-label": `${this.date} 日期备注` } });
     const status = root.createDiv({ cls: "ledger-trend-note-status", attr: { role: "status", "aria-live": "polite" } });
     const actions = root.createDiv({ cls: "ledger-trend-note-actions" });
-    const details = actions.createEl("button", { text: "查看累计明细" });
+    const details = actions.createEl("button", { text: "明细", cls: "ledger-button ledger-trend-note-details", attr: { "aria-label": `查看 ${this.date} 当天支出明细` } });
     details.addEventListener("click", () => this.showRecords());
-    const cancel = actions.createEl("button", { text: "取消" });
-    cancel.addEventListener("click", () => this.close());
-    const save = actions.createEl("button", { text: "保存备注", cls: "mod-cta" });
+    const edit = actions.createEl("button", { text: "编辑", cls: "ledger-button" });
+    const cancel = actions.createEl("button", { text: "取消", cls: "ledger-button ledger-trend-note-cancel" });
+    const save = actions.createEl("button", { text: "完成", cls: "ledger-button mod-cta" });
+    const setEditing = (editing: boolean): void => {
+      input.hidden = cancel.hidden = save.hidden = !editing;
+      note.hidden = details.hidden = edit.hidden = editing;
+      status.textContent = "";
+      input.value = this.plugin.settings.trendDateNotes[this.date] ?? "";
+      note.textContent = input.value || "还没有备注，点击编辑记录这一天。";
+      note.classList.toggle("is-empty", !input.value);
+    };
+    edit.addEventListener("click", () => { setEditing(true); input.focus(); });
+    cancel.addEventListener("click", () => { input.blur(); setEditing(false); edit.focus(); });
     save.addEventListener("click", async () => {
       if (save.disabled) return;
-      save.disabled = cancel.disabled = details.disabled = input.disabled = true;
+      // Blur before awaiting storage so the phone keyboard dismisses immediately.
+      input.blur();
+      save.disabled = cancel.disabled = input.disabled = true;
       status.textContent = "正在保存…";
       try {
-        await this.plugin.updateTrendDateNote(this.point.end, input.value);
-        this.close();
+        await this.plugin.updateTrendDateNote(this.date, input.value);
+        setEditing(false);
+        edit.focus();
       } catch {
         status.textContent = "保存失败，输入已保留，请重试。";
-        save.disabled = cancel.disabled = details.disabled = input.disabled = false;
+      } finally {
+        save.disabled = cancel.disabled = input.disabled = false;
       }
     });
-    input.focus();
+    setEditing(false);
+    this.cleanupViewport?.();
+    const viewport = root.ownerDocument.defaultView?.visualViewport;
+    if (viewport) {
+      const fitViewport = (): void => {
+        this.containerEl.style.setProperty("--ledger-note-viewport-top", `${viewport.offsetTop}px`);
+        this.containerEl.style.setProperty("--ledger-note-viewport-height", `${viewport.height}px`);
+      };
+      fitViewport();
+      viewport.addEventListener("resize", fitViewport);
+      viewport.addEventListener("scroll", fitViewport);
+      this.cleanupViewport = () => {
+        viewport.removeEventListener("resize", fitViewport);
+        viewport.removeEventListener("scroll", fitViewport);
+      };
+    }
+  }
+  // Keep this small card centered on phones, including while the keyboard is open.
+  animateOpen(): Promise<void> {
+    const backdrop = this.containerEl.querySelector<HTMLElement>(".modal-bg");
+    if (backdrop) backdrop.style.opacity = "0.85";
+    return Promise.resolve();
+  }
+  animateClose(): Promise<void> { return Promise.resolve(); }
+  onClose(): void {
+    this.noteInput?.blur();
+    this.cleanupViewport?.();
+    this.cleanupViewport = undefined;
   }
 }
 

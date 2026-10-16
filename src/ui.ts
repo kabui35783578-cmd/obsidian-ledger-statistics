@@ -1,5 +1,5 @@
 import { setIcon } from "obsidian";
-import { BudgetProgress, CategorySummary, FinanceAdvisorSnapshot, FinanceCoverageReport, LedgerRecord, TrendPoint, budgetProgress, formatCents } from "./core";
+import { BudgetProgress, CategorySummary, FinanceAdvisorSnapshot, FinanceCoverageReport, LedgerRecord, TrendPoint, budgetProgress, cumulativeAverageProgress, formatCents } from "./core";
 import type { FinanceAdvice } from "./ai";
 import { compactFinanceAdvice } from "./ai";
 import { eventAdvice } from "./insights";
@@ -9,6 +9,7 @@ import type { BoxReference, WaterfallStep } from "./chart-data";
 import type { BalanceStatus } from "./balance";
 import type { DateRange } from "./core";
 import { deferChartAnimation } from "./chart-animation";
+import { CategoryMeasure, categoryTree, mountCategoryTree, treeValue } from "./treemap";
 
 export interface FinanceAdviceViewState {
   status: "local" | "loading" | "ready" | "error" | "unconfigured";
@@ -28,7 +29,6 @@ const MUTED = "#8F8E86";
 const FAINT = "#C0BFB7";
 const GRID = "#DBDAD3";
 const HERO = "#F5572F";
-const LADDER = ["#22211F", "#4A4945", "#6E6D66", "#8F8E86", "#AAA9A2", "#C0BFB7", "#DBDAD3"];
 const MONTH_ESTIMATE_DAYS = 31;
 
 function svgEl<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}): SVGElementTagNameMap[K] {
@@ -46,7 +46,9 @@ function monoCard(parent: HTMLElement, badge: string, title: string, subtitle: s
   deferChartAnimation(shell);
   const header = renderControls ? shell.createDiv({ cls: "ledger-mono-card-header" }) : shell;
   const copy = renderControls ? header.createDiv({ cls: "ledger-mono-card-heading" }) : shell;
-  copy.createDiv({ cls: "ledger-mono-badge", text: badge });
+  const labels: Record<string, string> = { F1: "阶梯柱状", F2: "支出走势", F4: "分类占比", F5: "分类金额", F6: "分组柱", F9: "工资周期", F12: "期间对比", F13: "矩形树图", F15: "单笔分布" };
+  const template = badge.match(/F\d+\b/)?.[0] ?? "";
+  copy.createDiv({ cls: "ledger-mono-badge", text: labels[template] ?? badge });
   copy.createEl("h3", { text: title });
   copy.createDiv({ cls: "ledger-mono-sub", text: subtitle });
   if (renderControls) renderControls(header.createDiv({ cls: "ledger-salary-cycle-controls" }));
@@ -55,7 +57,10 @@ function monoCard(parent: HTMLElement, badge: string, title: string, subtitle: s
 }
 
 function sourceLine(parent: HTMLElement, text: string): void {
-  parent.createDiv({ cls: "ledger-mono-source", text });
+  const source = text.includes("COMPARISON") ? "数据来源 · 当前与对比期间账目"
+    : text.includes("TWO PREVIOUS") ? "参考数据 · 前两个完整工资周期"
+    : text.includes("LOCAL LEDGER") ? "数据来源 · 本地记账" : text;
+  parent.createDiv({ cls: "ledger-mono-source", text: source });
 }
 
 function niceCurrencyUnit(maxCents: number, targetTicks = 32): number {
@@ -82,7 +87,8 @@ function accessibleTarget(element: SVGElement | HTMLElement, label: string, acti
   });
 }
 
-function trendTooltip(x: number, y: number, chartWidth: number, value: string, mobile = false): SVGGElement {
+function trendTooltip(x: number, y: number, chartWidth: number, value: string, mobile = false, note?: string): SVGGElement {
+  if (note?.trim()) return trendNoteTooltip(x, y, chartWidth, value, note, mobile);
   const width = Math.max(mobile ? 72 : 64, value.length * (mobile ? 7.2 : 6.4) + 20);
   const centerX = Math.max(width / 2 + 4, Math.min(chartWidth - width / 2 - 4, x));
   const textY = Math.max(18, y - 14);
@@ -108,6 +114,41 @@ function trendTooltip(x: number, y: number, chartWidth: number, value: string, m
   return tooltip;
 }
 
+function trendNoteTooltip(x: number, y: number, chartWidth: number, value: string, note: string, mobile: boolean): SVGGElement {
+  const fontSize = mobile ? 12 : 11;
+  const measure = (text: string): number => Array.from(text).reduce((size, char) => size + fontSize * (/^[\x00-\x7f]$/.test(char) ? 0.62 : 1), 0);
+  const maxWidth = Math.min(260, chartWidth - 8);
+  const lines: string[] = [];
+  for (const paragraph of note.split(/\r\n|\r|\n/)) {
+    let line = "";
+    for (const char of Array.from(paragraph)) {
+      if (line && measure(line + char) > maxWidth - 24) { lines.push(line); line = ""; }
+      line += char;
+    }
+    lines.push(line);
+  }
+  const limit = mobile ? 6 : 8;
+  const preview = lines.slice(0, limit);
+  if (lines.length > limit) preview.push("…点击查看完整备注");
+  const width = Math.min(maxWidth, Math.max(100, measure(value) + 24, ...preview.map(line => measure(line) + 24)));
+  const height = 36 + preview.length * 16;
+  const left = Math.max(4, Math.min(chartWidth - width - 4, x - width / 2));
+  const top = y - height - 12 >= 4 ? y - height - 12 : Math.min(y + 14, (mobile ? 252 : 330) - height - 4);
+  const tooltip = svgEl("g", { class: "ledger-trend-tooltip ledger-trend-note-tooltip", "aria-hidden": "true" });
+  tooltip.append(svgEl("rect", { x: left, y: top, width, height, rx: 10, class: "ledger-trend-tooltip-bg" }));
+  const amount = svgEl("text", { x: left + 12, y: top + 18, class: mobile ? "ledger-trend-tooltip-text is-mobile" : "ledger-trend-tooltip-text" });
+  amount.textContent = value;
+  tooltip.append(amount);
+  const text = svgEl("text", { class: "ledger-trend-tooltip-note" });
+  preview.forEach((line, index) => {
+    const span = svgEl("tspan", { x: left + 12, y: top + 36 + index * 16 });
+    span.textContent = line;
+    text.append(span);
+  });
+  tooltip.append(text);
+  return tooltip;
+}
+
 function interactiveTrendTarget(
   svg: SVGSVGElement,
   group: SVGGElement,
@@ -120,6 +161,10 @@ function interactiveTrendTarget(
   target.setAttribute("role", "button");
   target.setAttribute("aria-label", label);
   target.classList.add("ledger-chart-target", "ledger-trend-hit-target");
+  // Raise the hovered/focused point so later data points cannot cover its preview.
+  const raise = (): void => { if (svg.lastElementChild !== group) svg.append(group); };
+  group.addEventListener("pointerenter", raise);
+  group.addEventListener("focusin", raise);
   target.addEventListener("click", (event) => {
     if (previewOnFirstActivation && !group.classList.contains("is-active")) {
       event.preventDefault();
@@ -167,6 +212,31 @@ function renderMobileTickRows(parent: HTMLElement, data: CategorySummary[], unit
 
 export interface TickRowsOptions { title?: string; subtitle?: string; details?: Record<string, string> }
 
+export function renderCategoryTreemap(parent: HTMLElement, data: CategorySummary[], onClick: (category: string) => void, measure: CategoryMeasure = "amount"): void {
+  const tree = categoryTree(data, measure);
+  const { shell, chart } = monoCard(parent, "LUPI BASICS · F13 NESTED TREEMAP",
+    tree.leader ? `${tree.leader.category}占比最高` : "本期分类支出",
+    `矩形面积 = ${measure === "count" ? "记账笔数" : "支出金额"} · 橙色为最大分类 · 灰阶区分分类`);
+  shell.classList.add("ledger-category-treemap-card");
+  if (tree.total > 0) {
+    const host = chart.createDiv({ cls: "ledger-category-treemap", attr: { role: "group", "aria-label": "分类矩形树图" } });
+    mountCategoryTree(host, tree, onClick);
+  } else renderEmpty(chart, data.length ? "当前没有正数面积，可在分类明细中查看。" : "当前筛选条件下没有可绘制的数据");
+  if (data.length) {
+    const details = chart.createEl("details", { cls: "ledger-treemap-details" });
+    details.createEl("summary", { text: `查看分类${measure === "count" ? "笔数" : "金额"}与明细 · ${data.length} 类` });
+    const list = details.createDiv({ cls: "ledger-treemap-list" });
+    for (const item of data) {
+      const button = list.createEl("button", { cls: "ledger-button ledger-treemap-row", attr: { type: "button" } });
+      button.createSpan({ text: item.category });
+      button.createSpan({ text: `${treeValue(measure === "count" ? item.count : item.cents, measure)} · ${tree.omitted.includes(item) ? "不参与面积" : tree.total > 0 ? `${((measure === "count" ? item.count : item.cents) / tree.total * 100).toFixed(1)}%` : "—"}` });
+      button.addEventListener("click", () => onClick(item.category));
+    }
+    if (tree.omitted.length) chart.createDiv({ cls: "ledger-note", text: "非正数分类保留在明细中，不绘制为矩形。" });
+  }
+  sourceLine(shell, "C9 / F13 NESTED TREEMAP · LOCAL LEDGER");
+}
+
 export function renderHorizontalBars(parent: HTMLElement, data: CategorySummary[], onClick: (category: string) => void, options: TickRowsOptions = {}): void {
   const total = data.reduce((sum, item) => sum + item.cents, 0);
   const leader = data[0];
@@ -178,7 +248,7 @@ export function renderHorizontalBars(parent: HTMLElement, data: CategorySummary[
   );
   if (data.length === 0) return renderEmpty(chart, "当前筛选条件下没有可绘制的数据");
   const width = 820;
-  const height = Math.max(330, data.length * (options.details ? 62 : 44) + 58);
+  const height = data.length * (options.details ? 62 : 44) + 58;
   const rowHeight = (height - 58) / data.length;
   const x0 = 126;
   const plotWidth = 520;
@@ -212,7 +282,7 @@ export function renderHorizontalBars(parent: HTMLElement, data: CategorySummary[
       const x = x0 + (tick + 0.5) * px;
       group.append(svgEl("line", {
         x1: x, y1: y + 9, x2: x, y2: y - 2 - deterministic(tick + 1, index + 2) * 7,
-        stroke: index === 0 ? HERO : LADDER[Math.min(index, 4)], "stroke-width": index === 0 ? 1.8 : 1,
+        stroke: index === 0 ? HERO : INK, "stroke-width": 1.7,
         class: "ledger-fade", style: `animation-delay:${index * 0.08 + tick * 0.012}s`
       }));
       if (tick % 5 === 4) group.append(svgEl("circle", { cx: x, cy: y + 14, r: 1, fill: FAINT }));
@@ -221,7 +291,7 @@ export function renderHorizontalBars(parent: HTMLElement, data: CategorySummary[
       const x = x0 + (full + 0.5) * px;
       group.append(svgEl("line", {
         x1: x, y1: y + 9, x2: x, y2: y + 9 - 13 * remainder / unit,
-        stroke: LADDER[Math.min(index, 4)], "stroke-width": 1, "stroke-dasharray": "2 2",
+        stroke: index === 0 ? HERO : INK, "stroke-width": 1.7, "stroke-dasharray": "2 2",
         class: "ledger-fade", style: `animation-delay:${index * 0.08 + full * 0.012}s`
       }));
     }
@@ -233,11 +303,10 @@ export function renderHorizontalBars(parent: HTMLElement, data: CategorySummary[
     svg.append(group);
   });
   const unitText = svgEl("text", { x: width / 2, y: height - 12, "text-anchor": "middle", class: "ledger-foot-label" });
-  unitText.textContent = `ONE TICK = ${formatCents(unit)} · DASHED FINAL TICK = REMAINDER`;
+  unitText.textContent = `每根刻线 ${formatCents(unit)} · 末根不足一单位按比例绘制`;
   svg.append(unitText);
   chart.append(svg);
   renderMobileTickRows(chart, data, unit, onClick, options.details);
-  shell.createDiv({ cls: "ledger-note", text: `每根完整刻线 = ${formatCents(unit)} · 末根不足一单位按比例绘制` });
   sourceLine(shell, "TICK ROWS · MONO-BASIC · LOCAL LEDGER");
 }
 
@@ -367,9 +436,26 @@ export interface TrendChartOptions {
 function appendDailyAverage(svg: SVGSVGElement, average: { cents: number; days: number } | null | undefined, left: number, right: number, y: number, mobile = false): void {
   if (!average) return;
   const group = svgEl("g", { class: "ledger-trend-average", "aria-label": `日均支出 ${formatCents(average.cents)}，按 ${average.days} 个自然日计算` });
-  group.append(svgEl("line", { x1: left, x2: right, y1: y, y2: y, stroke: HERO, "stroke-width": 1.4, "stroke-dasharray": "6 5" }));
+  group.append(svgEl("line", { x1: left, x2: right, y1: y, y2: y, stroke: MUTED, "stroke-opacity": 0.6, "stroke-width": 1.1, "stroke-dasharray": "6 5" }));
   const label = svgEl("text", { x: left + 5, y: Math.max(16, y - 8), class: mobile ? "ledger-mobile-axis-value ledger-trend-average-label" : "ledger-foot-label ledger-trend-average-label" });
   label.textContent = `日均 ${formatCents(average.cents)}`;
+  group.append(label);
+  svg.append(group);
+}
+
+function appendCumulativeAverage(svg: SVGSVGElement, progress: ReturnType<typeof cumulativeAverageProgress>, left: number, slot: number, base: number, plotHeight: number, max: number, mobile = false): void {
+  if (!progress) return;
+  const coords = progress.amounts.map((amount, index) => ({ x: left + slot * (index + 0.5), y: base - amount / max * plotHeight }));
+  const group = svgEl("g", { class: "ledger-trend-average ledger-trend-average-progress", "aria-label": `平均进度：按 ${progress.days} 个自然日均匀分摊，日均 ${formatCents(progress.dailyCents)}` });
+  group.append(svgEl("path", {
+    d: `M${coords.map(point => `${point.x} ${point.y}`).join(" L ")}`,
+    fill: "none", stroke: MUTED, "stroke-opacity": 0.6, "stroke-width": 1.1, "stroke-dasharray": "6 5"
+  }));
+  const label = svgEl("text", {
+    x: coords[0].x + 5, y: Math.max(16, coords[0].y - 8),
+    class: mobile ? "ledger-mobile-axis-value ledger-trend-average-label" : "ledger-foot-label ledger-trend-average-label"
+  });
+  label.textContent = "平均进度";
   group.append(label);
   svg.append(group);
 }
@@ -380,165 +466,151 @@ function appendTrendNoteMarker(group: SVGGElement, x: number, y: number, note: s
   group.append(svgEl("circle", { cx: x, cy: y, r: 7, fill: "none", stroke: HERO, "stroke-width": 1.5, class: "ledger-trend-note-marker", "pointer-events": "none" }));
 }
 
-function renderMobileTrend(parent: HTMLElement, points: TrendPoint[], isLine: boolean, onClick: (point: TrendPoint) => void, cumulative = false, options: TrendChartOptions = {}): void {
-  const viewport = parent.createDiv({ cls: "ledger-mobile-trend-scroll" });
-  const max = Math.max(...points.map((point) => point.cents), options.dailyAverage?.cents ?? 0, 1);
-  const width = points.length > 10 ? points.length * 34 + 74 : 360;
-  const height = 252;
-  const left = cumulative ? Math.max(44, formatCents(max).replace(".00", "").length * 6.5 + 14) : 44;
-  const right = width - 14;
-  const top = 38;
-  const base = 194;
+function trendWeekend(point: TrendPoint, cumulative: boolean): boolean {
+  if (!cumulative && point.start !== point.end) return false;
+  const day = new Date(`${point.end}T12:00:00Z`).getUTCDay();
+  return day === 0 || day === 6;
+}
+
+function trendAxis(max: number): { max: number; step: number } {
+  const raw = Math.max(max, 1) / 4;
+  const magnitude = 10 ** Math.floor(Math.log10(raw));
+  const normalized = raw / magnitude;
+  const factor = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 2.5 ? 2.5 : normalized <= 5 ? 5 : 10;
+  const step = Math.max(1, Math.ceil(factor * magnitude));
+  return { max: Math.ceil(Math.max(max, 1) / step) * step, step };
+}
+
+function trendDateLabels(count: number, width: number, mobile: boolean): Set<number> {
+  const labels = !mobile && count <= 31 ? 3 : Math.max(3, Math.floor(width / 220) + 1);
+  return new Set(Array.from({ length: Math.min(count, labels) }, (_, index) =>
+    Math.round(index * (count - 1) / Math.max(1, Math.min(count, labels) - 1))));
+}
+
+/** F1 Rung Bars: each horizontal rung encodes the same currency unit. */
+function appendRungColumn(group: SVGGElement, x: number, base: number, amount: number, max: number, plotHeight: number, halfWidth: number, unit: number, primary: boolean, index: number): void {
+  if (amount <= 0) return;
+  const full = Math.floor(amount / unit);
+  const remainder = amount % unit;
+  for (let rung = 0; rung < full + (remainder > 0 ? 1 : 0); rung += 1) {
+    const fraction = rung < full ? 1 : remainder / unit;
+    const value = rung < full ? (rung + 1) * unit : amount;
+    const y = base - value / max * plotHeight;
+    group.append(svgEl("line", {
+      x1: x - halfWidth * fraction, x2: x + halfWidth * fraction, y1: y, y2: y,
+      stroke: primary ? HERO : INK, "stroke-width": 1.8, "stroke-linecap": "round",
+      "stroke-dasharray": fraction < 1 ? "2 2" : "none",
+      class: "ledger-fade ledger-trend-rung", "data-unit-cents": unit, "data-fraction": fraction,
+      style: `animation-delay:${index * 0.025 + rung * 0.008}s`
+    }));
+  }
+}
+
+function renderTrendPlot(parent: HTMLElement, points: TrendPoint[], type: "line" | "bar" | "cumulative", onClick: (point: TrendPoint) => void, options: TrendChartOptions, mobile: boolean): void {
+  const cumulative = type === "cumulative";
+  const isLine = type !== "bar";
+  const average = cumulative ? null : options.dailyAverage;
+  const axis = trendAxis(Math.max(...points.map(point => point.cents), average?.cents ?? 0, 1));
+  const width = mobile ? (points.length > 10 ? points.length * 34 + 74 : 360)
+    : cumulative ? Math.max(820, points.length * 34 + 80)
+    : isLine ? 820 : Math.max(820, points.length * 24 + 80);
+  const height = mobile ? 252 : 330;
+  const left = mobile ? Math.max(44, formatCents(axis.max).replace(".00", "").length * 6.5 + 14) : 64;
+  const right = width - (mobile ? 14 : 30);
+  const top = mobile ? 38 : 34;
+  const base = mobile ? 194 : 254;
   const plotWidth = right - left;
   const plotHeight = base - top;
-  const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": cumulative ? "移动端累计支出折线图" : isLine ? "移动端支出折线图" : "移动端支出柱状图" });
-  svg.classList.add("ledger-svg", "ledger-mobile-trend");
-  svg.style.width = `${width}px`;
-  for (let tick = 0; tick <= 3; tick += 1) {
-    const y = base - tick / 3 * plotHeight;
-    svg.append(svgEl("line", { x1: left, y1: y, x2: right, y2: y, stroke: GRID, "stroke-width": 0.8 }));
-    const label = svgEl("text", { x: left - 7, y: y + 4, "text-anchor": "end", class: "ledger-mobile-axis-value" });
-    label.textContent = formatCents(Math.round(max * tick / 3)).replace(".00", "");
+  const slot = plotWidth / points.length;
+  const peakIndex = cumulative ? points.length - 1 : points.reduce((best, point, index) => point.cents > points[best].cents ? index : best, 0);
+  const unit = niceCurrencyUnit(axis.max, 64);
+  const svg = svgEl("svg", {
+    viewBox: `0 0 ${width} ${height}`, role: "img", "data-axis-max": axis.max,
+    "aria-label": `${mobile ? "移动端" : ""}${cumulative ? "累计支出折线图" : isLine ? "支出发丝折线图" : "支出柱状图"}`
+  });
+  svg.classList.add("ledger-svg", isLine ? "ledger-hairline-chart" : "ledger-rung-chart", mobile ? "ledger-mobile-trend" : "ledger-desktop-chart");
+  if (mobile) svg.style.width = `${width}px`;
+  else if (width > 840) svg.style.minWidth = `${width}px`;
+  for (let amount = 0; amount <= axis.max; amount += axis.step) {
+    const y = base - amount / axis.max * plotHeight;
+    svg.append(svgEl("line", { x1: left, y1: y, x2: right, y2: y, stroke: GRID, "stroke-width": 0.6, "stroke-opacity": amount === 0 ? 1 : 0.55 }));
+    const label = svgEl("text", { x: left - 8, y: y + 3, "text-anchor": "end", class: mobile ? "ledger-mobile-axis-value" : "ledger-foot-label" });
+    label.textContent = formatCents(amount).replace(".00", "");
     svg.append(label);
   }
-  const slot = plotWidth / Math.max(points.length, 1);
+  if (cumulative) appendCumulativeAverage(svg, cumulativeAverageProgress(points), left, slot, base, plotHeight, axis.max, mobile);
+  else appendDailyAverage(svg, average, left, right, base - (average?.cents ?? 0) / axis.max * plotHeight, mobile);
   const coords: Array<{ x: number; y: number }> = [];
-  const peakIndex = cumulative ? points.length - 1 : points.reduce((best, point, index) => point.cents > points[best].cents ? index : best, 0);
-  const labelEvery = Math.max(1, Math.ceil(points.length / 6));
-  appendDailyAverage(svg, options.dailyAverage, left, right, base - (options.dailyAverage?.cents ?? 0) / max * plotHeight, true);
+  const dateLabels = trendDateLabels(points.length, width, mobile);
   points.forEach((point, index) => {
-    const x = left + slot * index + slot / 2;
-    const y = base - point.cents / max * plotHeight;
+    const x = left + slot * (index + 0.5);
+    const y = base - point.cents / axis.max * plotHeight;
     coords.push({ x, y });
-    if (!isLine) svg.append(svgEl("line", { x1: x, y1: base, x2: x, y2: y, stroke: index === peakIndex ? INK : MUTED, "stroke-width": index === peakIndex ? 2.4 : 1.4, class: "ledger-fade" }));
+    const primary = index === peakIndex;
+    const weekend = trendWeekend(point, cumulative);
+    const group = svgEl("g", { class: "ledger-trend-point", "data-cents": point.cents });
+    svg.append(svgEl("line", { x1: x, y1: base, x2: x, y2: base - 7, stroke: FAINT, "stroke-width": 0.6 }));
     if (isLine) {
-      const group = svgEl("g", { class: "ledger-trend-point" });
-      group.append(svgEl("circle", { cx: x, cy: y, r: index === peakIndex ? 4.8 : 3, fill: index === peakIndex ? HERO : INK, class: "ledger-pop ledger-trend-dot" }));
-      const note = cumulative ? options.dateNotes?.[point.end] : undefined;
-      appendTrendNoteMarker(group, x, y, note);
-      if (index === peakIndex) {
-        const peak = svgEl("text", { x, y: Math.max(19, y - 11), "text-anchor": cumulative ? "end" : "middle", class: "ledger-mobile-value-label ledger-peak-label ledger-persistent-peak" });
-        peak.textContent = formatCents(point.cents);
-        group.append(peak);
-      }
-      group.append(trendTooltip(x, y, width, `${cumulative ? "累计 " : ""}${formatCents(point.cents)}`, true));
-      const hit = svgEl("circle", { cx: x, cy: y, r: 22, fill: "transparent" });
-      interactiveTrendTarget(svg, group, hit, `${point.label} ${cumulative ? "累计 " : ""}${formatCents(point.cents)}，${point.count} 笔${cumulative ? `，${note ? `备注：${note}` : "添加备注"}` : ""}`, () => onClick(point), !cumulative);
-      group.append(hit);
-      svg.append(group);
+      group.append(svgEl("circle", {
+        cx: x, cy: y, r: primary ? (mobile ? 4.8 : 4.2) : (mobile ? 3 : 2.2),
+        fill: weekend ? PAPER : primary ? HERO : INK, stroke: primary ? HERO : INK,
+        "stroke-width": weekend ? 1.2 : 0.8, class: "ledger-pop ledger-trend-dot",
+        style: `animation-delay:${0.15 + index * 0.012}s`
+      }));
+      appendTrendNoteMarker(group, x, y, cumulative ? options.dateNotes?.[point.end] : undefined);
     } else {
-      const hitWidth = Math.max(slot, 24);
-      const hit = svgEl("rect", { x: x - hitWidth / 2, y: top, width: hitWidth, height: plotHeight + 30, fill: "transparent" });
-      accessibleTarget(hit, `${point.label} ${formatCents(point.cents)}，${point.count} 笔`, () => onClick(point));
-      svg.append(hit);
+      appendRungColumn(group, x, base, point.cents, axis.max, plotHeight, Math.min(11, slot * 0.28), unit, primary, index);
     }
-    if (!isLine && index === peakIndex) {
-      const value = svgEl("text", { x, y: Math.max(19, y - 11), "text-anchor": "middle", class: "ledger-mobile-value-label ledger-peak-label" });
-      value.textContent = formatCents(point.cents);
-      svg.append(value);
+    if (primary) {
+      const peak = svgEl("text", {
+        x, y: Math.max(18, y - 12), "text-anchor": cumulative ? "end" : "middle",
+        class: `${mobile ? "ledger-mobile-value-label" : "ledger-value-label"} ledger-peak-label ledger-persistent-peak`
+      });
+      peak.textContent = formatCents(point.cents);
+      group.append(peak);
     }
-    if ((index % labelEvery === 0 && index <= points.length - 1 - labelEvery) || index === points.length - 1) {
-      const label = svgEl("text", { x, y: base + 23, "text-anchor": "middle", class: "ledger-mobile-axis-label" });
-      label.textContent = point.label.length > 5 ? point.label.slice(-5) : point.label;
+    const note = cumulative ? options.dateNotes?.[point.end] : undefined;
+    group.append(trendTooltip(x, y, width, `${cumulative ? "累计 " : ""}${formatCents(point.cents)}`, mobile, note));
+    const hit = isLine ? svgEl("circle", { cx: x, cy: y, r: mobile ? 22 : 14, fill: "transparent" })
+      : svgEl("rect", { x: x - slot / 2, y: top, width: slot, height: plotHeight + 28, fill: "transparent" });
+    interactiveTrendTarget(svg, group, hit,
+      `${point.label} ${cumulative ? "累计 " : ""}${formatCents(point.cents)}，${point.count} 笔${weekend ? "，周末" : ""}${cumulative ? `，${note ? `备注：${note}` : "添加备注"}` : ""}`,
+      () => onClick(point), mobile && isLine && !cumulative);
+    group.append(hit);
+    svg.append(group);
+    if (dateLabels.has(index)) {
+      const label = svgEl("text", { x, y: base + 23, "text-anchor": "middle", class: mobile ? "ledger-mobile-axis-label" : "ledger-axis-label" });
+      label.textContent = mobile && point.label.length > 5 ? point.label.slice(-5) : point.label;
       svg.append(label);
     }
   });
-  const outline = svgEl("path", { d: `M${coords.map((point) => `${point.x} ${point.y}`).join(" L ")}`, fill: "none", stroke: INK, "stroke-width": isLine ? 1.8 : 1.2, pathLength: 1, class: "ledger-draw" });
-  if (isLine) svg.insertBefore(outline, svg.firstChild); else svg.append(outline);
-  const foot = svgEl("text", { x: width / 2, y: height - 10, "text-anchor": "middle", class: "ledger-mobile-foot-label" });
-  foot.textContent = cumulative ? "轻点日期圆点 · 查看金额并编辑备注" : isLine
-    ? (points.length > 10 ? "左右滑动 · 轻点顶点显示金额" : "轻点顶点显示金额 · 再点一次查看明细")
-    : (points.length > 10 ? "左右滑动查看完整时间范围" : "点击数据点查看对应明细");
+  if (isLine) {
+    const outline = svgEl("path", { d: `M${coords.map(point => `${point.x} ${point.y}`).join(" L ")}`, fill: "none", stroke: INK, "stroke-width": 1.8, pathLength: 1, class: "ledger-draw" });
+    svg.insertBefore(outline, svg.firstChild);
+  }
+  const foot = svgEl("text", { x: width / 2, y: height - 10, "text-anchor": "middle", class: mobile ? "ledger-mobile-foot-label" : "ledger-foot-label" });
+  foot.textContent = cumulative ? (mobile ? "轻点日期圆点 · 查看备注" : "悬停查看备注 · 点击打开卡片")
+    : isLine ? (mobile ? "轻点圆点查看金额 · 再点查看明细" : "空心圆点为周末 · 悬停查看金额")
+    : `每档 ${formatCents(unit)} · 虚线末档按比例计入`;
   svg.append(foot);
-  viewport.append(svg);
+  parent.createDiv({ cls: mobile ? "ledger-mobile-trend-scroll" : "ledger-desktop-chart ledger-trend-desktop-scroll" }).append(svg);
 }
 
 export function renderTrendChart(parent: HTMLElement, points: TrendPoint[], type: "line" | "bar" | "cumulative", onClick: (point: TrendPoint) => void, options: TrendChartOptions = {}): void {
   const cumulative = type === "cumulative";
   const isLine = type !== "bar";
-  const average = type === "line" ? options.dailyAverage : null;
-  const { shell, chart } = monoCard(
-    parent,
-    cumulative ? "CUMULATIVE SPENDING · LOCAL LEDGER" : isLine ? "LUPI BASICS · F2 HAIRLINE LINE" : "LUPI BASICS · F3 HAIRLINE AREA",
+  const average = cumulative ? null : options.dailyAverage;
+  const progress = cumulative ? cumulativeAverageProgress(points) : null;
+  const meanDescription = average ? ` · 日均 ${formatCents(average.cents)}（含零支出日）` : "";
+  const { shell, chart } = monoCard(parent,
+    cumulative ? "累计支出" : isLine ? "LUPI BASICS · F2 HAIRLINE LINE" : "LUPI BASICS · F1 RUNG BARS",
     cumulative ? `累计支出${points.length ? ` · ${formatCents(points.at(-1)!.cents)}` : ""}` : trendConclusion(points),
-    cumulative ? "每天一个圆点 · 点击查看金额并编辑日期备注 · 带外圈的点已有备注" : isLine ? `一个圆点 = 一个时间桶${average ? ` · 虚线：日均 ${formatCents(average.cents)}（所选期间已过 ${average.days} 个自然日，含零支出日）` : " · 发丝折线保持逐日读数"}` : "一根发丝 = 一个时间桶 · 从地板生长到当期金额"
-  );
-  if (points.length === 0) return renderEmpty(chart, "当前筛选条件下没有可绘制的数据");
-  const width = cumulative ? Math.max(820, points.length * 34 + 80) : 820;
-  const height = 330;
-  const left = 54;
-  const top = 34;
-  const base = 254;
-  const plotWidth = width - left - 26;
-  const plotHeight = base - top;
-  const max = Math.max(...points.map((point) => point.cents), average?.cents ?? 0, 1);
-  const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": cumulative ? "累计支出折线图" : isLine ? "支出发丝折线图" : "支出发丝柱状图" });
-  svg.classList.add("ledger-svg", "ledger-hairline-chart", "ledger-desktop-chart");
-  if (cumulative && points.length > 24) svg.style.minWidth = `${width}px`;
-  for (let tick = 0; tick <= 4; tick += 1) {
-    const y = base - tick / 4 * plotHeight;
-    svg.append(svgEl("line", { x1: left, y1: y, x2: left + plotWidth, y2: y, stroke: GRID, "stroke-width": 0.6 }));
-    const label = svgEl("text", { x: left - 8, y: y + 3, "text-anchor": "end", class: "ledger-foot-label" });
-    label.textContent = formatCents(Math.round(max * tick / 4)).replace(".00", "");
-    svg.append(label);
-  }
-  const slot = plotWidth / Math.max(points.length, 1);
-  const coords: Array<{ x: number; y: number }> = [];
-  const peaks = cumulative ? [points.length - 1] : [...points.keys()].sort((a, b) => points[b].cents - points[a].cents).filter((index, position, chosen) => position === 0 || chosen.slice(0, position).every((other) => Math.abs(other - index) >= 3)).slice(0, 2);
-  appendDailyAverage(svg, average, left, left + plotWidth, base - (average?.cents ?? 0) / max * plotHeight);
-  points.forEach((point, index) => {
-    const x = left + slot * index + slot / 2;
-    const y = base - point.cents / max * plotHeight;
-    coords.push({ x, y });
-    svg.append(svgEl("line", { x1: x, y1: base, x2: x, y2: base - 8, stroke: FAINT, "stroke-width": 0.7 }));
-    if (!isLine) {
-      svg.append(svgEl("line", {
-        x1: x, y1: base, x2: x, y2: y,
-        stroke: peaks.includes(index) ? INK : MUTED, "stroke-width": peaks.includes(index) ? 1.2 : 0.65,
-        opacity: 0.55 + deterministic(index + 1, 7) * 0.4,
-        class: "ledger-fade", style: `animation-delay:${index * 0.014}s`
-      }));
-    }
-    if (isLine) {
-      const group = svgEl("g", { class: "ledger-trend-point" });
-      group.append(svgEl("circle", { cx: x, cy: y, r: peaks.includes(index) ? 4.2 : 2.2, fill: peaks.includes(index) ? HERO : index % 7 >= 5 ? PAPER : INK, stroke: peaks.includes(index) ? HERO : INK, "stroke-width": 1, class: "ledger-pop ledger-trend-dot" }));
-      const note = cumulative ? options.dateNotes?.[point.end] : undefined;
-      appendTrendNoteMarker(group, x, y, note);
-      if (index === peaks[0]) {
-        const peak = svgEl("text", { x, y: Math.max(18, y - 12), "text-anchor": cumulative ? "end" : "middle", class: "ledger-value-label ledger-peak-label ledger-persistent-peak" });
-        peak.textContent = formatCents(point.cents);
-        group.append(peak);
-      }
-      group.append(trendTooltip(x, y, width, `${cumulative ? "累计 " : ""}${formatCents(point.cents)}`));
-      const hit = svgEl("circle", { cx: x, cy: y, r: 14, fill: "transparent" });
-      interactiveTrendTarget(svg, group, hit, `${point.label} ${cumulative ? "累计 " : ""}${formatCents(point.cents)}，${point.count} 笔${cumulative ? `，${note ? `备注：${note}` : "添加备注"}` : ""}`, () => onClick(point));
-      group.append(hit);
-      svg.append(group);
-    } else {
-      const hit = svgEl("rect", { x: left + slot * index, y: top, width: slot, height: plotHeight, fill: "transparent" });
-      accessibleTarget(hit, `${point.label} ${formatCents(point.cents)}，${point.count} 笔`, () => onClick(point));
-      svg.append(hit);
-    }
-    if (!isLine && peaks.includes(index)) {
-      const value = svgEl("text", { x, y: y - 12, "text-anchor": "middle", class: "ledger-value-label ledger-peak-label" });
-      value.textContent = formatCents(point.cents);
-      svg.append(value);
-    }
-    const labelEvery = Math.max(1, Math.ceil(points.length / 8));
-    if ((index % labelEvery === 0 && (!cumulative || index <= points.length - 1 - labelEvery)) || index === points.length - 1) {
-      const label = svgEl("text", { x, y: base + 24, "text-anchor": "middle", class: "ledger-axis-label" });
-      label.textContent = point.label;
-      svg.append(label);
-    }
-  });
-  const outline = svgEl("path", { d: `M${coords.map((point) => `${point.x} ${point.y}`).join(" L ")}`, fill: "none", stroke: INK, "stroke-width": isLine ? 1.2 : 1, pathLength: 1, class: "ledger-draw" });
-  if (isLine) svg.insertBefore(outline, svg.firstChild); else svg.append(outline);
-  const foot = svgEl("text", { x: width / 2, y: height - 10, "text-anchor": "middle", class: "ledger-foot-label" });
-  foot.textContent = cumulative ? "点击日期圆点 · 查看金额并编辑备注" : isLine ? "HOVER A DOT · REVEAL THE EXACT AMOUNT" : "ONE HAIRLINE = ONE PERIOD, FLOOR TO PEAK";
-  svg.append(foot);
-  chart.createDiv({ cls: "ledger-desktop-chart ledger-trend-desktop-scroll" }).append(svg);
-  renderMobileTrend(chart, points, isLine, onClick, cumulative, { ...options, dailyAverage: average });
-  sourceLine(shell, `${cumulative ? "CUMULATIVE LINE" : isLine ? "HAIRLINE LINE" : "HAIRLINE AREA"} · MONO-BASIC · LOCAL LEDGER`);
+    cumulative ? `带外圈的日期已有备注${progress ? ` · 虚线为平均进度（日均 ${formatCents(progress.dailyCents)}）` : ""}`
+      : `${isLine ? "逐日读数 · 空心圆点为周末" : "阶梯柱按同一金额单位逐档累计"}${meanDescription}`);
+  if (!points.length) return renderEmpty(chart, "当前筛选条件下没有可绘制的数据");
+  renderTrendPlot(chart, points, type, onClick, options, false);
+  renderTrendPlot(chart, points, type, onClick, options, true);
+  sourceLine(shell, "LOCAL LEDGER");
 }
 
 export function renderSalaryWaterfall(parent: HTMLElement, steps: WaterfallStep[], range: { start: string; end: string }, onCategory: (category: string) => void, onCalibrationNote?: () => void, options?: { historical: boolean; salaryRecorded: boolean; renderControls?: (parent: HTMLElement) => void }): void {
@@ -709,23 +781,25 @@ export function renderDumbbell(parent: HTMLElement, data: DumbbellDatum[], curre
     `空心点 = ${previousLabel} · 实心点 = ${currentLabel} · 所有分类共用金额轴`
   );
   if (data.length === 0) return renderEmpty(chart, "两个期间都没有匹配记录");
-  const width = 820;
-  const rowHeight = 44;
+  // Half-width category cards need their own readable coordinate system.
+  // The old 820-wide canvas also shrank every label when fitted into the grid.
+  const width = 540;
+  const rowHeight = 64;
   const height = data.length * rowHeight + 72;
-  const left = 138;
-  const right = 744;
+  const left = 100;
+  const right = 452;
   const max = Math.max(...data.flatMap((item) => [item.currentCents, item.previousCents]), 1);
   const unit = niceCurrencyUnit(max, 24);
   const scale = (value: number): number => left + value / max * (right - left);
   const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "分类支出两期哑铃对比图" });
   svg.classList.add("ledger-svg", "ledger-dumbbell-chart", "ledger-desktop-chart");
   data.forEach((item, index) => {
-    const y = 34 + index * rowHeight;
+    const y = 42 + index * rowHeight;
     const previousX = scale(item.previousCents);
     const currentX = scale(item.currentCents);
     const group = svgEl("g");
     accessibleTarget(group, `${item.category}，本期 ${formatCents(item.currentCents)}，基期 ${formatCents(item.previousCents)}`, () => onClick(item.category));
-    const label = svgEl("text", { x: left - 12, y: y + 3, "text-anchor": "end", class: "ledger-axis-label" });
+    const label = svgEl("text", { x: left - 12, y: y + 4, "text-anchor": "end", class: "ledger-axis-label ledger-dumbbell-category" });
     label.textContent = item.category;
     group.append(label, svgEl("line", { x1: left, y1: y, x2: right, y2: y, stroke: GRID, "stroke-width": 0.7 }));
     const diff = Math.abs(item.currentCents - item.previousCents);
@@ -739,13 +813,13 @@ export function renderDumbbell(parent: HTMLElement, data: DumbbellDatum[], curre
       svgEl("circle", { cx: previousX, cy: y, r: 4.8, fill: PAPER, stroke: INK, "stroke-width": 1.2, class: "ledger-pop" }),
       svgEl("circle", { cx: currentX, cy: y, r: 4.8, fill: INK, class: "ledger-pop" })
     );
-    const value = svgEl("text", { x: Math.min(right, Math.max(previousX, currentX) + 10), y: y + 3, class: "ledger-value-label" });
+    const value = svgEl("text", { x: Math.min(right, Math.max(previousX, currentX) + 10), y: y + 4, class: "ledger-value-label ledger-dumbbell-value" });
     value.textContent = formatCents(item.currentCents - item.previousCents);
     group.append(value);
     svg.append(group);
   });
   const foot = svgEl("text", { x: width / 2, y: height - 12, "text-anchor": "middle", class: "ledger-foot-label" });
-  foot.textContent = `ONE BEAD ≈ ${formatCents(unit)} CHANGE · HOLLOW = BASE · INK = CURRENT`;
+  foot.textContent = `每珠约 ${formatCents(unit)} 差额 · 空心 ${previousLabel} · 实心 ${currentLabel}`;
   svg.append(foot);
   chart.append(svg);
   const mobile = chart.createDiv({ cls: "ledger-mobile-dumbbells" });
@@ -772,6 +846,56 @@ export function renderDumbbell(parent: HTMLElement, data: DumbbellDatum[], curre
   sourceLine(shell, "DUMBBELL QUEUE · MONO-BASIC · LOCAL LEDGER COMPARISON");
 }
 
+/** F6 / official C2 Paired Rungs: two ladders per category, one shared unit. */
+export function renderPairedRungs(parent: HTMLElement, data: DumbbellDatum[], currentLabel: string, previousLabel: string, onClick: (category: string) => void): void {
+  const biggest = [...data].sort((a, b) => Math.abs(b.currentCents - b.previousCents) - Math.abs(a.currentCents - a.previousCents))[0];
+  const { shell, chart } = monoCard(parent, "LUPI BASICS · F6 PAIRED RUNGS",
+    biggest && biggest.currentCents !== biggest.previousCents ? `${biggest.category}贡献了最大的期间变化` : "两个期间的分类金额没有变化",
+    `每类两列 · 浅灰 ${previousLabel} · 深灰 ${currentLabel} · 橙色标注本期金额`);
+  if (!data.length) return renderEmpty(chart, "两个期间都没有匹配记录");
+  shell.classList.add("ledger-paired-card");
+  // Preserve the template's two adjacent ladders without shrinking labels for
+  // extra categories. The chart alone scrolls; the overview keeps two columns.
+  const width = Math.max(460, data.length * 116 + 32), height = 344;
+  const base = 302, plotHeight = 250;
+  const max = Math.max(1, ...data.flatMap(item => [item.currentCents, item.previousCents]));
+  const unit = niceCurrencyUnit(max, 38);
+  const scroll = chart.createDiv({ cls: "ledger-paired-scroll", attr: { tabindex: "0", role: "region", "aria-label": "分类两期分组柱，左右滚动查看全部分类" } });
+  const svg = svgEl("svg", { viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "分类支出两期分组阶梯柱状图" });
+  svg.classList.add("ledger-svg", "ledger-paired-rungs");
+  svg.style.width = `${width}px`;
+  svg.append(svgEl("line", { x1: 12, y1: base + 4, x2: width - 12, y2: base + 4, stroke: GRID, "stroke-width": .8 }));
+  data.forEach((item, index) => {
+    const center = 16 + (index + .5) * (width - 32) / data.length;
+    const group = svgEl("g", { class: "ledger-paired-group" });
+    const description = `${item.category}，${currentLabel} ${formatCents(item.currentCents)}，${previousLabel} ${formatCents(item.previousCents)}，差额 ${formatCents(item.currentCents - item.previousCents)}`;
+    accessibleTarget(group, description, () => onClick(item.category));
+    const title = svgEl("title"); title.textContent = description; group.append(title);
+    group.append(svgEl("rect", { x: center - 56, y: 8, width: 112, height: height - 12, fill: "transparent" }));
+    for (const [cents, current] of [[item.previousCents, false], [item.currentCents, true]] as const) {
+      const x = center + (current ? 25 : -25), value = Math.max(0, cents);
+      const full = Math.floor(value / unit), remainder = value % unit;
+      for (let k = 0; k < full + (remainder > 0 ? 1 : 0); k++) {
+        const fraction = k < full ? 1 : remainder / unit;
+        const y = base - Math.min(value, (k + 1) * unit) / max * plotHeight;
+        const half = (11 - 1.2 + deterministic(k + 1, index + (current ? 7 : 2)) * 2.4) * fraction;
+        group.append(svgEl("line", { x1: x - half, x2: x + half, y1: y, y2: y,
+          stroke: current ? INK : FAINT, "stroke-width": 1.8, "stroke-dasharray": fraction < 1 ? "2 2" : "none",
+          class: "ledger-fade ledger-paired-rung", "data-current": String(current), "data-unit-cents": unit, "data-fraction": fraction,
+          style: `animation-delay:${index * .06 + k * .01 + (current ? .15 : 0)}s` }));
+      }
+      const label = svgEl("text", { x, y: base - value / max * plotHeight - 12, "text-anchor": "middle", class: current ? "ledger-paired-value is-current" : "ledger-paired-value is-base" });
+      label.textContent = formatCents(cents); group.append(label);
+    }
+    const name = svgEl("text", { x: center, y: base + 24, "text-anchor": "middle", class: "ledger-paired-category" });
+    name.textContent = item.category.length > 10 ? `${item.category.slice(0, 9)}…` : item.category;
+    group.append(name); svg.append(group);
+  });
+  scroll.append(svg);
+  chart.createDiv({ cls: "ledger-paired-key", text: `每档 = ${formatCents(unit)} · 虚线档表示不足一档的余数 · 左右滑动查看全部 ${data.length} 类` });
+  sourceLine(shell, "PAIRED RUNGS · WIRE · LOCAL LEDGER COMPARISON");
+}
+
 export function renderEmpty(parent: HTMLElement, message: string): void {
   parent.createDiv({ cls: "ledger-empty", text: message });
 }
@@ -782,8 +906,7 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
   card.setAttribute("aria-busy", String(state.status === "loading"));
   const heading = card.createDiv({ cls: "ledger-advisor-heading" });
   const copy = heading.createDiv({ cls: "ledger-advisor-heading-copy" });
-  copy.createDiv({ cls: "ledger-advisor-badge", text: "FINANCE INSIGHTS · LOCAL LEDGER" });
-  copy.createEl("h3", { text: "洞察" });
+  copy.createEl("h3", { text: "近期洞察" });
   const analysisRange = state.analysisRange ?? snapshot.weekly?.range;
   heading.createDiv({ cls: "ledger-advisor-period", text: analysisRange ? `近 7 天 · ${analysisRange.start.replace(/-/g, ".")} — ${analysisRange.end.replace(/-/g, ".")} · 手动刷新` : snapshot.daily ? `截至 ${snapshot.daily.date.replace(/-/g, ".")} · 昨日记录 · 不受下方筛选影响` : `${snapshot.currentRange.start.replace(/-/g, ".")} — ${snapshot.currentRange.end.replace(/-/g, ".")}` });
 

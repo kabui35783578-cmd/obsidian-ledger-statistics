@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { cumulativeTrendPoints, dailySpendingAverage, normalizeTrendDateNotes } = require('../dist/core.cjs');
+const { cumulativeTrendPoints, cumulativeAverageProgress, dailySpendingAverage, normalizeTrendDateNotes } = require('../dist/core.cjs');
 const { renderTrendChart } = require('../dist/ui.cjs');
 const record = (date, cents) => ({ date, cents });
 
@@ -17,6 +17,26 @@ test('leading dates start at zero and cent values remain exact', () => {
   const points = cumulativeTrendPoints([record('2026-02-28', 501), record('2026-03-01', 33)], { start: '2026-02-27', end: '2026-03-01' }, 'day');
   assert.deepEqual(points.map(p => p.cents), [0, 501, 534]);
   assert.deepEqual(points.map(p => p.count), [0, 1, 2]);
+});
+
+test('average progress spreads the final total over all selected days and rejoins the actual total exactly', () => {
+  const records = [record('2026-09-30', 99999), record('2026-10-02', 100), record('2026-10-04', 88888)];
+  const points = cumulativeTrendPoints(records, { start: '2026-10-01', end: '2026-10-03' }, 'day');
+  const progress = cumulativeAverageProgress(points);
+  assert.equal(progress.days, 3);
+  assert.equal(progress.dailyCents, 33);
+  assert.ok(Math.abs(progress.amounts[0] - 100 / 3) < 1e-10);
+  assert.ok(Math.abs(progress.amounts[1] - 200 / 3) < 1e-10);
+  assert.equal(progress.amounts.at(-1), 100, 'Do not multiply the rounded 33-cent daily label to produce a 99-cent endpoint');
+  assert.deepEqual(points.map(point => point.cents), [0, 100, 100], 'The reference must not modify real cumulative spending');
+});
+
+test('average progress includes leap days and handles a single day, zero spending, and empty input', () => {
+  const points = cumulativeTrendPoints([record('2024-03-01', 300)], { start: '2024-02-28', end: '2024-03-01' }, 'day');
+  assert.deepEqual(cumulativeAverageProgress(points), { dailyCents: 100, days: 3, amounts: [100, 200, 300] });
+  assert.deepEqual(cumulativeAverageProgress(points.slice(0, 1)), { dailyCents: 0, days: 1, amounts: [0] });
+  assert.deepEqual(cumulativeAverageProgress([{ ...points[0], cents: 501 }]), { dailyCents: 501, days: 1, amounts: [501] });
+  assert.equal(cumulativeAverageProgress([]), null);
 });
 
 test('weekly and monthly accumulation clip partial buckets and drill into the entire cumulative range', () => {
@@ -116,13 +136,15 @@ test('both layouts show a dashed daily mean at the correct height, including wee
       const charts = root.all().filter(el => el.tag === 'svg');
       for (const svg of charts) {
         const average = svg.all().find(el => el.classList.contains('ledger-trend-average'));
-        if (type !== 'line') { assert.equal(average, undefined); continue; }
+        if (type === 'cumulative') { assert.ok(average.classList.contains('ledger-trend-average-progress')); continue; }
         assert.match(average.attributes['aria-label'], /日均支出 ¥100.00.*7 个自然日/);
         const line = average.children[0];
+        assert.equal(line.attributes.stroke, '#8F8E86');
+        assert.equal(line.attributes['stroke-opacity'], '0.6');
         assert.equal(line.attributes['stroke-dasharray'], '6 5');
         assert.equal(line.attributes.y1, line.attributes.y2);
         const [base, height] = svg.classList.contains('ledger-mobile-trend') ? [194, 156] : [254, 220];
-        assert.ok(Math.abs(Number(line.attributes.y1) - (base - height / 7)) < 0.00001);
+        assert.ok(Math.abs(Number(line.attributes.y1) - (base - height / 8)) < 0.00001);
       }
       if (type === 'cumulative') {
         assert.equal(root.all().filter(el => el.classList.contains('ledger-trend-note-marker')).length, 2);
@@ -143,5 +165,131 @@ test('long cumulative ranges reserve space for each daily hit target instead of 
     assert.equal(desktop.all().filter(el => el.classList.contains('ledger-trend-hit-target')).length, 288);
     assert.ok(Number.parseFloat(desktop.style.minWidth) >= points.length * 34);
     assert.ok(desktop.parentElement.classList.contains('ledger-trend-desktop-scroll'));
+  } finally { global.document = previous; }
+});
+
+test('desktop and mobile cumulative charts draw a muted sloping average that aligns with the daily positions and final total', () => {
+  const previous = global.document;
+  global.document = { createElementNS: (_, tag) => new Element(tag) };
+  try {
+    const points = cumulativeTrendPoints([record('2026-10-02', 9000)], { start: '2026-10-01', end: '2026-10-03' }, 'day');
+    const root = new Element('div');
+    const clicked = [];
+    renderTrendChart(root, points, 'cumulative', point => clicked.push(point));
+    for (const svg of root.all().filter(el => el.tag === 'svg')) {
+      const progress = svg.all().find(el => el.classList.contains('ledger-trend-average-progress'));
+      assert.match(progress.attributes['aria-label'], /3 个自然日.*日均 ¥30.00/);
+      const path = progress.children[0];
+      assert.equal(path.attributes.stroke, '#8F8E86');
+      assert.equal(path.attributes['stroke-opacity'], '0.6');
+      assert.equal(path.attributes['stroke-dasharray'], '6 5');
+      const coords = path.attributes.d.match(/-?\d+(?:\.\d+)?/g).map(Number);
+      const targets = svg.all().filter(el => el.classList.contains('ledger-trend-hit-target'));
+      const [base, height] = svg.classList.contains('ledger-mobile-trend') ? [194, 156] : [254, 220];
+      for (let index = 0; index < 3; index++) {
+        assert.ok(Math.abs(coords[index * 2] - Number(targets[index].attributes.cx)) < 0.00001);
+        assert.ok(Math.abs(coords[index * 2 + 1] - (base - height * 0.9 * (index + 1) / 3)) < 0.00001);
+      }
+      assert.equal(coords.at(-1), Number(targets.at(-1).attributes.cy));
+      targets[1].listeners.click({ preventDefault() {}, stopPropagation() {} });
+      assert.equal(clicked.at(-1), points[1], 'The reference line preserves the original note interaction');
+    }
+  } finally { global.document = previous; }
+});
+
+test('marked points preview literal multiline notes in the hover tooltip and keep previews within the chart edges', () => {
+  const previous = global.document;
+  global.document = { createElementNS: (_, tag) => new Element(tag) };
+  try {
+    const points = cumulativeTrendPoints([record('2026-10-01', 5000), record('2026-10-03', 3000)], { start: '2026-10-01', end: '2026-10-03' }, 'day');
+    const root = new Element('div');
+    const note = '聚餐\n<script>仅文字</script>';
+    renderTrendChart(root, points, 'cumulative', () => {}, { dateNotes: { '2026-10-01': note, '2026-10-03': '长备注'.repeat(200) } });
+    for (const svg of root.all().filter(el => el.tag === 'svg')) {
+      const groups = svg.all().filter(el => el.classList.contains('ledger-trend-point'));
+      const tooltip = groups[0].all().find(el => el.classList.contains('ledger-trend-note-tooltip'));
+      assert.ok(tooltip, 'The existing hover surface must contain the note without opening a modal');
+      assert.deepEqual(tooltip.all().filter(el => el.tag === 'tspan').map(el => el.textContent), note.split('\n'));
+      assert.ok(!groups[1].all().some(el => el.classList.contains('ledger-trend-note-tooltip')), 'Unannotated points keep the compact amount tooltip');
+      const last = groups[2].all().find(el => el.classList.contains('ledger-trend-note-tooltip'));
+      assert.ok(last.all().some(el => el.textContent === '…点击查看完整备注'));
+      const chartWidth = Number(svg.attributes.viewBox.split(' ')[2]);
+      const chartHeight = Number(svg.attributes.viewBox.split(' ')[3]);
+      for (const tip of [tooltip, last]) {
+        const rect = tip.children[0].attributes;
+        assert.ok(Number(rect.x) >= 0 && Number(rect.x) + Number(rect.width) <= chartWidth);
+        assert.ok(Number(rect.y) >= 0 && Number(rect.y) + Number(rect.height) <= chartHeight);
+      }
+    }
+  } finally { global.document = previous; }
+});
+
+test('weekend dots use the real date on both layouts, including missing dates and a weekend peak', () => {
+  const previous = global.document;
+  global.document = { createElementNS: (_, tag) => new Element(tag) };
+  try {
+    const points = ['2026-09-04', '2026-09-05', '2026-09-07', '2026-09-12'].map((date, index) => ({ key: date, start: date, end: date, label: date.slice(5), cents: (index + 1) * 100, count: 1 }));
+    const root = new Element('div');
+    renderTrendChart(root, points, 'line', () => {});
+    for (const svg of root.all().filter(el => el.tag === 'svg')) {
+      const groups = svg.all().filter(el => el.classList.contains('ledger-trend-point'));
+      for (let index = 0; index < 4; index++) {
+        const dot = groups[index].all().find(el => el.classList.contains('ledger-trend-dot'));
+        const hit = groups[index].all().find(el => el.classList.contains('ledger-trend-hit-target'));
+        const weekend = index === 1 || index === 3;
+        assert.equal(dot.attributes.fill === '#F0F0EE', weekend);
+        assert.equal(hit.attributes['aria-label'].includes('周末'), weekend);
+      }
+      const weekendPeak = groups[3].all().find(el => el.classList.contains('ledger-trend-dot'));
+      assert.equal(weekendPeak.attributes.stroke, '#F5572F');
+    }
+    const weekly = new Element('div');
+    renderTrendChart(weekly, [{ ...points[3], start: '2026-09-07', end: '2026-09-13' }], 'line', () => {});
+    assert.ok(weekly.all().filter(el => el.classList.contains('ledger-trend-dot')).every(el => el.attributes.fill !== '#F0F0EE'), 'A weekly bucket is not a weekend day');
+  } finally { global.document = previous; }
+});
+
+test('monthly charts use three spaced date labels and clean currency ticks without rounding source amounts', () => {
+  const previous = global.document;
+  global.document = { createElementNS: (_, tag) => new Element(tag) };
+  try {
+    const points = Array.from({ length: 30 }, (_, index) => { const date = `2026-09-${String(index + 1).padStart(2, '0')}`; return { key: date, start: date, end: date, label: date.slice(5), cents: index === 22 ? 89742 : 1000, count: 1 }; });
+    const root = new Element('div');
+    const clicked = [];
+    renderTrendChart(root, points, 'line', point => clicked.push(point));
+    const svg = root.all().find(el => el.tag === 'svg' && el.classList.contains('ledger-desktop-chart'));
+    assert.equal(svg.attributes['data-axis-max'], '100000');
+    assert.deepEqual(svg.all().filter(el => el.classList.contains('ledger-axis-label')).map(el => el.textContent), ['09-01', '09-16', '09-30']);
+    assert.deepEqual(svg.children.filter(el => el.tag === 'text' && el.attributes['text-anchor'] === 'end').map(el => el.textContent), ['¥0', '¥250', '¥500', '¥750', '¥1,000']);
+    assert.ok(svg.all().some(el => el.textContent === '¥897.42'));
+    const hit = svg.all().filter(el => el.classList.contains('ledger-trend-hit-target'))[22];
+    hit.listeners.click({ preventDefault() {}, stopPropagation() {} });
+    assert.equal(clicked[0].cents, 89742);
+  } finally { global.document = previous; }
+});
+
+test('F1 rung bars encode exact amounts with one common unit, include partial rungs, and preserve clicks on both layouts', () => {
+  const previous = global.document;
+  global.document = { createElementNS: (_, tag) => new Element(tag) };
+  try {
+    const points = [0, 12345, 89742].map((cents, index) => { const date = `2026-09-0${index + 1}`; return { key: date, start: date, end: date, label: date.slice(5), cents, count: 1 }; });
+    const root = new Element('div');
+    const clicked = [];
+    renderTrendChart(root, points, 'bar', point => clicked.push(point), { dailyAverage: { cents: 34029, days: 3 } });
+    for (const svg of root.all().filter(el => el.tag === 'svg')) {
+      assert.ok(svg.classList.contains('ledger-rung-chart'));
+      assert.ok(!svg.all().some(el => el.classList.contains('ledger-draw')), 'Rung bars have no connecting area outline');
+      const groups = svg.all().filter(el => el.classList.contains('ledger-trend-point'));
+      for (let index = 0; index < points.length; index++) {
+        const rungs = groups[index].all().filter(el => el.classList.contains('ledger-trend-rung'));
+        const represented = rungs.reduce((sum, rung) => sum + Number(rung.attributes['data-unit-cents']) * Number(rung.attributes['data-fraction']), 0);
+        assert.ok(Math.abs(represented - points[index].cents) < 0.000001);
+        assert.ok(rungs.every(rung => rung.attributes.y1 === rung.attributes.y2));
+        if (index) assert.ok(rungs.some(rung => Number(rung.attributes['data-fraction']) < 1));
+        groups[index].all().find(el => el.classList.contains('ledger-trend-hit-target')).listeners.click({ preventDefault() {}, stopPropagation() {} });
+        assert.equal(clicked.at(-1), points[index]);
+      }
+      assert.ok(svg.all().some(el => el.classList.contains('ledger-trend-average')));
+    }
   } finally { global.document = previous; }
 });

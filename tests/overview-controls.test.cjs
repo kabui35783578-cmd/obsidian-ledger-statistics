@@ -8,6 +8,7 @@ class Element {
     this.textContent = options.text ?? '';
     this.value = options.value ?? '';
     this.classes = new Set((options.cls ?? '').split(' '));
+    this.classList = { add: name => this.classes.add(name), remove: name => this.classes.delete(name) };
     this.children = [];
     this.listeners = {};
     this.parent = parent;

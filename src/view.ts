@@ -11,6 +11,7 @@ import { salaryCycleDetails, salaryCycleRange, shiftSalaryCycle } from "./salary
 import { insightAsOf, withDailyInsight } from "./daily-insight";
 import { withWeeklyInsight } from "./weekly-insight";
 import { ReportPanel } from "./report-ui";
+import { reportCoverage } from "./report";
 import { buildCategoryAnalysis, categoryPreviousRange } from "./category-analysis";
 import { renderCategoryAnalysis, showCategoryRecords } from "./category-ui";
 import { disposeChartAnimations } from "./chart-animation";
@@ -45,12 +46,12 @@ import {
 } from "./core";
 import { DefaultDatePreset, LedgerViewId, normalizeLedgerView } from "./settings";
 import { categoryBoxReference, salaryWaterfall } from "./chart-data";
-import { createButton, FinanceAdviceViewState, renderCategoryBox, renderDonut, renderDumbbell, renderEmpty, renderFinanceAdvisor, renderHorizontalBars, renderSalaryWaterfall, renderStarredExpenses, renderTrendChart } from "./ui";
+import { createButton, FinanceAdviceViewState, renderCategoryBox, renderCategoryTreemap, renderDonut, renderPairedRungs, renderEmpty, renderFinanceAdvisor, renderSalaryWaterfall, renderStarredExpenses, renderTrendChart } from "./ui";
 
 export const LEDGER_VIEW_TYPE = "ledger-statistics-view";
 
 const VIEW_NAMES: Array<[LedgerViewId, string]> = [
-  ["overview", "总览"], ["calendar", "日历"], ["report", "报告"], ["assets", "资产"]
+  ["insights", "洞察"], ["overview", "总览"], ["calendar", "日历"], ["report", "报告"], ["assets", "资产"]
 ];
 
 const AUTO_ADVANCE_SWIPE_DISTANCE = 100;
@@ -270,12 +271,12 @@ export class LedgerStatisticsView extends ItemView {
     }
     const files = [...this.plugin.repository.files.values()];
     if (this.activeView !== "report") this.reportPanel?.cancel();
+    if (this.activeView !== "insights") this.financeController?.abort();
     this.renderHeader(root);
-    if (this.activeView === "overview" && files.length > 0 && !this.filter.categories.length) this.renderCoreCards(root);
-    if (this.activeView !== "report" && this.filter.categories.length) this.cancelFinanceRequest();
-    if (this.activeView !== "report" && this.activeView !== "assets") this.renderToolbar(root);
     this.renderTabs(root);
-    if (this.activeView !== "report" && this.activeView !== "assets") this.renderDrillBack(root);
+    const filteredView = this.activeView === "overview" || this.activeView === "calendar";
+    if (filteredView) this.renderToolbar(root);
+    if (filteredView) this.renderDrillBack(root);
     const content = root.createDiv({ cls: "ledger-content" });
     const orphanCount = unmatchedStarIds(this.plugin.settings.starredRecordIds, this.allRecords()).length;
     if (orphanCount && this.activeView !== "assets") {
@@ -289,9 +290,10 @@ export class LedgerStatisticsView extends ItemView {
     } else if (files.length === 0) {
       renderEmpty(content, `“${this.plugin.settings.ledgerFolder}”中没有找到 Markdown 记账文件`);
     } else {
+      if (this.activeView === "insights") this.renderInsights(content);
       if (this.activeView === "overview") {
-        this.renderOverview(content);
-        this.renderCompare(this.overviewSection(content, "期间对比", "git-compare-arrows"));
+        const comparisonParent = this.renderOverview(content) ?? content;
+        this.renderCompare(this.overviewSection(comparisonParent, "期间对比", "git-compare-arrows"));
       }
       if (this.activeView === "calendar") this.renderCalendar(content);
       if (this.activeView === "report") {
@@ -311,7 +313,7 @@ export class LedgerStatisticsView extends ItemView {
     const header = root.createDiv({ cls: "ledger-header" });
     const title = header.createDiv();
     title.createEl("h2", { text: this.activeView === "overview" ? "记账统计" : VIEW_NAMES.find(([id]) => id === this.activeView)![1] });
-    if (this.activeView === "assets") return;
+    if (this.activeView === "assets" || this.activeView === "insights") return;
     title.createDiv({ cls: "ledger-subtitle", text: "本地只读 · 正文逐笔记录为统计来源" });
     const selectedScope = this.activeView === "report" ? this.plugin.settings.reportPreferences?.scope ?? "consumption" : this.filter.scope;
     const scope = header.createDiv({ cls: `ledger-scope-badge is-${selectedScope}` });
@@ -460,14 +462,13 @@ export class LedgerStatisticsView extends ItemView {
     back.addEventListener("click", () => this.restoreDrillContext());
   }
 
-  private renderCoreCards(parent: HTMLElement): void {
+  private renderInsights(parent: HTMLElement): void {
     const core = parent.createDiv({ cls: "ledger-core-cards" });
-    core.createDiv({ cls: "ledger-core-caption", text: "实时概览 · 洞察与今日预算不受下方筛选影响" });
     const advisorHost = core.createDiv({ cls: "ledger-advisor-host" });
     this.renderFinanceSection(advisorHost);
   }
 
-  private renderOverview(parent: HTMLElement): void {
+  private renderOverview(parent: HTMLElement): HTMLElement | undefined {
     if (this.filter.categories.length === 1) {
       this.renderSingleCategory(parent);
       return;
@@ -475,21 +476,31 @@ export class LedgerStatisticsView extends ItemView {
     const files = [...this.plugin.repository.files.values()];
     const records = this.matchingRecords(this.filter);
     const stats = summarize(files, records, this.filter.range);
-    const metrics = this.overviewSection(parent, "期间概览", "layout-dashboard").createDiv({ cls: "ledger-metrics" });
-    this.metric(metrics, "所选期间总额", formatCents(stats.cents), `${stats.count} 笔`, () => this.goDetails());
-    this.metric(metrics, "笔数", String(stats.count), "点击查看全部明细", () => this.goDetails());
-    this.metric(metrics, "日均", formatCents(stats.averagePerRecordedDayCents), `分母：${stats.recordedDays} 个有日记账文件的日期`, () => this.goDetails());
+    const { previous, description } = this.autoComparisonRanges();
+    const previousStats = summarize(files, this.matchingRecords({ ...this.filter, range: previous }), previous);
+    // A missing ledger is unknown spending, not a zero-value comparison.
+    const comparable = reportCoverage(files, this.filter.range).complete && reportCoverage(files, previous).complete && files.every(file => file.date !== null);
+    const reference = `${description}；上期 ${previous.start} 至 ${previous.end}`;
+    const change = (difference: number, count = false) => ({ difference: comparable ? difference : null, count, reference });
+    const section = this.overviewSection(parent, "期间概览", "layout-dashboard");
+    const metrics = section.createDiv({ cls: "ledger-metrics ledger-overview-metrics" });
+    this.metric(metrics, "所选期间总额", formatCents(stats.cents), `${stats.count} 笔`, () => this.goDetails(), change(stats.cents - previousStats.cents));
+    this.metric(metrics, "笔数", String(stats.count), "点击查看全部明细", () => this.goDetails(), change(stats.count - previousStats.count, true));
+    this.metric(metrics, "日均", formatCents(stats.averagePerRecordedDayCents), `分母：${stats.recordedDays} 个有日记账文件的日期`, () => this.goDetails(), change(stats.averagePerRecordedDayCents - previousStats.averagePerRecordedDayCents));
     this.metric(metrics, "最大单笔", stats.maxRecord ? formatCents(stats.maxRecord.cents) : "—", stats.maxRecord ? `${stats.maxRecord.category} · ${stats.maxRecord.date}` : "暂无记录", () => this.goDetails());
+    section.createDiv({ cls: "ledger-metric-comparison-note", text: `${previous.start} 至 ${previous.end}`, attr: { "aria-label": `对比期间：${previous.start} 至 ${previous.end}` } });
     this.renderSalaryCycle(this.overviewSection(parent, "工资周期收支", "wallet"));
     if (records.length === 0) {
       renderEmpty(parent, "当前筛选条件下没有记录。缺少文件的日期不会按零消费处理。");
     }
-    this.renderCategory(this.overviewSection(parent, "分类统计", "chart-pie"));
     const trendHost = this.overviewSection(parent, "支出趋势", "chart-line");
     trendHost.addClass("ledger-trend-host");
     this.renderTrend(trendHost);
+    const pair = parent.createDiv({ cls: "ledger-overview-pair" });
+    this.renderCategory(this.overviewSection(pair, "分类统计", "chart-pie"));
     const starred = this.starredRecords();
     if (starred.length) renderStarredExpenses(this.overviewSection(parent, "星标支出", "star"), starred, (record) => void this.openRecord(record));
+    return pair;
   }
 
   private renderSalaryCycle(parent: HTMLElement): void {
@@ -684,7 +695,7 @@ export class LedgerStatisticsView extends ItemView {
       return;
     }
     const controls = parent.createDiv({ cls: "ledger-section-controls" });
-    addSelect(controls, "显示", this.categoryChart, [["bar", "横向条形图"], ["donut", "环形图"], ["table", "汇总表"]], (value) => {
+    addSelect(controls, "显示", this.categoryChart, [["bar", "矩形树图"], ["donut", "环形图"], ["table", "汇总表"]], (value) => {
       this.categoryChart = value as "bar" | "donut" | "table";
       this.refreshOverviewSection(parent, () => this.renderCategory(parent));
     });
@@ -696,7 +707,7 @@ export class LedgerStatisticsView extends ItemView {
     }
     const records = this.matchingRecords(this.filter);
     const summaries = categorySummaries(records, this.categorySort);
-    if (this.categoryChart === "bar") renderHorizontalBars(parent, summaries, (category) => this.drillCategory(category));
+    if (this.categoryChart === "bar") renderCategoryTreemap(parent, summaries, (category) => this.drillCategory(category), this.categorySort);
     if (this.categoryChart === "donut") renderDonut(parent, summaries, (category) => this.drillCategory(category));
     if (this.categoryChart === "table") this.renderCategoryTable(parent, summaries);
   }
@@ -734,10 +745,9 @@ export class LedgerStatisticsView extends ItemView {
     if (this.trendChart === "cumulative") {
       const cumulativeRange = { ...this.filter.range, end: this.filter.range.end < todayIso() ? this.filter.range.end : todayIso() };
       renderTrendChart(parent, cumulativeTrendPoints(records, cumulativeRange, "day"), "cumulative", point => {
-        const dailyCents = records.filter(record => record.date === point.end).reduce((sum, record) => sum + record.cents, 0);
-        new TrendDateNoteModal(this.plugin, point, dailyCents, () => {
-          showCategoryRecords(this.app, `累计支出 · ${point.start} 至 ${point.end}`,
-            records.filter(record => record.date >= point.start && record.date <= point.end), record => void this.openRecord(record));
+        new TrendDateNoteModal(this.plugin, point.end, () => {
+          showCategoryRecords(this.app, `${point.end} · 当天支出`,
+            records.filter(record => record.date === point.end), record => void this.openRecord(record));
         }).open();
       }, { dateNotes: this.plugin.settings.trendDateNotes });
     } else {
@@ -759,11 +769,16 @@ export class LedgerStatisticsView extends ItemView {
     const year = endDate.getFullYear();
     const month = endDate.getMonth();
     const range = monthRange(year, month);
-    const header = parent.createDiv({ cls: "ledger-calendar-header" });
-    const previous = createButton(header, "‹");
+    const surface = parent.createEl("section", { cls: "ledger-calendar-surface", attr: { "aria-label": "月度支出日历" } });
+    const header = surface.createDiv({ cls: "ledger-calendar-header" });
+    const headingCopy = header.createDiv({ cls: "ledger-calendar-heading" });
+    headingCopy.createEl("h3", { text: `${year} 年 ${month + 1} 月` });
+    const navigation = header.createDiv({ cls: "ledger-calendar-navigation" });
+    const previous = createButton(navigation, "‹");
     previous.setAttribute("aria-label", "上个月");
-    header.createEl("h3", { text: `${year} 年 ${month + 1} 月` });
-    const next = createButton(header, "›");
+    const today = createButton(navigation, "本月");
+    today.addEventListener("click", () => { const now = new Date(); this.setCalendarMonth(now.getFullYear(), now.getMonth()); });
+    const next = createButton(navigation, "›");
     next.setAttribute("aria-label", "下个月");
     previous.addEventListener("click", () => this.setCalendarMonth(year, month - 1));
     next.addEventListener("click", () => this.setCalendarMonth(year, month + 1));
@@ -774,8 +789,13 @@ export class LedgerStatisticsView extends ItemView {
     const records = this.matchingRecords(monthFilter);
     const amounts = new Map<string, number>();
     for (const record of records) amounts.set(record.date, (amounts.get(record.date) ?? 0) + record.cents);
-    const max = Math.max(...amounts.values(), 1);
-    const calendar = parent.createDiv({ cls: "ledger-calendar", attr: { role: "grid" } });
+    const todayIso = isoFromDate(new Date());
+    const summary = headingCopy.createDiv({ cls: "ledger-calendar-summary" });
+    summary.createSpan({ text: "当月已记录" });
+    summary.createEl("strong", { text: formatCents(records.reduce((sum, record) => sum + record.cents, 0)) });
+    summary.createSpan({ text: "·" });
+    summary.createEl("strong", { text: `${records.length} 笔` });
+    const calendar = surface.createDiv({ cls: "ledger-calendar", attr: { role: "group", "aria-label": `${year} 年 ${month + 1} 月，每日支出（元）` } });
     ["一", "二", "三", "四", "五", "六", "日"].forEach((day) => calendar.createDiv({ cls: "ledger-calendar-weekday", text: day }));
     const first = new Date(year, month, 1, 12);
     const lead = (first.getDay() + 6) % 7;
@@ -785,18 +805,20 @@ export class LedgerStatisticsView extends ItemView {
       const iso = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
       const hasFile = fileDates.has(iso);
       const amount = amounts.get(iso) ?? 0;
-      const level = hasFile ? Math.min(6, Math.ceil(amount / max * 6)) : 0;
-      const cell = calendar.createEl("button", { cls: `ledger-calendar-day ${hasFile ? `has-record is-level-${level}` : "is-missing"}` });
+      const cell = calendar.createEl("button", { cls: `ledger-calendar-day ${hasFile ? "has-record" : "is-missing"}` });
       cell.type = "button";
       cell.dataset.date = iso;
       cell.toggleClass("is-selected", this.calendarSelectedDate === iso);
       cell.setAttribute("aria-pressed", String(this.calendarSelectedDate === iso));
+      cell.setAttribute("title", `${iso} · ${hasFile ? formatCents(amount) : "没有记录文件"}`);
+      cell.toggleClass("is-today", iso === todayIso);
+      cell.toggleClass("is-weekend", new Date(year, month, day, 12).getDay() % 6 === 0);
       cell.createSpan({ cls: "ledger-calendar-number", text: String(day) });
-      cell.createSpan({ cls: "ledger-calendar-amount", text: hasFile ? formatCents(amount) : "无记录" });
+      cell.createSpan({ cls: "ledger-calendar-amount", text: hasFile ? formatCents(amount).replace("¥", "") : "—" });
       cell.setAttribute("aria-label", `${iso}，${hasFile ? amount === 0 ? "有记录文件，金额为零" : formatCents(amount) : "没有记录文件"}`);
       cell.addEventListener("click", () => this.selectCalendarDate(iso));
     }
-    parent.createDiv({ cls: "ledger-calendar-legend", text: "浅色到深色表示当月支出由低到高；斜纹为没有日记账文件，“¥0.00”为有文件但当前口径金额为零。" });
+    surface.createDiv({ cls: "ledger-calendar-caption", text: "单位：元 · — 无账本 · 点击日期查看明细" });
     const details = parent.createEl("section", { cls: "ledger-calendar-details", attr: { "aria-label": "记账明细" } });
     const heading = details.createDiv({ cls: "ledger-calendar-details-heading" });
     heading.createEl("h3", { cls: "ledger-section-title", text: this.calendarSelectedDate ? `${this.calendarSelectedDate} · 明细` : "所选期间 · 明细" });
@@ -950,12 +972,14 @@ export class LedgerStatisticsView extends ItemView {
     const previousMap = new Map(categorySummaries(previousRecords).map((item) => [item.category, item]));
     const categories = [...new Set([...currentMap.keys(), ...previousMap.keys()])].sort((a, b) => (currentMap.get(b)?.cents ?? 0) - (currentMap.get(a)?.cents ?? 0));
     if (categories.length === 0) return renderEmpty(parent, "两个期间都没有匹配记录");
-    renderDumbbell(parent, categories.map((category) => ({
+    renderPairedRungs(parent, categories.map((category) => ({
       category,
       currentCents: currentMap.get(category)?.cents ?? 0,
       previousCents: previousMap.get(category)?.cents ?? 0
     })), "本期", "基期", (category) => this.drillCategory(category));
-    const wrap = parent.createDiv({ cls: "ledger-table-wrap" });
+    const detail = parent.createEl("details", { cls: "ledger-compare-details" });
+    detail.createEl("summary", { text: `查看两期金额与差额 · ${categories.length} 类` });
+    const wrap = detail.createDiv({ cls: "ledger-table-wrap" });
     const table = wrap.createEl("table", { cls: "ledger-table" });
     const head = table.createTHead().insertRow();
     ["分类", "本期", "基期", "差额", "变化"].forEach((text) => head.createEl("th", { text }));
@@ -1010,11 +1034,26 @@ export class LedgerStatisticsView extends ItemView {
     }
   }
 
-  private metric(parent: HTMLElement, label: string, value: string, detail: string, onClick?: () => void): void {
+  private metric(parent: HTMLElement, label: string, value: string, detail: string, onClick?: () => void, change?: { difference: number | null; count: boolean; reference: string }): void {
     const card = parent.createEl(onClick ? "button" : "div", { cls: "ledger-metric" });
     card.createDiv({ cls: "ledger-metric-label", text: label });
-    card.createDiv({ cls: "ledger-metric-value", text: value });
+    const number = card.createDiv({ cls: "ledger-metric-value" });
+    if (change?.difference) {
+      number.createSpan({ cls: "ledger-assets-change-arrow ledger-metric-change-arrow", text: change.difference > 0 ? "↑" : "↓", attr: { "aria-hidden": "true" } });
+    }
+    number.createSpan({ text: value });
     card.createDiv({ cls: "ledger-metric-detail", text: detail });
+    if (change) {
+      const difference = change.difference;
+      const spokenDelta = difference === null ? "暂无可比记录"
+        : difference === 0 ? "较上期持平"
+        : `较上期 ${difference > 0 ? "+" : "−"}${change.count ? `${Math.abs(difference)} 笔` : formatCents(Math.abs(difference))}`;
+      const delta = card.createDiv({ cls: "ledger-metric-change-detail", attr: { title: change.reference, "aria-label": spokenDelta } });
+      if (difference) delta.createSpan({ cls: "ledger-assets-change-arrow ledger-metric-change-triangle", text: difference > 0 ? "▲" : "▼", attr: { "aria-hidden": "true" } });
+      const amount = difference === null ? "—" : change.count ? String(Math.abs(difference)) : formatCents(Math.abs(difference));
+      delta.createSpan({ text: `${difference ? difference > 0 ? "+" : "−" : ""}${amount}` });
+      number.setAttribute("aria-label", `${label} ${value}，${spokenDelta}；${change.reference}`);
+    }
     if (onClick) card.addEventListener("click", onClick);
   }
 

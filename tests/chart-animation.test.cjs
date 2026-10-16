@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { deferChartAnimation, disposeChartAnimations } = require('../dist/chart-animation.cjs');
+const { deferChartAnimation, disposeChartAnimations, registerChartCleanup } = require('../dist/chart-animation.cjs');
 
 function element(children = [], reducedMotion = false) {
   const classes = new Set();
@@ -11,9 +11,9 @@ function element(children = [], reducedMotion = false) {
       contains: value => classes.has(value)
     },
     ownerDocument: { defaultView: { matchMedia: () => ({ matches: reducedMotion }) } },
-    querySelectorAll: () => children.flatMap(child => [
-      ...(child.classList.contains('ledger-animation-pending') ? [child] : []),
-      ...child.querySelectorAll()
+    querySelectorAll: (selector = '.ledger-animation-pending') => children.flatMap(child => [
+      ...(child.classList.contains(selector.slice(1)) ? [child] : []),
+      ...child.querySelectorAll(selector)
     ])
   };
 }
@@ -90,4 +90,17 @@ test('reduced motion and unavailable observers leave chart content visible', () 
     deferChartAnimation(chart);
     assert.equal(chart.classList.contains('ledger-animation-pending'), false);
   } finally { global.IntersectionObserver = previous; }
+});
+
+test('chart engines and resize work are disposed exactly once with their owning subtree', () => {
+  const nested = element(), sibling = element(), parent = element([nested]);
+  let removed = 0, retained = 0;
+  registerChartCleanup(nested, () => removed++);
+  registerChartCleanup(sibling, () => retained++);
+  disposeChartAnimations(parent);
+  disposeChartAnimations(parent);
+  assert.equal(removed, 1);
+  assert.equal(retained, 0);
+  disposeChartAnimations(sibling);
+  assert.equal(retained, 1);
 });

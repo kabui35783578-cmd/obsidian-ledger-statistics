@@ -235,6 +235,14 @@ export function renderReportArticle(parent: HTMLElement, report: SpendingReport,
   const article = surface.createDiv({ cls: "ledger-report-reading" });
   article.createEl("h2", { text: formatReportText(report.title).replace(/\*\*/g, "") });
   if (snapshot) article.createEl("p", { cls: "ledger-report-progress", text: reportProgress(snapshot) });
+  if (snapshot) {
+    // Use the displayed report's frozen snapshot, including its effective cutoff.
+    const current = snapshot.records.filter(record => record.date >= snapshot.effectiveRange.start && record.date <= snapshot.effectiveRange.end);
+    const facts = article.createEl("dl", { cls: "ledger-report-highlights", attr: { "aria-label": "本报告数据快照" } });
+    for (const [label, value] of [["已记录支出", formatCents(current.reduce((sum, record) => sum + record.cents, 0))], ["记账笔数", `${current.length} 笔`], ["有账本日期", `${snapshot.observedDays[0]} / ${reportDays(snapshot.effectiveRange)} 天`]]) {
+      const item = facts.createDiv(); item.createEl("dt", { text: label }); item.createEl("dd", { text: value });
+    }
+  }
   const prose = (parent: HTMLElement, text: string, cls = "") => {
     const emphasis = { remaining: 2 };
     for (const paragraph of text.split(/\n\s*\n/).filter(t => t.trim())) {

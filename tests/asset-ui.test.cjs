@@ -44,7 +44,7 @@ test('asset calendar shows each daily increase, decline, zero and missing predec
     assert.ok(cells.some(n => n.attributes['aria-label']?.includes('2026-10-04，相比前一天没有变化')));
     assert.ok(cells.some(n => n.attributes['aria-label']?.includes('2026-10-06，相比前一天暂无可比记录')));
     cells.find(n => n.attributes['aria-label']?.startsWith('2026-10-02，')).listeners.click();
-    assert.ok(Modal.last.contentEl.all().some(n => n.textContent === '相比前一天 ↑1.00'));
+    assert.ok(Modal.last.contentEl.all().some(n => n.attributes['aria-label'] === '相比前一天 ↑1.00'));
     p.settings.assets.hideAmounts = true; new AssetPanel(p).calendarModal();
     const text = Modal.last.contentEl.all().map(n => `${n.textContent} ${n.attributes['aria-label'] ?? ''}`).join(' ');
     assert.ok(!/[↑↓]|100\.00|101\.00|99\.00|110\.00/.test(text));

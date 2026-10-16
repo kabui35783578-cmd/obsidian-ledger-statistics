@@ -37,6 +37,14 @@ function changeText(cents: number | null, hide: boolean): string {
 function changeClass(cents: number | null, hide: boolean): string {
   return hide || cents === null || cents === 0 ? "is-unchanged" : cents > 0 ? "is-up" : "is-down";
 }
+function renderChange(node: HTMLElement, text: string): void {
+  node.setAttribute("aria-label", text);
+  const parts = text.match(/^(.*?)([↑↓])(.*)$/);
+  if (!parts) { node.textContent = text; return; }
+  if (parts[1]) node.createSpan({ text: parts[1] });
+  node.createSpan({ cls: "ledger-assets-change-arrow", text: parts[2] });
+  node.createSpan({ text: parts[3] });
+}
 export class AssetFormModal extends Modal {
   private alive = false;
   constructor(plugin: LedgerStatisticsPlugin, private title: string, private build: (body: HTMLElement, active: () => boolean) => () => Promise<void>, private saveLabel = "保存") { super(plugin.app); }
@@ -66,6 +74,7 @@ export class AssetPanel {
     const money = (cents: number): string => state.hideAmounts ? "••••" : formatCents(cents).replace("¥", "");
     const root = parent.createDiv({ cls: "ledger-assets" });
     const pageHeader = root.createDiv({ cls: "ledger-assets-header" });
+    pageHeader.createEl("h3", { text: "资产概览" });
     const actions = pageHeader.createDiv({ cls: "ledger-assets-actions ledger-assets-main-actions" });
     button(actions, "添加持仓", () => this.holdingForm(), true);
     button(actions, "更多", () => this.toolsModal());
@@ -148,7 +157,7 @@ export class AssetPanel {
       const item = summary.createDiv({ cls: "ledger-assets-change-item" });
       const symbol = item.createSpan({ cls: `ledger-assets-change-icon${name === "总负债" ? " is-debt" : ""}` }); setIcon(symbol, icon);
       const content = item.createDiv(); content.createSpan({ cls: "ledger-assets-change-label", text: name });
-      content.createDiv({ cls: `ledger-assets-change-value ${changeClass(cents, state.hideAmounts)}`, text: !state.hideAmounts && previous && !comparable ? "金额待补全" : changeText(cents, state.hideAmounts) });
+      renderChange(content.createDiv({ cls: `ledger-assets-change-value ${changeClass(cents, state.hideAmounts)}` }), !state.hideAmounts && previous && !comparable ? "金额待补全" : changeText(cents, state.hideAmounts));
       if (name === "总负债") { item.setAttribute("role", "button"); item.setAttribute("tabindex", "0"); item.setAttribute("aria-label", "管理负债与还款"); item.addEventListener("click", () => this.liabilitiesModal()); item.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); this.liabilitiesModal(); } }); }
     }
     const values = (["cash", "fixed", "investment", "receivable", "liability"] as AssetKind[]).map(k => ({ kind: k, cents: comparable ? after.groups[k] - before!.groups[k] : null }));
@@ -164,7 +173,8 @@ export class AssetPanel {
       fill.style.height = `${state.hideAmounts ? 0 : Math.abs(v.cents ?? 0) / maximum * 100}%`;
       const excluded = state.excludeFixed && v.kind === "fixed";
       const text = state.hideAmounts ? "••••" : excluded ? "已排除" : v.cents === null ? "—" : v.cents === 0 ? (after.groups[v.kind] !== 0 || before?.groups[v.kind] ? "没有变化" : "") : changeText(v.cents, false).replace(/\.00$/, "");
-      const annotation = track.createEl("small", { cls: `ledger-assets-bar-change ${changeClass(excluded ? null : v.cents, state.hideAmounts)}`, text });
+      const annotation = track.createEl("small", { cls: `ledger-assets-bar-change ${changeClass(excluded ? null : v.cents, state.hideAmounts)}` });
+      renderChange(annotation, text);
       annotation.style.bottom = `calc(${state.hideAmounts ? 0 : Math.abs(v.cents ?? 0) / maximum * 100}% + 4px)`;
       column.createEl("small", { text: ASSET_NAMES[v.kind] });
     }
@@ -413,20 +423,21 @@ export class AssetPanel {
     modal.onOpen = draw; modal.onClose = () => disposeAssetGestures(modal.contentEl); modal.open();
   }
   private calendarModal(): void {
-    const modal = new Modal(this.plugin.app); styleLedgerModal(modal); modal.setTitle("资产月历"); modal.modalEl.addClass("ledger-assets-sankey-modal");
+    const modal = new Modal(this.plugin.app); styleLedgerModal(modal); modal.setTitle("资产月历"); modal.modalEl.addClass("ledger-assets-sankey-modal", "ledger-assets-calendar-modal");
     modal.onOpen = () => {
       const state = this.plugin.settings.assets, snapshots = [...state.snapshots].sort((a, b) => b.date.localeCompare(a.date));
       if (!snapshots.length) { modal.contentEl.createEl("p", { text: "尚无资产快照，添加账户后自动保存。" }); return; }
       const months = [...new Set(snapshots.map(s => s.date.slice(0, 7)))];
-      const month = select(modal.contentEl, "月份", months.map(m => [m, m]));
-      const calendar = modal.contentEl.createDiv({ cls: "ledger-assets-calendar" }), detail = modal.contentEl.createDiv();
+      const panel = modal.contentEl.createDiv({ cls: "ledger-assets-calendar-panel" });
+      const month = select(panel, "月份", months.map(m => [m, m]));
+      const calendar = panel.createDiv({ cls: "ledger-assets-calendar" }), detail = modal.contentEl.createDiv();
       let selected = snapshots[0].date;
       const draw = (): void => {
         disposeAssetGestures(detail);
         detail.empty(); const snapshot = snapshots.find(s => s.date === selected)!, totals = assetTotals(snapshot, state.excludeFixed);
         detail.createEl("h3", { text: `${snapshot.date} · ${state.hideAmounts ? "••••" : formatCents(totals.assetsCents)}${totals.missing ? " · 金额待补全" : ""}` });
         const change = dailyAssetChange(state, snapshot, state.excludeFixed);
-        detail.createDiv({ cls: `ledger-assets-day-change ${changeClass(change, state.hideAmounts)}`, text: `相比前一天 ${changeText(change, state.hideAmounts)}` });
+        renderChange(detail.createDiv({ cls: `ledger-assets-day-change ${changeClass(change, state.hideAmounts)}` }), `相比前一天 ${changeText(change, state.hideAmounts)}`);
         detail.createEl("p", { cls: "ledger-assets-hint", text: `保存于 ${new Date(snapshot.savedAt).toLocaleString()}，行情日期保留当时值。` });
         const chart = detail.createDiv(); renderAssetSankey(chart, snapshot, state.excludeFixed, state.hideAmounts, () => {});
         for (const a of snapshot.accounts) detail.createEl("p", { text: `${a.name} · ${state.hideAmounts ? "••••" : formatCents(a.cents)}${a.missing ? " · 金额待补全" : ""}` });
@@ -442,7 +453,7 @@ export class AssetPanel {
           const change = snapshot ? dailyAssetChange(state, snapshot, state.excludeFixed) : null;
           const cell = button(calendar, "", () => { selected = date; drawMonth(); draw(); });
           cell.createSpan({ text: String(day) });
-          if (snapshot) cell.createEl("small", { cls: `ledger-assets-calendar-change ${changeClass(change, state.hideAmounts)}`, text: state.hideAmounts ? "••" : change === null ? "—" : change === 0 ? "持平" : changeText(change, false).replace(/\.00$/, "") });
+          if (snapshot) renderChange(cell.createEl("small", { cls: `ledger-assets-calendar-change ${changeClass(change, state.hideAmounts)}` }), state.hideAmounts ? "••" : change === null ? "—" : change === 0 ? "持平" : changeText(change, false).replace(/\.00$/, ""));
           cell.disabled = !snapshot; cell.classList.toggle("is-selected", date === selected); cell.setAttribute("aria-label", `${date}${snapshot ? `，相比前一天${changeText(change, state.hideAmounts)}，查看资产快照` : "，无快照"}`);
         }
       };

@@ -3,10 +3,9 @@ import { formatCents } from "./core";
 import { enableAssetGestures } from "./asset-gestures";
 
 const NS = "http://www.w3.org/2000/svg";
-// A single soft multicolor palette, shared with account markers.
-const COLORS: Record<AssetKind, string> = { cash: "var(--asset-cash, #76A69A)", investment: "var(--asset-investment, #7C9CBF)", fixed: "var(--asset-fixed, #C6B16B)", receivable: "var(--asset-receivable, #A895BD)", liability: "var(--asset-liability, #D69B89)" };
-const HOLDING_COLORS = ["#A895BD", "#76A69A", "#C6B16B", "#7C9CBF", "#D69B89"];
-let gradientSequence = 0;
+// Wire: cash is the focal category; other accounts use the shared gray ladder.
+const COLORS: Record<AssetKind, string> = { cash: "var(--asset-cash, var(--ledger-accent))", investment: "var(--asset-investment, var(--mono-2))", fixed: "var(--asset-fixed, var(--mono-muted))", receivable: "var(--asset-receivable, var(--mono-faint))", liability: "var(--asset-liability, var(--mono-ink))" };
+const HOLDING_COLORS = ["var(--mono-2)", "var(--mono-3)", "var(--mono-muted)", "var(--mono-faint)"];
 export function renderAssetAllocation(parent: HTMLElement, snapshot: AssetSnapshot, excludeFixed: boolean, hide: boolean): void {
   const accounts = snapshot.accounts.filter(a => a.kind !== "liability" && !(excludeFixed && a.kind === "fixed") && a.cents > 0);
   const total = accounts.reduce((sum, a) => sum + a.cents, 0);
@@ -41,14 +40,10 @@ function el<K extends keyof SVGElementTagNameMap>(type: K, attrs: Record<string,
 function label(parent: SVGElement, x: number, y: number, text: string, size = 16, anchor = "start"): void {
   el("text", { x, y, "font-size": size, "font-weight": 600, "text-anchor": anchor, "dominant-baseline": "middle", fill: "currentColor" }, parent).textContent = text;
 }
-function band(svg: SVGElement, x1: number, y1: number, x2: number, y2: number, height: number, color: string, endColor = color): void {
+function band(svg: SVGElement, x1: number, y1: number, x2: number, y2: number, height: number, color: string): void {
   if (height <= 0) return;
   const middle = (x1 + x2) / 2;
-  const id = `ledger-asset-flow-${++gradientSequence}`;
-  const gradient = el("linearGradient", { id, gradientUnits: "userSpaceOnUse", x1, y1: 0, x2, y2: 0 }, el("defs", {}, svg));
-  el("stop", { offset: "0%", "stop-color": color, "stop-opacity": .44 }, gradient);
-  el("stop", { offset: "100%", "stop-color": endColor, "stop-opacity": .24 }, gradient);
-  el("path", { d: `M${x1},${y1} C${middle},${y1} ${middle},${y2} ${x2},${y2} L${x2},${y2 + height} C${middle},${y2 + height} ${middle},${y1 + height} ${x1},${y1 + height} Z`, fill: `url(#${id})` }, svg);
+  el("path", { d: `M${x1},${y1} C${middle},${y1} ${middle},${y2} ${x2},${y2} L${x2},${y2 + height} C${middle},${y2 + height} ${middle},${y1 + height} ${x1},${y1 + height} Z`, fill: color, "fill-opacity": .16 }, svg);
 }
 function interactive(node: SVGElement, text: string, action: () => void): void {
   node.setAttribute("role", "button"); node.setAttribute("tabindex", "0"); node.setAttribute("aria-label", text);
@@ -108,8 +103,8 @@ export function renderAssetSankey(parent: HTMLElement, snapshot: AssetSnapshot, 
   }
   if (sources) {
     const debt = totals.liabilitiesCents, net = totals.netCents, netHeight = net * scale, debtHeight = debt * scale;
-    el("rect", { x: sourceX, y: 100, width: 12, height: netHeight, rx: 3, fill: "#76A69A", "fill-opacity": .72 }, svg);
-    band(svg, sourceX + 12, 100, rootX - (overview ? 20 : 0), 100, netHeight, "#76A69A", overview ? "#76A69A" : "#7C9CBF");
+    el("rect", { x: sourceX, y: 100, width: 12, height: netHeight, rx: 3, fill: "var(--mono-ink)" }, svg);
+    band(svg, sourceX + 12, 100, rootX - (overview ? 20 : 0), 100, netHeight, "var(--mono-ink)");
     namedAmount(labels, sourceLabelX, overview ? 100 + netHeight / 2 : 82, "净资产", net, overview ? 25 : 16);
     if (debt > 0) {
       const y = 100 + netHeight + 28;
@@ -120,19 +115,19 @@ export function renderAssetSankey(parent: HTMLElement, snapshot: AssetSnapshot, 
   } else {
     namedAmount(labels, sourceLabelX, overview ? 100 + total * scale / 2 : 82, "净资产", totals.netCents, overview ? 25 : 16);
   }
-  el("rect", { x: rootX, y: 100, width: overview ? 20 : 13, height: total * scale, rx: 3, fill: "#7C9CBF", "fill-opacity": .72 }, svg);
+  el("rect", { x: rootX, y: 100, width: overview ? 20 : 13, height: total * scale, rx: 3, fill: "var(--mono-ink)" }, svg);
   namedAmount(labels, rootX, overview ? 68 : 62, "总资产", totals.assetsCents, overview ? 27 : 17);
   for (const group of groupLayout) {
     const color = COLORS[group.kind], groupHeight = group.cents * scale, groupRows = rows.filter(r => r.account.kind === group.kind);
-    band(svg, rootX + (overview ? 20 : 13), rootCursor, groupX, group.y, groupHeight, overview ? COLORS.investment : color);
+    band(svg, rootX + (overview ? 20 : 13), rootCursor, groupX, group.y, groupHeight, color);
     el("rect", { x: groupX, y: group.y, width: 12, height: groupHeight, rx: 3, fill: color, "fill-opacity": .72 }, svg);
     namedAmount(labels, overview ? groupX + 19 : groupX - 15, group.y + groupHeight / 2, ASSET_NAMES[group.kind], group.cents, overview ? 25 : 15, overview ? "start" : "end");
     let source = group.y;
     groupRows.forEach((row, index) => {
       const y = group.rowYs[index], h = row.cents * scale;
       const leafColor = row.holding ? HOLDING_COLORS[row.account.holdings.findIndex(holding => holding.id === row.id) % HOLDING_COLORS.length]
-        : row.account.kind === "investment" ? "#D69B89" : color;
-      band(svg, groupX + 12, source, 945, y, h, overview ? "var(--mono-grid)" : color, overview ? "var(--mono-grid)" : leafColor);
+        : color;
+      band(svg, groupX + 12, source, 945, y, h, color);
       el("rect", { x: 945, y, width: 8, height: h, rx: 3, fill: leafColor, "fill-opacity": .72 }, svg);
       const node = el("g", {}, svg), middle = y + h / 2;
       el("rect", { x: 955, y: middle - 22, width: 282, height: 44, fill: "transparent" }, node);
@@ -151,5 +146,5 @@ export function renderAssetSankey(parent: HTMLElement, snapshot: AssetSnapshot, 
   svg.appendChild(labels);
   if (totals.missing) parent.createEl("small", { cls: "ledger-assets-hint", text: "部分账户金额待补全" });
   if (totals.netCents < 0) parent.createEl("small", { cls: "ledger-assets-hint", text: hide ? "净资产金额已隐藏" : `净资产 ${amounts(totals.netCents)}` });
-  enableAssetGestures(scroll, svg, tools, true, overview || !!parent.closest?.(".ledger-assets"), overview || expanded ? 1240 / 800 : 1, canvas);
+  enableAssetGestures(scroll, svg, tools, true, overview || !!parent.closest?.(".ledger-assets, .ledger-assets-calendar-modal"), overview || expanded ? 1240 / 800 : 1, canvas);
 }

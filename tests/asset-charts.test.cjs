@@ -8,6 +8,7 @@ class Element {
   constructor(tag = 'div', options = {}) { this.tag = tag; this.className = options.cls ?? ''; this.textContent = options.text ?? ''; this.children = []; this.attributes = {}; this.listeners = {}; this.style = {}; }
   addClass() {}
   setAttribute(name, value) { this.attributes[name] = value; }
+  setText(value) { this.textContent = value; }
   addEventListener(name, listener) { this.listeners[name] = listener; }
   appendChild(child) { if (child.parentElement) child.parentElement.children = child.parentElement.children.filter(e => e !== child); this.children.push(child); child.parentElement = this; return child; }
   createEl(tag, options) { return this.appendChild(new Element(tag, options)); }
@@ -24,6 +25,25 @@ function snapshot() {
 }
 function withDocument(action) { global.document = { createElementNS: (_, tag) => new Element(tag) }; try { action(); } finally { delete global.document; } }
 
+test('calendar snapshot charts leave vertical scrolling to their modal at fit', () => withDocument(() => {
+  for (const calendar of [true, false]) {
+    const root = new Element();
+    root.closest = selector => calendar && selector.split(',').map(s => s.trim()).includes('.ledger-assets-calendar-modal') ? root : null;
+    const create = root.createDiv.bind(root);
+    root.createDiv = options => {
+      const node = create(options);
+      if (node.className === 'ledger-assets-sankey-scroll') { node.clientWidth = 640; node.clientHeight = 300; }
+      return node;
+    };
+    renderAssetSankey(root, snapshot(), false, false, () => {});
+    const viewport = root.all().find(n => n.className === 'ledger-assets-sankey-scroll');
+    assert.equal(viewport.style.touchAction, calendar ? 'pan-y' : 'none');
+    let prevented = false;
+    viewport.listeners.wheel({ deltaY: -240, ctrlKey: false, metaKey: false, preventDefault() { prevented = true; } });
+    assert.equal(prevented, false, 'An ordinary mouse wheel must remain available to the surrounding scroller');
+  }
+}));
+
 test('home hierarchy embeds daily comparisons in the summary and keeps changes truthful and private', () => withDocument(() => {
   const state = emptyAssets(), current = snapshot();
   state.snapshots = [{ ...snapshot(), date: '2026-10-07', accounts: snapshot().accounts.map(a => ({ ...a, cents: a.kind === 'cash' ? a.cents - 500 : a.cents })) }];
@@ -32,11 +52,13 @@ test('home hierarchy embeds daily comparisons in the summary and keeps changes t
   const hero = root.all().find(n => n.className.includes('ledger-assets-hero'));
   assert.ok(hero.all().some(n => n.className === 'ledger-assets-comparison'));
   assert.equal(hero.all().filter(n => n.className === 'ledger-assets-change-column').length, 5);
-  assert.ok(hero.all().some(n => n.textContent === '↑5.00' && n.className.includes('is-up')));
+  assert.ok(hero.all().some(n => n.attributes['aria-label'] === '↑5.00' && n.className.includes('is-up')));
+  assert.ok(hero.all().some(n => n.className === 'ledger-assets-change-arrow' && n.textContent === '↑'));
   assert.ok(hero.all().some(n => n.textContent === '相比前一天'));
   current.accounts[0].cents -= 1000;
   root = new Element(); new AssetPanel(p).render(root);
-  assert.ok(root.all().some(n => n.textContent === '↓5.00' && n.className.includes('is-down')));
+  assert.ok(root.all().some(n => n.attributes['aria-label'] === '↓5.00' && n.className.includes('is-down')));
+  assert.ok(root.all().some(n => n.className === 'ledger-assets-change-arrow' && n.textContent === '↓'));
   current.accounts[0].cents += 500;
   root = new Element(); new AssetPanel(p).render(root);
   assert.ok(root.all().some(n => n.textContent === '没有变化'));

@@ -406,6 +406,9 @@ test('manual report persists with frozen evidence across edits, filters, rollove
     plugin.settings.financeAiModel = 'changed-model';
     for (current of variants) {
       const root = new Element(); panel.render(root);
+      const highlights = root.all().find(e => e.classes.has('ledger-report-highlights'));
+      const frozenRecords = frozen.records.filter(r => r.date >= frozen.effectiveRange.start && r.date <= frozen.effectiveRange.end);
+      assert.deepEqual(highlights.all().filter(e => e.tag === 'dd').map(e => e.textContent), [core.formatCents(frozenRecords.reduce((sum, r) => sum + r.cents, 0)), `${frozenRecords.length} 笔`, `${frozen.observedDays[0]} / ${R.reportDays(frozen.effectiveRange)} 天`]);
       assert.ok(root.all().some(e => e.textContent === '手动报告1'));
       assert.ok(root.all().some(e => e.textContent.includes('可更新')));
       assert.ok(root.all().some(e => e.textContent === '重新生成报告'));

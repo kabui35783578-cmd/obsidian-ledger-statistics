@@ -1,6 +1,7 @@
 import esbuild from "esbuild";
 
 await esbuild.build({ entryPoints: ["src/salary-history.ts"], bundle: true, platform: "node", format: "cjs", target: "node18", outfile: "dist/salary-history.cjs" });
+await esbuild.build({ entryPoints: ["src/treemap.ts"], bundle: true, platform: "node", format: "cjs", target: "node18", outfile: "dist/treemap.cjs" });
 
 await esbuild.build({
   entryPoints: ["src/ai-secrets.ts"], bundle: true, platform: "node", format: "cjs", target: "node18", outfile: "dist/ai-secrets.cjs"

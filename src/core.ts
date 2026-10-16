@@ -885,6 +885,19 @@ export function cumulativeTrendPoints(records: LedgerRecord[], range: DateRange,
   return points;
 }
 
+/** Spread the final cumulative amount over every calendar day, without rounding the daily rate first. */
+export function cumulativeAverageProgress(points: TrendPoint[]): { dailyCents: number; days: number; amounts: number[] } | null {
+  const first = points[0];
+  const last = points.at(-1);
+  if (!first || !last || !isValidIsoDate(first.start) || !isValidIsoDate(last.end) || first.start > last.end) return null;
+  const days = daysInclusive({ start: first.start, end: last.end });
+  return {
+    dailyCents: Math.round(last.cents / days),
+    days,
+    amounts: points.map(point => last.cents * (daysInclusive({ start: first.start, end: point.end }) / days))
+  };
+}
+
 export function compareValue(currentCents: number, previousCents: number): ComparisonValue {
   let ratio: number | "new" | "none";
   if (previousCents === 0) ratio = currentCents === 0 ? "none" : "new";
