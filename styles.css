@@ -103,6 +103,20 @@
   margin-inline: auto;
 }
 
+/* Native phone navigation floats over Markdown's scroll area. Custom views
+   otherwise retain --view-top-spacing as an external margin even after the
+   header hides, leaving a solid strip above all scrolling content. Use the
+   same in-scroll spacing and fade mask, scoped strictly to this plugin. */
+.is-phone:is(.is-floating-nav, .auto-full-screen) .mod-root .workspace-leaf-content[data-type="ledger-statistics-view"] {
+  --view-top-spacing: 0px;
+}
+.is-phone:is(.is-floating-nav, .auto-full-screen) .mod-root .workspace-leaf-content[data-type="ledger-statistics-view"] > .view-content {
+  margin-top: 0;
+  padding-top: var(--view-top-spacing-markdown, calc(var(--safe-area-inset-top, 0px) + var(--view-header-height, 48px) + 16px));
+  -webkit-mask-image: var(--view-top-fade-mask, none);
+  mask-image: var(--view-top-fade-mask, none);
+}
+
 .ledger-statistics-view *,
 .ledger-statistics-view *::before,
 .ledger-statistics-view *::after {
