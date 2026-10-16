@@ -191,11 +191,26 @@ export class LedgerStatisticsView extends ItemView {
   async onOpen(): Promise<void> {
     this.closed = false;
     this.containerEl.addClass("ledger-statistics-view");
+    this.registerDomEvent(this.contentEl, "scroll", (event) => this.reportMobileNavigationScroll(event), { passive: true });
     this.registerDomEvent(this.contentEl, "touchstart", (event) => this.handleAutoAdvanceTouchStart(event), { passive: true });
     this.registerDomEvent(this.contentEl, "touchmove", (event) => this.handleAutoAdvanceTouchMove(event), { passive: false });
     this.registerDomEvent(this.contentEl, "touchend", () => this.finishPull(false));
     this.registerDomEvent(this.contentEl, "touchcancel", () => this.finishPull(true));
     this.render();
+  }
+
+  private reportMobileNavigationScroll(event: Event): void {
+    if (event.target !== this.contentEl || this.closed || this.app.workspace.activeLeaf !== this.leaf) return;
+    // The native Markdown reading/editing views use this same hook. It owns
+    // Full screen, keyboard exclusions, direction changes and navigation UI.
+    // This internal hook is optional: desktop and older hosts may omit it.
+    const navbar = (this.app as typeof this.app & {
+      mobileNavbar?: { onScroll?: (element: HTMLElement, position: number) => void } | null;
+    }).mobileNavbar;
+    if (typeof navbar?.onScroll !== "function") return;
+    // Native Markdown passes fractional text-line positions, not raw pixels.
+    // Use a stable line-sized unit so subpixel layout changes do not hide UI.
+    navbar.onScroll(this.contentEl, Math.max(0, this.contentEl.scrollTop) / 16);
   }
 
   requestRender(): void {

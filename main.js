@@ -46908,11 +46908,18 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
   async onOpen() {
     this.closed = false;
     this.containerEl.addClass("ledger-statistics-view");
+    this.registerDomEvent(this.contentEl, "scroll", (event) => this.reportMobileNavigationScroll(event), { passive: true });
     this.registerDomEvent(this.contentEl, "touchstart", (event) => this.handleAutoAdvanceTouchStart(event), { passive: true });
     this.registerDomEvent(this.contentEl, "touchmove", (event) => this.handleAutoAdvanceTouchMove(event), { passive: false });
     this.registerDomEvent(this.contentEl, "touchend", () => this.finishPull(false));
     this.registerDomEvent(this.contentEl, "touchcancel", () => this.finishPull(true));
     this.render();
+  }
+  reportMobileNavigationScroll(event) {
+    if (event.target !== this.contentEl || this.closed || this.app.workspace.activeLeaf !== this.leaf) return;
+    const navbar = this.app.mobileNavbar;
+    if (typeof (navbar == null ? void 0 : navbar.onScroll) !== "function") return;
+    navbar.onScroll(this.contentEl, Math.max(0, this.contentEl.scrollTop) / 16);
   }
   requestRender() {
     this.filter.excludedCategories = [...this.plugin.settings.excludedCategories];
