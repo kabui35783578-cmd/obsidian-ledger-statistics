@@ -8,6 +8,7 @@ import type { DonutSegment } from "./donut";
 import type { BoxReference, WaterfallStep } from "./chart-data";
 import type { BalanceStatus } from "./balance";
 import type { DateRange } from "./core";
+import type { TrendComparison } from "./trend-comparison";
 import { deferChartAnimation } from "./chart-animation";
 import { CategoryMeasure, categoryTree, mountCategoryTree, treeValue } from "./treemap";
 
@@ -327,10 +328,10 @@ export function renderDonut(parent: HTMLElement, data: CategorySummary[], onClic
   if (segments.length === 0 || total === 0) return renderEmpty(chart, "合计为零，无法计算占比");
   const wrap = chart.createDiv({ cls: "ledger-donut-wrap" });
   const createDial = (mobile: boolean): SVGSVGElement => {
-    const cx = mobile ? 170 : 280;
-    const cy = mobile ? 145 : 184;
-    const radius = mobile ? 70 : 103;
-    const svg = svgEl("svg", { viewBox: `0 0 ${mobile ? 340 : 560} ${mobile ? 320 : 380}`, role: "img", "aria-label": "分类支出百分比刻线环" });
+    const cx = mobile ? 200 : 280;
+    const cy = 184;
+    const radius = mobile ? 82 : 103;
+    const svg = svgEl("svg", { viewBox: `0 0 ${mobile ? 400 : 560} 380`, role: "img", "aria-label": "分类支出百分比刻线环" });
     svg.classList.add("ledger-svg", "ledger-tick-donut", mobile ? "is-mobile" : "is-desktop");
     let cursor = 0;
     const labels: Array<{ group: SVGGElement; item: DonutSegment; angle: number; side: "left" | "right"; idealY: number; y: number }> = [];
@@ -358,7 +359,7 @@ export function renderDonut(parent: HTMLElement, data: CategorySummary[], onClic
           group.append(svgEl("circle", { cx: dot.x, cy: dot.y, r: 1, fill: FAINT }));
         }
       }
-      if (!mobile) {
+      {
         const angle = (cursor + item.ticks / 2) * 3.6 - 90;
         const side = Math.cos(angle * Math.PI / 180) < 0 ? "left" : "right";
         labels.push({ group, item, angle, side, idealY: polar(cx, cy, radius + 40, angle).y, y: 0 });
@@ -366,7 +367,7 @@ export function renderDonut(parent: HTMLElement, data: CategorySummary[], onClic
       cursor += item.ticks;
       svg.append(group);
     });
-    if (!mobile) {
+    {
       for (const side of ["left", "right"] as const) {
         const column = labels.filter((label) => label.side === side).sort((a, b) => a.idealY - b.idealY);
         column.forEach((label, index) => {
@@ -376,16 +377,17 @@ export function renderDonut(parent: HTMLElement, data: CategorySummary[], onClic
         column.forEach((label) => {
           const y = label.y - overflow;
           const from = polar(cx, cy, radius + 31, label.angle);
-          const endX = side === "left" ? 122 : 438;
-          const elbowX = side === "left" ? 132 : 428;
+          const endX = side === "left" ? (mobile ? 80 : 122) : (mobile ? 320 : 438);
+          const elbowX = side === "left" ? endX + 10 : endX - 10;
           label.group.append(svgEl("path", {
             d: `M ${from.x} ${from.y} L ${elbowX} ${y} L ${endX} ${y}`,
             class: "ledger-donut-leader"
           }));
-          const marker = svgEl("circle", { cx: side === "left" ? 119 : 441, cy: y, r: 2.2, class: "ledger-donut-label-dot" });
-          const text = svgEl("text", { x: side === "left" ? 114 : 446, y: y + 3.5, "text-anchor": side === "left" ? "end" : "start", class: "ledger-donut-label" });
+          const marker = svgEl("circle", { cx: side === "left" ? endX - 3 : endX + 3, cy: y, r: 2.2, class: "ledger-donut-label-dot" });
+          const text = svgEl("text", { x: side === "left" ? endX - 8 : endX + 8, y: y + 3.5, "text-anchor": side === "left" ? "end" : "start", class: "ledger-donut-label" });
           const name = Array.from(label.item.category);
-          const displayName = label.item.members.length > 1 ? `其余${label.item.members.length}类` : name.length > 5 ? `${name.slice(0, 5).join("")}…` : label.item.category;
+          const nameLimit = mobile ? 3 : 5;
+          const displayName = label.item.members.length > 1 ? `其余${label.item.members.length}类` : name.length > nameLimit ? `${name.slice(0, nameLimit).join("")}…` : label.item.category;
           text.textContent = `${displayName} · ${(label.item.share * 100).toFixed(1)}%`;
           label.group.append(marker, text);
         });
@@ -431,6 +433,7 @@ function trendConclusion(points: TrendPoint[]): string {
 export interface TrendChartOptions {
   dailyAverage?: { cents: number; days: number } | null;
   dateNotes?: Record<string, string>;
+  comparison?: TrendComparison;
 }
 
 function appendDailyAverage(svg: SVGSVGElement, average: { cents: number; days: number } | null | undefined, left: number, right: number, y: number, mobile = false): void {
@@ -510,10 +513,12 @@ function renderTrendPlot(parent: HTMLElement, points: TrendPoint[], type: "line"
   const cumulative = type === "cumulative";
   const isLine = type !== "bar";
   const average = cumulative ? null : options.dailyAverage;
-  const axis = trendAxis(Math.max(...points.map(point => point.cents), average?.cents ?? 0, 1));
-  const width = mobile ? (points.length > 10 ? points.length * 34 + 74 : 360)
-    : cumulative ? Math.max(820, points.length * 34 + 80)
-    : isLine ? 820 : Math.max(820, points.length * 24 + 80);
+  const comparison = options.comparison;
+  const pointCount = Math.max(points.length, comparison?.points.length ?? 0);
+  const axis = trendAxis(Math.max(...points.map(point => point.cents), ...(comparison?.points.map(point => point?.cents ?? 0) ?? []), average?.cents ?? 0, 1));
+  const width = mobile ? (pointCount > 10 ? pointCount * 34 + 74 : 360)
+    : cumulative ? Math.max(820, pointCount * 34 + 80)
+    : isLine ? 820 : Math.max(820, pointCount * 24 + 80);
   const height = mobile ? 252 : 330;
   const left = mobile ? Math.max(44, formatCents(axis.max).replace(".00", "").length * 6.5 + 14) : 64;
   const right = width - (mobile ? 14 : 30);
@@ -521,7 +526,7 @@ function renderTrendPlot(parent: HTMLElement, points: TrendPoint[], type: "line"
   const base = mobile ? 194 : 254;
   const plotWidth = right - left;
   const plotHeight = base - top;
-  const slot = plotWidth / points.length;
+  const slot = plotWidth / pointCount;
   const peakIndex = cumulative ? points.length - 1 : points.reduce((best, point, index) => point.cents > points[best].cents ? index : best, 0);
   const unit = niceCurrencyUnit(axis.max, 64);
   const svg = svgEl("svg", {
@@ -540,8 +545,26 @@ function renderTrendPlot(parent: HTMLElement, points: TrendPoint[], type: "line"
   }
   if (cumulative) appendCumulativeAverage(svg, cumulativeAverageProgress(points), left, slot, base, plotHeight, axis.max, mobile);
   else appendDailyAverage(svg, average, left, right, base - (average?.cents ?? 0) / axis.max * plotHeight, mobile);
+  if (comparison) {
+    const segments: string[] = [];
+    let connected = false;
+    const group = svgEl("g", { class: "ledger-trend-previous", "pointer-events": "none", "aria-label": `上期 ${comparison.range.start} 至 ${comparison.range.end}` });
+    comparison.points.forEach((point, index) => {
+      if (!point) { connected = false; return; }
+      const x = left + slot * (index + 0.5);
+      const y = base - point.cents / axis.max * plotHeight;
+      segments.push(`${connected ? "L" : "M"}${x} ${y}`);
+      connected = true;
+      group.append(svgEl("circle", { cx: x, cy: y, r: 2.5, fill: PAPER, stroke: "#66838B", "stroke-width": 1.3, "data-cents": point.cents }));
+    });
+    if (segments.length) {
+      group.insertBefore(svgEl("path", { d: segments.join(" "), fill: "none", stroke: "#66838B", "stroke-width": 1.8, "stroke-dasharray": "8 4", class: "ledger-trend-previous-line" }), group.firstChild);
+      svg.append(group);
+    }
+  }
   const coords: Array<{ x: number; y: number }> = [];
-  const dateLabels = trendDateLabels(points.length, width, mobile);
+  const dateLabels = trendDateLabels(pointCount, width, mobile);
+  dateLabels.add(points.length - 1);
   points.forEach((point, index) => {
     const x = left + slot * (index + 0.5);
     const y = base - point.cents / axis.max * plotHeight;
@@ -570,11 +593,14 @@ function renderTrendPlot(parent: HTMLElement, points: TrendPoint[], type: "line"
       group.append(peak);
     }
     const note = cumulative ? options.dateNotes?.[point.end] : undefined;
-    group.append(trendTooltip(x, y, width, `${cumulative ? "累计 " : ""}${formatCents(point.cents)}`, mobile, note));
+    const prior = comparison?.points[index];
+    const priorDescription = comparison ? (prior ? `上期 ${prior.start === prior.end ? prior.start : `${prior.start} 至 ${prior.end}`}：${formatCents(prior.cents)}` : "上期此位置无完整数据") : "";
+    const tooltipNote = [priorDescription, note].filter(Boolean).join("\n");
+    group.append(trendTooltip(x, y, width, `${cumulative ? "累计 " : ""}${formatCents(point.cents)}`, mobile, tooltipNote));
     const hit = isLine ? svgEl("circle", { cx: x, cy: y, r: mobile ? 22 : 14, fill: "transparent" })
       : svgEl("rect", { x: x - slot / 2, y: top, width: slot, height: plotHeight + 28, fill: "transparent" });
     interactiveTrendTarget(svg, group, hit,
-      `${point.label} ${cumulative ? "累计 " : ""}${formatCents(point.cents)}，${point.count} 笔${weekend ? "，周末" : ""}${cumulative ? `，${note ? `备注：${note}` : "添加备注"}` : ""}`,
+      `${point.label} ${cumulative ? "累计 " : ""}${formatCents(point.cents)}，${point.count} 笔${weekend ? "，周末" : ""}${priorDescription ? `，${priorDescription}` : ""}${cumulative ? `，${note ? `备注：${note}` : "添加备注"}` : ""}`,
       () => onClick(point), mobile && isLine && !cumulative);
     group.append(hit);
     svg.append(group);
@@ -584,6 +610,13 @@ function renderTrendPlot(parent: HTMLElement, points: TrendPoint[], type: "line"
       svg.append(label);
     }
   });
+  if (comparison && comparison.points.length > points.length) {
+    const lastIndex = comparison.points.length - 1;
+    const last = comparison.points[lastIndex];
+    const label = svgEl("text", { x: left + slot * (lastIndex + 0.5), y: base + 40, "text-anchor": "end", class: mobile ? "ledger-mobile-axis-label" : "ledger-axis-label" });
+    label.textContent = `上期 ${last?.end.slice(5) ?? comparison.range.end.slice(5)}`;
+    svg.append(label);
+  }
   if (isLine) {
     const outline = svgEl("path", { d: `M${coords.map(point => `${point.x} ${point.y}`).join(" L ")}`, fill: "none", stroke: INK, "stroke-width": 1.8, pathLength: 1, class: "ledger-draw" });
     svg.insertBefore(outline, svg.firstChild);
@@ -605,8 +638,16 @@ export function renderTrendChart(parent: HTMLElement, points: TrendPoint[], type
   const { shell, chart } = monoCard(parent,
     cumulative ? "累计支出" : isLine ? "LUPI BASICS · F2 HAIRLINE LINE" : "LUPI BASICS · F1 RUNG BARS",
     cumulative ? `累计支出${points.length ? ` · ${formatCents(points.at(-1)!.cents)}` : ""}` : trendConclusion(points),
-    cumulative ? `带外圈的日期已有备注${progress ? ` · 虚线为平均进度（日均 ${formatCents(progress.dailyCents)}）` : ""}`
+    cumulative ? `带外圈的日期已有备注${progress ? ` · 灰色虚线为平均进度（日均 ${formatCents(progress.dailyCents)}）` : ""}`
       : `${isLine ? "逐日读数 · 空心圆点为周末" : "阶梯柱按同一金额单位逐档累计"}${meanDescription}`);
+  if (options.comparison) {
+    const comparison = options.comparison;
+    const legend = chart.createDiv({ cls: "ledger-trend-comparison-legend" });
+    legend.createDiv({ cls: "ledger-trend-current-key", text: "本期" });
+    legend.createDiv({ cls: "ledger-trend-previous-key", text: `上期 ${comparison.range.start} — ${comparison.range.end}` });
+    if (!comparison.points.some(Boolean)) legend.createDiv({ cls: "ledger-note", text: "上期暂无完整数据，暂不绘制对比线" });
+    else if (comparison.missingDays) legend.createDiv({ cls: "ledger-note", text: `上期缺少 ${comparison.missingDays} 天账本，${cumulative ? "累计线只画到首个缺失日前" : "对应位置断线"}。` });
+  }
   if (!points.length) return renderEmpty(chart, "当前筛选条件下没有可绘制的数据");
   renderTrendPlot(chart, points, type, onClick, options, false);
   renderTrendPlot(chart, points, type, onClick, options, true);

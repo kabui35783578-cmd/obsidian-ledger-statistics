@@ -40,6 +40,7 @@ function view() {
   v.filter.range = { start: '2026-10-01', end: '2026-10-31' };
   v.contentEl = { scrollTop: 120 };
   v.bindRecordInteractions = () => {};
+  v.renderSpendingAnalysis = () => {};
   v.render = () => { v.root = new Element(); v.renderCalendar(v.root); };
   return v;
 }
@@ -164,7 +165,27 @@ test('overview places spending trend before category statistics and keeps salary
   v.renderCategory = () => {};
   const root = new Element();
   v.renderOverview(root);
-  assert.deepEqual(root.all().filter(el => el.tag === 'section').map(el => el.attributes['aria-label']), ['期间概览', '工资周期收支', '支出趋势', '分类统计']);
+  assert.deepEqual(root.all().filter(el => el.tag === 'section').map(el => el.attributes['aria-label']), ['期间概览', '工资周期收支', '支出趋势', '分类统计', '消费分析']);
+});
+
+test('the four overview metrics open their dedicated cards without navigating or changing filters and scroll', () => {
+  const v = view();
+  v.renderSalaryCycle = v.renderTrend = v.renderCategory = () => {};
+  v.goDetails = () => assert.fail('Summary cards must not navigate to details');
+  const opened = [];
+  v.openOverviewMetric = metric => opened.push(metric);
+  const before = structuredClone(v.filter);
+  const root = new Element();
+  v.renderOverview(root);
+  const metrics = root.all().filter(el => el.classes.has('ledger-metric'));
+  assert.equal(metrics.length, 4);
+  for (const metric of metrics) {
+    assert.equal(metric.attributes['aria-haspopup'], 'dialog');
+    metric.listeners.click();
+  }
+  assert.deepEqual(opened, ['spending', 'count', 'average', 'largest']);
+  assert.deepEqual(v.filter, before);
+  assert.equal(v.contentEl.scrollTop, 120);
 });
 
 test('overview arrows compare the same filters and dates, and distinguish increases, decreases and unchanged values', () => {

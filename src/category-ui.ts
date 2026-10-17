@@ -60,7 +60,7 @@ function groupList(parent: HTMLElement, groups: CategoryGroup[], total: number, 
     const row = parent.createEl("button", { cls: "ledger-category-group-row", attr: { type: "button" } });
     const copy = row.createDiv({ cls: "ledger-category-row-copy" });
     copy.createEl("strong", { text: group.label });
-    copy.createEl("small", { text: `${group.records.length} 笔 · 出现 ${group.days} 天${total ? ` · 占分类金额 ${(group.cents / total * 100).toFixed(1)}%` : ""}` });
+    copy.createEl("small", { text: `${group.records.length} 笔 · 出现 ${group.days} 天${total ? ` · 占当前金额 ${(group.cents / total * 100).toFixed(1)}%` : ""}` });
     row.createEl("strong", { cls: "ledger-category-row-amount", text: money(group.cents) });
     row.addEventListener("click", () => show(group.label, group.records));
   }
@@ -105,7 +105,26 @@ export function renderCategoryAnalysis(parent: HTMLElement, category: string, an
 
   renderTrendChart(section, trendPoints(a.records, trendUnit), "line", point => show(`${point.start} 至 ${point.end}`, a.records.filter(r => r.date >= point.start && r.date <= point.end)));
   const grid = section.createDiv({ cls: "ledger-category-grid" });
-  const distribution = card(grid, "单笔金额分布", "箱体是中间一半 · 空心点是统计离群值 · 点击查看账目");
+  renderAmountDistribution(grid, a, open, show);
+  const purposesWrap = grid.createDiv({ cls: "ledger-category-chart-cell" });
+  renderDonut(purposesWrap, a.purposes.map(group => ({ category: group.label, cents: group.cents, count: group.records.length, share: a.summary.cents ? group.cents / a.summary.cents : 0 })),
+    label => { const group = a.purposes.find(group => group.label === label); if (group) show(label, group.records); });
+  const purposeCard = purposesWrap.querySelector<HTMLElement>(".ledger-mono-card")!;
+  purposeCard.querySelector("h3")!.textContent = a.purposes[0]?.label === "未识别用途" ? "用途尚未明确的支出占比最高" : `${a.purposes[0]?.label ?? "用途"}占分类支出最多`;
+  purposeCard.querySelector(".ledger-mono-sub")!.textContent = "一根刻线约为 1 个百分点 · 仅按明确备注识别 · 混合付款不拆分";
+  renderRepeatedProjects(grid, a, show);
+  if (a.coverage.complete && a.records.length >= 10 && a.summary.recordedDays >= 14) renderWeekdayDistribution(grid, a, show);
+  const top = section.createDiv({ cls: "ledger-category-top-ten" });
+  const topRows = a.topTen.map((record, index) => ({ category: `${String(index + 1).padStart(2, "0")} ${record.note || "无备注"}`, cents: record.cents, count: 1, share: a.summary.cents ? record.cents / a.summary.cents : 0 }));
+  renderHorizontalBars(top, topRows, label => { const index = topRows.findIndex(row => row.category === label); if (index >= 0) open(a.topTen[index]); },
+    { title: "最高支出前十笔", subtitle: "所选分类与期间 · 按单笔金额从高到低 · 点击打开原始账目", details: Object.fromEntries(topRows.map((row, index) => [row.category, `${a.topTen[index].date} · ${a.topTen[index].time}`])) });
+  if (a.topTen.length < 10) top.createDiv({ cls: "ledger-note", text: `当前仅 ${a.topTen.length} 笔，全部展示。` });
+  const footer = section.createDiv({ cls: "ledger-category-footer" });
+  createButton(footer, `查看全部 ${a.records.length} 笔明细`).addEventListener("click", details);
+}
+
+function renderAmountDistribution(parent: HTMLElement, a: CategoryAnalysis, open: (record: LedgerRecord) => void, show: (label: string, records: LedgerRecord[]) => void): void {
+  const distribution = card(parent, "单笔金额分布", "箱体是中间一半 · 空心点是统计离群值 · 点击查看账目");
   if (a.median !== null) distribution.querySelector("h3")!.textContent = `一半单笔不高于 ${money(a.median)}`;
   const distributionFacts = distribution.createDiv({ cls: "ledger-category-distribution-facts" });
   const middle = distributionFacts.createDiv();
@@ -117,13 +136,12 @@ export function renderCategoryAnalysis(parent: HTMLElement, category: string, an
   distribution.createDiv({ cls: "ledger-note", text: `最贵几笔合计 ${money(a.topThreeCents)} · 离群只描述统计位置，不判断是否合理` });
   renderSelectedBox(distribution, a.records, a.comparable ? a.previous : [], open, show);
   distribution.createDiv({ cls: "ledger-mono-source", text: "TICK BOX · WIRE · FILTERED LOCAL LEDGER" });
-  const purposesWrap = grid.createDiv({ cls: "ledger-category-chart-cell" });
-  renderDonut(purposesWrap, a.purposes.map(group => ({ category: group.label, cents: group.cents, count: group.records.length, share: a.summary.cents ? group.cents / a.summary.cents : 0 })),
-    label => { const group = a.purposes.find(group => group.label === label); if (group) show(label, group.records); });
-  const purposeCard = purposesWrap.querySelector<HTMLElement>(".ledger-mono-card")!;
-  purposeCard.querySelector("h3")!.textContent = a.purposes[0]?.label === "未识别用途" ? "用途尚未明确的支出占比最高" : `${a.purposes[0]?.label ?? "用途"}占分类支出最多`;
-  purposeCard.querySelector(".ledger-mono-sub")!.textContent = "一根刻线约为 1 个百分点 · 仅按明确备注识别 · 混合付款不拆分";
-  const repeatGroups = a.repeats.slice(0, 6), repeatsWrap = grid.createDiv({ cls: "ledger-category-chart-cell" });
+  if (!a.comparable) distribution.createDiv({ cls: "ledger-note", text: "可比账本不完整，当前只展示本期分布。" });
+  else if (a.previous.length < 4) distribution.createDiv({ cls: "ledger-note", text: "上期少于四笔，暂不绘制上期箱线图。" });
+}
+
+function renderRepeatedProjects(parent: HTMLElement, a: CategoryAnalysis, show: (label: string, records: LedgerRecord[]) => void): void {
+  const repeatGroups = a.repeats.slice(0, 6), repeatsWrap = parent.createDiv({ cls: "ledger-category-chart-cell" });
   if (repeatGroups.length && a.comparable) {
     renderDumbbell(repeatsWrap, repeatGroups.map(group => ({ category: group.label, currentCents: group.cents, previousCents: Math.round((a.previousGroups.find(previous => previous.label === group.label)?.cents ?? 0) * a.scale) })), "本期", a.scale === 1 ? "上期" : "上期折算", label => {
       show(`重复项目 · ${label}`, [...(repeatGroups.find(group => group.label === label)?.records ?? []), ...(a.previousGroups.find(group => group.label === label)?.records ?? [])]);
@@ -136,18 +154,35 @@ export function renderCategoryAnalysis(parent: HTMLElement, category: string, an
     else repeats.createDiv({ cls: "ledger-note", text: "当前期间没有重复备注项目。" });
     repeats.createDiv({ cls: "ledger-mono-source", text: "REPEATED NOTES · FILTERED LOCAL LEDGER" });
   }
-  if (a.coverage.complete && a.records.length >= 10 && a.summary.recordedDays >= 14) {
-    const rhythm = card(grid, "星期分布", "按各星期实际出现的账本日期计算日均，描述当前期间，不认定长期习惯。");
-    const peak = [...a.weekdays].sort((x, y) => y.mean - x.mean)[0];
-    rhythm.querySelector("h3")!.textContent = `${peak.label}的日均支出最高`;
-    renderWeekdayRungs(rhythm, a.weekdays, show);
-    rhythm.createDiv({ cls: "ledger-mono-source", text: "RUNG BARS · WIRE · OBSERVED WEEKDAYS · LOCAL LEDGER" });
+  if (repeatGroups.length && !a.comparable) repeatsWrap.createDiv({ cls: "ledger-note", text: "可比账本不完整，当前只展示本期重复项目。" });
+}
+
+function renderWeekdayDistribution(parent: HTMLElement, a: CategoryAnalysis, show: (label: string, records: LedgerRecord[]) => void): void {
+  const rhythm = card(parent, "星期分布", "按各星期实际有账本的日期计算日均；没有账本的日期不计为零。");
+  if (!a.summary.recordedDays || a.coverage.problems.length) {
+    rhythm.createDiv({ cls: "ledger-note", text: a.coverage.problems.length ? "当前账本有数据异常，核对后再展示星期分布。" : "所选期间没有账本，暂无星期分布。" });
+    return;
   }
-  const top = section.createDiv({ cls: "ledger-category-top-ten" });
-  const topRows = a.topTen.map((record, index) => ({ category: `${String(index + 1).padStart(2, "0")} ${record.note || "无备注"}`, cents: record.cents, count: 1, share: a.summary.cents ? record.cents / a.summary.cents : 0 }));
-  renderHorizontalBars(top, topRows, label => { const index = topRows.findIndex(row => row.category === label); if (index >= 0) open(a.topTen[index]); },
-    { title: "最高支出前十笔", subtitle: "所选分类与期间 · 按单笔金额从高到低 · 点击打开原始账目", details: Object.fromEntries(topRows.map((row, index) => [row.category, `${a.topTen[index].date} · ${a.topTen[index].time}`])) });
-  if (a.topTen.length < 10) top.createDiv({ cls: "ledger-note", text: `当前仅 ${a.topTen.length} 笔，全部展示。` });
-  const footer = section.createDiv({ cls: "ledger-category-footer" });
-  createButton(footer, `查看全部 ${a.records.length} 笔明细`).addEventListener("click", details);
+  if (a.coverage.complete && a.summary.recordedDays >= 14 && a.weekdays.every(day => day.observed > 0)) {
+    const peak = [...a.weekdays].sort((x, y) => y.mean - x.mean)[0];
+    rhythm.querySelector("h3")!.textContent = peak.mean > 0 ? `${peak.label}的日均支出最高` : "各星期均无匹配支出";
+  } else {
+    rhythm.querySelector("h3")!.textContent = "已记录日期的星期分布";
+    rhythm.createDiv({ cls: "ledger-note", text: `仅按 ${a.summary.recordedDays} 个账本日期计算；未出现的星期标为「—」，暂不判断长期习惯。` });
+  }
+  renderWeekdayRungs(rhythm, a.weekdays, show);
+  rhythm.createDiv({ cls: "ledger-mono-source", text: "RUNG BARS · WIRE · OBSERVED WEEKDAYS · LOCAL LEDGER" });
+}
+
+export function renderOverviewAnalysis(parent: HTMLElement, a: CategoryAnalysis, open: (record: LedgerRecord) => void, show: (label: string, records: LedgerRecord[]) => void): void {
+  const surface = parent.createDiv({ cls: "ledger-category-analysis ledger-overview-analysis" });
+  surface.createDiv({ cls: "ledger-note", text: `${a.coverage.range.start} 至 ${a.coverage.range.end} · 当前筛选下的全部分类 · 上期 ${a.previousRange.start} 至 ${a.previousRange.end}` });
+  if (!a.records.length) {
+    surface.createDiv({ cls: "ledger-empty", text: "当前期间和筛选条件下没有消费记录。" });
+    return;
+  }
+  const grid = surface.createDiv({ cls: "ledger-category-grid" });
+  renderRepeatedProjects(grid, a, show);
+  renderWeekdayDistribution(grid, a, show);
+  renderAmountDistribution(grid, a, open, show);
 }

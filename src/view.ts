@@ -13,9 +13,11 @@ import { withWeeklyInsight } from "./weekly-insight";
 import { ReportPanel } from "./report-ui";
 import { reportCoverage } from "./report";
 import { buildCategoryAnalysis, categoryPreviousRange } from "./category-analysis";
-import { renderCategoryAnalysis, showCategoryRecords } from "./category-ui";
+import { renderCategoryAnalysis, renderOverviewAnalysis, showCategoryRecords } from "./category-ui";
 import { disposeChartAnimations } from "./chart-animation";
 import { disposeAssetGestures } from "./asset-gestures";
+import { alignedTrendSeries, previousTrendRange } from "./trend-comparison";
+import { buildOverviewDetails, OverviewMetric, OverviewMetricModal } from "./overview-details";
 import { AssetPanel } from "./asset-ui";
 import {
   AccountingScope,
@@ -31,7 +33,6 @@ import {
   budgetScopedRecords,
   categorySummaries,
   compareValue,
-  cumulativeTrendPoints,
   dailySpendingAverage,
   diagnosticsFor,
   flattenRecords,
@@ -41,7 +42,6 @@ import {
   recordMatches,
   salaryDayRange,
   summarize,
-  trendPoints,
   weekRange
 } from "./core";
 import { DefaultDatePreset, LedgerViewId, normalizeLedgerView } from "./settings";
@@ -512,10 +512,10 @@ export class LedgerStatisticsView extends ItemView {
     const change = (difference: number, count = false) => ({ difference: comparable ? difference : null, count, reference });
     const section = this.overviewSection(parent, "期间概览", "layout-dashboard");
     const metrics = section.createDiv({ cls: "ledger-metrics ledger-overview-metrics" });
-    this.metric(metrics, "所选期间总额", formatCents(stats.cents), `${stats.count} 笔`, () => this.goDetails(), change(stats.cents - previousStats.cents));
-    this.metric(metrics, "笔数", String(stats.count), "点击查看全部明细", () => this.goDetails(), change(stats.count - previousStats.count, true));
-    this.metric(metrics, "日均", formatCents(stats.averagePerRecordedDayCents), `分母：${stats.recordedDays} 个有日记账文件的日期`, () => this.goDetails(), change(stats.averagePerRecordedDayCents - previousStats.averagePerRecordedDayCents));
-    this.metric(metrics, "最大单笔", stats.maxRecord ? formatCents(stats.maxRecord.cents) : "—", stats.maxRecord ? `${stats.maxRecord.category} · ${stats.maxRecord.date}` : "暂无记录", () => this.goDetails());
+    this.metric(metrics, "所选期间花费", formatCents(stats.cents), `${stats.count} 笔 · 查看各分类前五笔`, () => this.openOverviewMetric("spending"), change(stats.cents - previousStats.cents));
+    this.metric(metrics, "笔数", String(stats.count), "查看分类笔数排行", () => this.openOverviewMetric("count"), change(stats.count - previousStats.count, true));
+    this.metric(metrics, "日均", formatCents(stats.averagePerRecordedDayCents), `分母：${stats.recordedDays} 个有日记账文件的日期`, () => this.openOverviewMetric("average"), change(stats.averagePerRecordedDayCents - previousStats.averagePerRecordedDayCents));
+    this.metric(metrics, "最大单笔", stats.maxRecord ? formatCents(stats.maxRecord.cents) : "—", stats.maxRecord ? `${stats.maxRecord.category} · ${stats.maxRecord.date}` : "暂无记录", () => this.openOverviewMetric("largest"));
     section.createDiv({ cls: "ledger-metric-comparison-note", text: `${previous.start} 至 ${previous.end}`, attr: { "aria-label": `对比期间：${previous.start} 至 ${previous.end}` } });
     this.renderSalaryCycle(this.overviewSection(parent, "工资周期收支", "wallet"));
     if (records.length === 0) {
@@ -526,6 +526,7 @@ export class LedgerStatisticsView extends ItemView {
     this.renderTrend(trendHost);
     const pair = parent.createDiv({ cls: "ledger-overview-pair" });
     this.renderCategory(this.overviewSection(pair, "分类统计", "chart-pie"));
+    this.renderSpendingAnalysis(this.overviewSection(parent, "消费分析", "chart-no-axes-combined"));
     const starred = this.starredRecords();
     if (starred.length) renderStarredExpenses(this.overviewSection(parent, "星标支出", "star"), starred, (record) => void this.openRecord(record));
     return pair;
@@ -584,6 +585,13 @@ export class LedgerStatisticsView extends ItemView {
     setIcon(symbol, icon);
     heading.createEl("h3", { cls: "ledger-section-title", text: title });
     return section.createDiv({ cls: "ledger-overview-body" });
+  }
+
+  private renderSpendingAnalysis(parent: HTMLElement): void {
+    const analysis = buildCategoryAnalysis([...this.plugin.repository.files.values()], this.filter,
+      previousTrendRange(this.filter.range, this.preset), this.plugin.settings.reportObjectRules, true);
+    renderOverviewAnalysis(parent, analysis, record => void this.openRecord(record),
+      (label, records) => showCategoryRecords(this.app, label, records, record => void this.openRecord(record)));
   }
 
   private renderSingleCategory(parent: HTMLElement): void {
@@ -769,18 +777,28 @@ export class LedgerStatisticsView extends ItemView {
     });
     const records = this.matchingRecords(this.filter);
     const unit = this.trendUnit === "auto" ? this.rangeTrendUnit() : this.trendUnit;
+    const cumulative = this.trendChart === "cumulative";
+    const range = { ...this.filter.range };
+    if (this.trendChart !== "bar" && range.end > todayIso()) range.end = todayIso();
+    const previousRange = previousTrendRange(this.filter.range, this.preset);
+    const previousRecords = this.matchingRecords({ ...this.filter, range: previousRange });
+    const knownDates = new Set<string>();
+    for (const file of this.plugin.repository.files.values()) {
+      if (file.date) knownDates.add(file.date);
+      for (const record of file.records) knownDates.add(record.date);
+    }
+    const series = alignedTrendSeries(records, previousRecords, range, previousRange, cumulative ? "day" : unit, cumulative, knownDates);
     const showRecords = (point: { start: string; end: string }): void => this.drillRange({ start: point.start, end: point.end });
-    if (this.trendChart === "cumulative") {
-      const cumulativeRange = { ...this.filter.range, end: this.filter.range.end < todayIso() ? this.filter.range.end : todayIso() };
-      renderTrendChart(parent, cumulativeTrendPoints(records, cumulativeRange, "day"), "cumulative", point => {
+    if (cumulative) {
+      renderTrendChart(parent, series.points, "cumulative", point => {
         new TrendDateNoteModal(this.plugin, point.end, () => {
           showCategoryRecords(this.app, `${point.end} · 当天支出`,
             records.filter(record => record.date === point.end), record => void this.openRecord(record));
         }).open();
-      }, { dateNotes: this.plugin.settings.trendDateNotes });
+      }, { dateNotes: this.plugin.settings.trendDateNotes, comparison: series.comparison });
     } else {
-      const posted = this.trendChart === "line" ? records.filter(record => record.date <= todayIso()) : records;
-      renderTrendChart(parent, trendPoints(posted, unit), this.trendChart, showRecords, {
+      renderTrendChart(parent, series.points, this.trendChart, showRecords, {
+        comparison: series.comparison,
         dailyAverage: dailySpendingAverage(records, this.filter.range, todayIso())
       });
     }
@@ -1062,6 +1080,11 @@ export class LedgerStatisticsView extends ItemView {
     }
   }
 
+  private openOverviewMetric(metric: OverviewMetric): void {
+    new OverviewMetricModal(this.app, metric,
+      buildOverviewDetails([...this.plugin.repository.files.values()], this.filter), record => void this.openRecord(record)).open();
+  }
+
   private metric(parent: HTMLElement, label: string, value: string, detail: string, onClick?: () => void, change?: { difference: number | null; count: boolean; reference: string }): void {
     const card = parent.createEl(onClick ? "button" : "div", { cls: "ledger-metric" });
     card.createDiv({ cls: "ledger-metric-label", text: label });
@@ -1079,7 +1102,11 @@ export class LedgerStatisticsView extends ItemView {
       delta.createSpan({ text: `${difference ? difference > 0 ? "+" : "−" : ""}${amount}` });
       number.setAttribute("aria-label", `${label} ${value}，${spokenDelta}；${change.reference}`);
     }
-    if (onClick) card.addEventListener("click", onClick);
+    if (onClick) {
+      card.setAttribute("type", "button");
+      card.setAttribute("aria-haspopup", "dialog");
+      card.addEventListener("click", onClick);
+    }
   }
 
   private applyPreset(preset: DatePreset): void {

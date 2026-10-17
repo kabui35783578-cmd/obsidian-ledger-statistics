@@ -69,6 +69,38 @@
 .ledger-dialog button:focus-visible, .ledger-dialog summary:focus-visible, .ledger-dialog input:focus-visible, .ledger-dialog select:focus-visible { outline: 2px solid var(--ledger-accent); outline-offset: 3px; }
 .ledger-dialog input[type="checkbox"] { accent-color: var(--mono-ink); }
 .ledger-dialog .ledger-note { color: var(--mono-3); }
+.modal-container .modal.ledger-dialog.ledger-overview-modal { display: flex; flex-direction: column; width: min(720px, 94vw); max-height: min(780px, calc(100dvh - 40px)); }
+.ledger-overview-modal .modal-header { flex: none; padding-right: 30px; }
+.ledger-overview-modal .modal-content { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.ledger-overview-detail-hero { margin: 20px 0; padding: 18px; border-radius: 16px; background: var(--ledger-panel); }
+.ledger-overview-detail-hero > strong { display: block; margin-bottom: 8px; font-size: 30px; line-height: 1.2; font-variant-numeric: tabular-nums; letter-spacing: -.04em; }
+.ledger-overview-detail-explanation { margin: 0 0 18px; color: var(--mono-3); font-size: 12px; line-height: 1.8; }
+.ledger-overview-detail-category { margin: 20px 0 24px; }
+.ledger-overview-detail-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; padding-bottom: 8px; border-bottom: 1px solid var(--mono-grid); }
+.ledger-overview-detail-heading h3 { margin: 0; color: var(--mono-ink); font-size: 16px; }
+.ledger-overview-detail-heading > span { color: var(--mono-3); font-size: 12px; }
+.ledger-overview-modal button.ledger-overview-detail-record, .ledger-overview-detail-count-row, .ledger-overview-detail-day-summary { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 60px; height: auto; margin: 0; padding: 13px 4px; border: 0; border-bottom: 1px solid var(--mono-grid); border-radius: 0; background: transparent; box-shadow: none; color: var(--mono-ink); text-align: left; white-space: normal; }
+.ledger-overview-modal button.ledger-overview-detail-record:hover, .ledger-overview-detail-day-summary:hover { background: var(--ledger-panel); }
+.ledger-overview-detail-rank { flex: 0 0 22px; color: var(--mono-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+.ledger-overview-detail-copy { flex: 1; min-width: 0; }
+.ledger-overview-detail-copy > strong { display: block; font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.ledger-overview-detail-copy > small { display: block; margin-top: 3px; color: var(--mono-3); font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
+.ledger-overview-detail-record > strong, .ledger-overview-detail-count-row > strong, .ledger-overview-detail-day-summary > strong { flex-shrink: 0; font-size: 14px; font-variant-numeric: tabular-nums; }
+.ledger-overview-detail-track { height: 3px; margin: 9px 0 2px; background: var(--mono-grid); border-radius: 4px; }
+.ledger-overview-detail-track > div { height: 100%; background: var(--mono-3); border-radius: inherit; }
+.ledger-overview-detail-count-row:first-of-type .ledger-overview-detail-track > div { background: var(--ledger-accent); }
+.ledger-overview-detail-day-summary { cursor: pointer; list-style: none; }
+.ledger-overview-detail-day-summary::-webkit-details-marker { display: none; }
+.ledger-overview-detail-day-summary::after { content: "⌄"; color: var(--mono-3); }
+.ledger-overview-detail-day[open] > summary::after { transform: rotate(180deg); }
+.ledger-overview-detail-day > .ledger-note { margin: 12px 4px; }
+.ledger-overview-detail-more { display: block; margin: 18px auto 0; }
+.ledger-overview-detail-more[hidden] { display: none; }
+@media (max-width: 600px) {
+  .modal-container .modal.ledger-dialog.ledger-overview-modal { width: calc(100vw - 16px); max-height: calc(100dvh - 24px); padding: 20px 14px; }
+  .ledger-overview-modal button.ledger-overview-detail-record, .ledger-overview-detail-count-row, .ledger-overview-detail-day-summary { gap: 8px; }
+  .ledger-overview-detail-record > strong, .ledger-overview-detail-day-summary > strong { font-size: 13px; }
+}
 .ledger-record-picker .prompt-input { background: var(--ledger-panel); color: var(--mono-ink); border-color: var(--mono-grid); box-shadow: none; }
 .ledger-record-picker .suggestion-item { padding: 12px; border-radius: 12px; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
 .ledger-record-picker .suggestion-item.is-selected { color: var(--mono-ink); background: var(--ledger-panel-strong); }
@@ -1905,6 +1937,10 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
 }
 
 .ledger-trend-average { pointer-events: none; }
+.ledger-trend-comparison-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px; margin: 4px 0 12px; font-size: 12px; color: var(--mono-3); }
+.ledger-trend-current-key, .ledger-trend-previous-key { display: flex; align-items: center; gap: 7px; }
+.ledger-trend-current-key::before, .ledger-trend-previous-key::before { content: ""; display: block; width: 24px; border-top: 2px solid var(--mono-ink); }
+.ledger-trend-previous-key::before { border-top: 2px dashed #66838B; }
 .ledger-trend-desktop-scroll { max-width: 100%; overflow-x: auto; }
 .ledger-trend-average-label {
   fill: var(--mono-3);
@@ -3796,6 +3832,13 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
 .ledger-category-chart-cell .ledger-legend-right { grid-row: 2; width: 100%; justify-self: stretch; }
 .ledger-category-chart-cell .ledger-legend-left { grid-column: 1; }
 .ledger-category-chart-cell .ledger-legend-right { grid-column: 2; }
+.ledger-overview-pair .ledger-donut-wrap { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.ledger-overview-pair .ledger-tick-donut { grid-column: 1 / -1; grid-row: 1; }
+.ledger-overview-pair .ledger-legend-left, .ledger-overview-pair .ledger-legend-right { grid-row: 2; width: 100%; justify-self: stretch; }
+.ledger-overview-pair .ledger-legend-left { grid-column: 1; }
+.ledger-overview-pair .ledger-legend-right { grid-column: 2; }
+.ledger-tick-donut.is-mobile { max-width: 400px; }
+.ledger-tick-donut.is-mobile .ledger-donut-label { font-size: 9.5px; }
 .ledger-category-plot { max-height: 330px; margin: 10px auto 0; }
 @media (max-width: 700px) {
   .ledger-category-grid { grid-template-columns: minmax(0, 1fr); }

@@ -1,7 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { cumulativeTrendPoints, cumulativeAverageProgress, dailySpendingAverage, normalizeTrendDateNotes } = require('../dist/core.cjs');
-const { renderTrendChart } = require('../dist/ui.cjs');
+const { renderTrendChart, renderDonut } = require('../dist/ui.cjs');
+const { alignedTrendSeries, previousTrendRange } = require('../dist/trend-comparison.cjs');
+const { LedgerStatisticsView } = require('../dist/view.cjs');
 const record = (date, cents) => ({ date, cents });
 
 test('daily accumulation sums multiple transactions, carries missing days, and starts at the selected range', () => {
@@ -92,9 +94,95 @@ class Element {
   get firstChild() { return this.children[0]; }
   createEl(tag, options) { const child = new Element(tag, options); this.append(child); return child; }
   createDiv(options) { return this.createEl('div', options); }
+  createSpan(options) { return this.createEl('span', options); }
   all() { return this.children.flatMap(child => [child, ...child.all()]); }
   querySelectorAll(selector) { return this.all().filter(child => selector.slice(1).split('.').every(c => child.classList.contains(c))); }
 }
+
+test('both donut layouts retain a leader and percentage label for every segment, including narrow overview containers', () => {
+  const previous = global.document;
+  global.document = { createElementNS: (_, tag) => new Element(tag) };
+  try {
+    const data = [5000, 2500, 1000, 800, 500, 200].map((cents, index) => ({ category: `分类${index + 1}`, cents, count: 1, share: cents / 10000 }));
+    const root = new Element('div');
+    const clicked = [];
+    renderDonut(root, data, label => clicked.push(label));
+    const charts = root.all().filter(el => el.tag === 'svg');
+    assert.equal(charts.length, 2);
+    for (const svg of charts) {
+      assert.equal(svg.all().filter(el => el.classList.contains('ledger-donut-label')).length, 6);
+      assert.equal(svg.all().filter(el => el.classList.contains('ledger-donut-leader')).length, 6);
+      assert.ok(svg.all().filter(el => el.classList.contains('ledger-donut-label')).every(el => /%$/.test(el.textContent)));
+      const first = svg.all().find(el => el.classList.contains('ledger-donut-segment'));
+      first.listeners.click();
+      assert.equal(clicked.at(-1), '分类1');
+    }
+    assert.equal(root.all().filter(el => el.classList.contains('ledger-legend-item')).length, 6);
+  } finally { global.document = previous; }
+});
+
+test('all three charts draw a separate previous-period dashed path in both layouts, scale it, and retain current clicks', () => {
+  const previous = global.document;
+  global.document = { createElementNS: (_, tag) => new Element(tag) };
+  try {
+    const range = { start: '2026-10-15', end: '2026-10-17' };
+    const prior = previousTrendRange(range, 'salary');
+    for (const type of ['line', 'bar', 'cumulative']) {
+      const series = alignedTrendSeries([record('2026-10-15', 100)], [record('2026-09-15', 50000), record('2026-09-17', 60000)], range, prior, 'day', type === 'cumulative', new Set(['2026-09-15', '2026-09-17']));
+      const root = new Element('div');
+      const clicked = [];
+      renderTrendChart(root, series.points, type, p => clicked.push(p), { comparison: series.comparison, dailyAverage: { cents: 33, days: 3 }, dateNotes: { '2026-10-15': '保留备注' } });
+      const charts = root.all().filter(el => el.tag === 'svg');
+      assert.equal(charts.length, 2);
+      assert.ok(root.all().some(el => el.classList.contains('ledger-trend-previous-key') && el.textContent.includes('2026-09-15')));
+      for (const svg of charts) {
+        const line = svg.all().find(el => el.classList.contains('ledger-trend-previous-line'));
+        assert.equal(line.attributes['stroke-dasharray'], '8 4');
+        assert.equal(line.attributes.stroke, '#66838B');
+        assert.equal((line.attributes.d.match(/M/g) ?? []).length, type === 'cumulative' ? 1 : 2, 'Never bridge the missing date');
+        assert.ok(Number(svg.attributes['data-axis-max']) >= 50000);
+        assert.ok(svg.all().some(el => el.classList.contains('ledger-trend-average')));
+        const hit = svg.all().find(el => el.classList.contains('ledger-trend-hit-target'));
+        assert.match(hit.attributes['aria-label'], /上期 2026-09-15：¥500.00/);
+        hit.listeners.click({ preventDefault() {}, stopPropagation() {} });
+        assert.equal(clicked.at(-1), series.points[0], 'Comparison must not hijack the current period drilldown or note editor');
+      }
+    }
+  } finally { global.document = previous; }
+});
+
+test('the view applies identical category, accounting-scope, and keyword filters to the previous series', () => {
+  const previous = global.document;
+  global.document = { createElementNS: (_, tag) => new Element(tag) };
+  try {
+    const records = date => [
+      { date, cents: 1000, category: '餐饮', note: '午饭' },
+      { date, cents: 2000, category: '餐饮', note: '晚饭' },
+      { date, cents: 3000, category: '购物', note: '午饭' },
+      { date, cents: 4000, category: '债务/还款', note: '午饭' }
+    ].map((r, index) => ({ id: `${date}-${index}`, path: `${date}.md`, time: '12:00', line: index, raw: '', ...r }));
+    const files = ['2024-11-15', '2024-12-15'].map(date => ({ date, records: records(date) }));
+    const plugin = { settings: { defaultView: 'overview', defaultDatePreset: 'salary', excludedCategories: ['债务/还款'], starredRecordIds: [], trendDateNotes: {} }, repository: { files: new Map(files.map(f => [f.date, f])) } };
+    const view = new LedgerStatisticsView({}, plugin);
+    view.filter.range = { start: '2024-12-15', end: '2024-12-15' };
+    view.filter.categories = ['餐饮'];
+    view.filter.keyword = '午饭';
+    for (const type of ['line', 'bar', 'cumulative']) {
+      view.trendChart = type;
+      const root = new Element('div');
+      view.renderTrend(root);
+      const prior = root.all().find(el => el.classList.contains('ledger-trend-previous'));
+      assert.equal(prior.children.find(el => el.tag === 'circle').attributes['data-cents'], '1000');
+      const current = root.all().find(el => el.classList.contains('ledger-trend-point'));
+      assert.equal(current.attributes['data-cents'], '1000');
+    }
+    view.filter.categories = [];
+    view.filter.keyword = '';
+    const root = new Element('div');
+    view.renderTrend(root);
+    assert.equal(root.all().find(el => el.classList.contains('ledger-trend-previous')).children.find(el => el.tag === 'circle').attributes['data-cents'], '6000', 'Excluded debt stays excluded in the previous cycle');
+  } finally { global.document = previous; }
+});
 
 test('cumulative charts share the native style, label totals, and preserve desktop and mobile evidence clicks', () => {
   const previous = global.document;

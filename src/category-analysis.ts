@@ -44,7 +44,7 @@ function groupRecords(records: LedgerRecord[], label: (record: LedgerRecord) => 
     .sort((a, b) => b.cents - a.cents || b.records.length - a.records.length || a.label.localeCompare(b.label, "zh-CN"));
 }
 
-export function buildCategoryAnalysis(files: ParsedLedgerFile[], filter: FilterState, previousRange: DateRange, objectRules?: string) {
+export function buildCategoryAnalysis(files: ParsedLedgerFile[], filter: FilterState, previousRange: DateRange, objectRules?: string, acrossCategories = false) {
   const records = filteredRecords(files, filter), previous = filteredRecords(files, { ...filter, range: previousRange });
   const summary = summarize(files, records, filter.range), previousSummary = summarize(files, previous, previousRange);
   const coverage = reportCoverage(files, filter.range), previousCoverage = reportCoverage(files, previousRange);
@@ -63,8 +63,9 @@ export function buildCategoryAnalysis(files: ParsedLedgerFile[], filter: FilterS
     const objects = identifyReportObjects(record.note, rules).filter(o => o.kind === "object" || o.kind === "mixed");
     return objects.length === 1 ? objects[0].label : objects.length > 1 ? "多用途（未拆分）" : "未识别用途";
   });
-  const repeats = groupRecords(records, categoryNoteLabel).filter(group => group.label !== "无备注" && group.records.length >= 2);
-  const previousGroups = groupRecords(previous, categoryNoteLabel);
+  const repeatLabel = (record: LedgerRecord): string => acrossCategories ? `${record.category} · ${categoryNoteLabel(record)}` : categoryNoteLabel(record);
+  const repeats = groupRecords(records, repeatLabel).filter(group => categoryNoteLabel(group.records[0]) !== "无备注" && group.records.length >= 2);
+  const previousGroups = groupRecords(previous, repeatLabel);
   const bins = amounts.length ? [...new Set([0, quantile(.25)!, quantile(.5)!, quantile(.75)!])].map((low, i, edges) => {
     const high = edges[i + 1] ?? Infinity;
     return { low, high, records: records.filter(r => r.cents >= low && r.cents < high) };

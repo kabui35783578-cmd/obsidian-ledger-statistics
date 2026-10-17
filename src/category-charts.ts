@@ -64,22 +64,23 @@ export function renderSelectedBox(parent: HTMLElement, current: LedgerRecord[], 
   text(svg, { x: 260, y: 309, "font-size": 11, "font-weight": 600, fill: MUTED, "text-anchor": "middle" }, "箱体 = 中间一半 · 横线 = 中位数 · 空心点 = 统计离群值");
 }
 
-export function renderWeekdayRungs(parent: HTMLElement, days: Array<{ label: string; mean: number; records: LedgerRecord[] }>, show: (label: string, records: LedgerRecord[]) => void): void {
+export function renderWeekdayRungs(parent: HTMLElement, days: Array<{ label: string; mean: number; records: LedgerRecord[]; observed?: number }>, show: (label: string, records: LedgerRecord[]) => void): void {
   // F1: one vertical ladder per weekday; every full rung is the same amount.
   const svg = plot(parent, "各星期按账本日期计算的日均金额", 460, 320);
-  const max = Math.max(100, ...days.map(day => day.mean));
+  const actualMax = Math.max(0, ...days.filter(day => day.observed !== 0).map(day => day.mean));
+  const max = Math.max(100, actualMax);
   const raw = max / 28, magnitude = 10 ** Math.floor(Math.log10(raw)), normalized = raw / magnitude;
   const unit = Math.max(1, magnitude * (normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10));
-  const step = 194 / Math.max(1, max / unit), base = 256, leading = days.findIndex(day => day.mean === max);
+  const step = 194 / Math.max(1, max / unit), base = 256, leading = actualMax > 0 ? days.findIndex(day => day.mean === actualMax) : -1;
   days.forEach((day, index) => {
     const x = 46 + index * 61, group = el(svg, "g", {}), units = day.mean / unit;
-    target(group, `${day.label}日均 ${money(day.mean)}`, () => show(day.label, day.records));
+    if (day.observed !== 0) target(group, `${day.label}日均 ${money(day.mean)}${day.observed === undefined ? "" : `，${day.observed} 个账本日期`}`, () => show(day.label, day.records));
     for (let rung = 0; rung < Math.ceil(units); rung++) {
       const fraction = Math.min(1, units - rung), yy = base - (rung + fraction) * step, half = 14 - 1.5 + rnd(rung + 1, index + 2) * 3;
       el(group, "line", { x1: x - half, y1: yy, x2: x + half, y2: yy, stroke: index === leading ? HERO : INK, "stroke-width": 1, "stroke-dasharray": fraction < 1 ? "2 2" : "", class: "ledger-fade", style: `animation-delay:${index * .08 + rung * .012}s` });
       if (rung % 5 === 4) el(group, "circle", { cx: x + 18.5, cy: yy, r: .8, fill: MUTED });
     }
-    text(group, { x, y: base - units * step - 12, "text-anchor": "middle", "font-size": 10, "font-weight": 800, fill: INK }, money(day.mean));
+    text(group, { x, y: base - units * step - 12, "text-anchor": "middle", "font-size": 10, "font-weight": 800, fill: INK }, day.observed === 0 ? "—" : money(day.mean));
     text(group, { x, y: base + 20, "text-anchor": "middle", "font-size": 10, "font-weight": 700, fill: MUTED }, day.label);
   });
   el(svg, "line", { x1: 22, y1: base + 4, x2: 442, y2: base + 4, stroke: GRID, "stroke-width": .8 });
