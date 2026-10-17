@@ -163,6 +163,29 @@ test('daily snapshots are immutable, month comparison uses actual saved dates an
   assert.equal(a.storeAssetSnapshot(state, a.buildAssetSnapshot(state, [], at(19))), false);
   assert.equal(a.previousMonthSnapshot(state, '2026-12-01'), undefined);
 });
+
+test('synced object key order and omitted undefined fields never refresh an unchanged daily snapshot', () => {
+  const sortKeys = v => Array.isArray(v) ? v.map(sortKeys) : v && typeof v === 'object'
+    ? Object.fromEntries(Object.keys(v).sort().map(k => [k, sortKeys(v[k])])) : v;
+  const state = fixture(); a.storeAssetSnapshot(state, a.buildAssetSnapshot(state, [], at(18)));
+  const received = clone(sortKeys(state)), original = clone(received.snapshots[0]);
+  assert.equal(a.storeAssetSnapshot(received, a.buildAssetSnapshot(received, [], at(19))), false);
+  assert.deepEqual(received.snapshots[0], original);
+  received.accounts[0].balanceCents++;
+  assert.equal(a.storeAssetSnapshot(received, a.buildAssetSnapshot(received, [], at(19))), true);
+  assert.notEqual(received.snapshots[0].savedAt, original.savedAt);
+});
+
+test('snapshot comparison still detects holding, quote, pending-item and calendar-date changes', () => {
+  const state = fixture(); a.storeAssetSnapshot(state, a.buildAssetSnapshot(state, [], at(18)));
+  const original = clone(state.snapshots[0]);
+  for (const mutate of [s => s.accounts[0].cents++, s => s.accounts.find(x => x.holdings.length).holdings[0].quantity = '999',
+    s => s.accounts.find(x => x.holdings.length).holdings[0].quote.price = '2',
+    s => s.pending.push('需要核对'), s => s.date = '2026-10-11']) {
+    const next = clone(original); mutate(next); next.savedAt = at(19).toISOString();
+    assert.equal(a.storeAssetSnapshot(clone(state), next), true);
+  }
+});
 test('fund parser reads literal JSON only, preserves provider day and refuses money-market funds', () => {
   const body = name => `var fS_name="${name}"; var fS_code="000001"; var Data_netWorthTrend=[{"x":1790697600000,"y":1.222}];`;
   const quote = q.parseFundQuote('000001', body('普通基金'), at(18));

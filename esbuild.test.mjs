@@ -1,6 +1,7 @@
 import esbuild from "esbuild";
 
 await esbuild.build({ entryPoints: ["src/vault-data.ts"], bundle: true, platform: "node", format: "cjs", target: "node18", outfile: "dist/vault-data.cjs" });
+await esbuild.build({ entryPoints: ["src/json-data.ts"], bundle: true, platform: "node", format: "cjs", target: "node18", outfile: "dist/json-data.cjs" });
 
 await esbuild.build({ entryPoints: ["src/salary-history.ts"], bundle: true, platform: "node", format: "cjs", target: "node18", outfile: "dist/salary-history.cjs" });
 await esbuild.build({ entryPoints: ["src/treemap.ts"], bundle: true, platform: "node", format: "cjs", target: "node18", outfile: "dist/treemap.cjs" });

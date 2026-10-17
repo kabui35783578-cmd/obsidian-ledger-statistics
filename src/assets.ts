@@ -19,6 +19,7 @@ import Decimal from "decimal.js";
  * THE SOFTWARE.
  */
 import { LedgerRecord, isoFromDate, isValidIsoDate, renameStarredIds } from "./core";
+import { jsonDataEqual } from "./json-data";
 
 Decimal.set({ precision: 32, rounding: Decimal.ROUND_HALF_UP });
 export type AssetKind = "cash" | "investment" | "fixed" | "receivable" | "liability";
@@ -278,7 +279,7 @@ export function assetTotals(snapshot: AssetSnapshot, excludeFixed = false): Asse
 export function storeAssetSnapshot(state: AssetState, snapshot: AssetSnapshot): boolean {
   if (!state.accounts.length) return false;
   const index = state.snapshots.findIndex(s => s.date === snapshot.date), existing = state.snapshots[index];
-  if (existing && JSON.stringify([existing.accounts, existing.pending]) === JSON.stringify([snapshot.accounts, snapshot.pending])) return false;
+  if (existing && jsonDataEqual(existing.accounts, snapshot.accounts) && jsonDataEqual(existing.pending, snapshot.pending)) return false;
   const copy = JSON.parse(JSON.stringify(snapshot)) as AssetSnapshot;
   if (index >= 0) state.snapshots[index] = copy; else state.snapshots.push(copy);
   state.snapshots.sort((a, b) => a.date.localeCompare(b.date));

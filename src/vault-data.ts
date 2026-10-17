@@ -1,4 +1,5 @@
 import type { TFile, Vault } from "obsidian";
+import { jsonDataEqual as equal } from "./json-data";
 
 export const VAULT_DATA_FOLDER = "记账统计数据";
 export const VAULT_DATA_PATH = `${VAULT_DATA_FOLDER}/状态.json`;
@@ -18,7 +19,6 @@ export interface VaultDataDocument {
   entries: Record<string, Cell>;
 }
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
-const equal = (a: unknown, b: unknown): boolean => stable(a) === stable(b);
 function stable(value: unknown): string {
   if (value === undefined) return "undefined";
   if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;

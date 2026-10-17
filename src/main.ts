@@ -14,6 +14,7 @@ import { AssetQuoteMonitor } from "./asset-quotes";
 import { disposeAssetGestures } from "./asset-gestures";
 import { migrateAiSecret, withoutLegacyAiSecret } from "./ai-secrets";
 import { VAULT_DATA_PATH, VaultDataStore, rebaseShared, sharedSettings } from "./vault-data";
+import { jsonDataEqual } from "./json-data";
 
 export default class LedgerStatisticsPlugin extends Plugin {
   settings: LedgerSettings = DEFAULT_SETTINGS;
@@ -165,7 +166,7 @@ export default class LedgerStatisticsPlugin extends Plugin {
     this.saveQueue = saved.catch(() => {});
     await saved;
     this.salaryHistoryDirty = ["salaryCycleStart", "salaryCycles", "salaryCents", "balanceCalibration", "balanceCalibrationNote"].some(key =>
-      JSON.stringify(this.settings[key as keyof LedgerSettings]) !== JSON.stringify(data[key]));
+      !jsonDataEqual(this.settings[key as keyof LedgerSettings], data[key]));
     if (rescan) await this.repository.setFolder(this.settings.ledgerFolder);
     if (refresh) this.refreshViews();
     this.checkBudget();
@@ -245,7 +246,7 @@ export default class LedgerStatisticsPlugin extends Plugin {
       const before = this.settings.trendDateNotes;
       const next = { ...before };
       if (note.trim()) next[date] = note.trim(); else delete next[date];
-      if (JSON.stringify(before) === JSON.stringify(next)) return;
+      if (jsonDataEqual(before, next)) return;
       this.settings.trendDateNotes = next;
       try { await this.saveSettings(false, false); }
       catch (error) { this.settings.trendDateNotes = before; throw error; }
@@ -280,7 +281,7 @@ export default class LedgerStatisticsPlugin extends Plugin {
 
   private syncSalaryCycles(now = new Date()): boolean {
     const next = reconcileSalaryCycles(this.settings, now);
-    const changed = Object.entries(next).some(([key, value]) => JSON.stringify(this.settings[key as keyof LedgerSettings]) !== JSON.stringify(value));
+    const changed = Object.entries(next).some(([key, value]) => !jsonDataEqual(this.settings[key as keyof LedgerSettings], value));
     if (changed) { Object.assign(this.settings, next); this.salaryHistoryDirty = true; }
     return changed;
   }
@@ -369,7 +370,7 @@ export default class LedgerStatisticsPlugin extends Plugin {
       storeAssetSnapshot(next, buildAssetSnapshot(next, flattenRecords(this.repository.files.values())));
       // Unrelated vault renames also reach asset-link maintenance. A no-op must
       // not write data.json and feed another sync event or rebuild every view.
-      if (JSON.stringify(next) === JSON.stringify(before)) return;
+      if (jsonDataEqual(next, before)) return;
       this.settings.assets = next;
       try { await this.saveSettings(false, false); }
       catch (error) { this.settings.assets = before; throw error; }

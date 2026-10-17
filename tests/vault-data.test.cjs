@@ -2,6 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const V = require('../dist/vault-data.cjs');
 const Plugin = require('../dist/main.cjs').default;
+const assets = require('../dist/assets.cjs');
+const salary = require('../dist/salary-history.cjs');
 const DEFAULT_SETTINGS = new Plugin().settings;
 const copy = value => structuredClone(value);
 const defaults = () => V.sharedSettings(copy(DEFAULT_SETTINGS));
@@ -218,4 +220,53 @@ test('a conflict arriving inside the locked write is backed up before the final 
   va.beforeProcess = () => va.files.set(V.VAULT_DATA_PATH, vb.text());
   const aa = a.data; aa.trendDateNotes['2026-10-01'] = '电脑修改'; await a.save(a.data, aa);
   assert.ok([...va.files].some(([p, text]) => p.includes('/conflict-') && text.includes('晚到的手机修改') && text.includes('电脑修改')));
+});
+
+test('real 30-second foreground ticks after a sync round trip do not save snapshots or rewrite the vault file', async () => {
+  const vault = new FakeVault(), initial = legacy();
+  Object.assign(initial, salary.reconcileSalaryCycles(initial));
+  assets.storeAssetSnapshot(initial.assets, assets.buildAssetSnapshot(initial.assets, []));
+  const data = store(vault, 'A'); await data.initialize(initial, true, 100);
+  const p = new Plugin(); p.settings = { ...copy(DEFAULT_SETTINGS), ...data.data };
+  p.vaultData = data; p.vaultSyncMeta = { version: 1, device: 'A' }; p.sharedDefaults = defaults(); p.assetsStopped = false;
+  p.app = { workspace: { getLeavesOfType: () => [] } }; p.repository = { loaded: true, files: new Map() };
+  p.checkBudget = () => {}; p.refreshViews = () => {}; p.refreshAssetQuotes = async () => {};
+  let settingsSaves = 0; const save = p.saveSettings.bind(p);
+  p.saveSettings = async (...args) => { settingsSaves++; await save(...args); };
+  p.saveData = async () => {};
+  const previousDocument = vault.text(), previousTime = p.settings.assets.snapshots[0].savedAt;
+  const oldDocument = global.document; global.document = { hidden: false };
+  try {
+    for (let i = 0; i < 8; i++) {
+      p.tick(); await p.assetQueue; await p.saveQueue;
+      assert.equal(await data.receive(), false);
+    }
+  } finally { global.document = oldDocument; }
+  assert.equal(settingsSaves, 0, 'No foreground tick should invent a salary or asset change');
+  assert.equal(p.salaryHistoryDirty, false);
+  assert.equal(vault.text(), previousDocument);
+  assert.equal(p.settings.assets.snapshots[0].savedAt, previousTime);
+  const baseline = vault.writes;
+  await p.updateAssets(state => { state.accounts[0].balanceCents++; });
+  assert.equal(vault.writes, baseline + 1, 'A real balance edit must still write and sync');
+  assert.equal(data.data.assets.accounts[0].balanceCents, initial.assets.accounts[0].balanceCents + 1);
+});
+
+test('two devices receiving each others reordered snapshots converge and remain idle across foreground checks', async () => {
+  const { va, vb, a, b } = await offlinePair();
+  const initial = a.data;
+  assets.storeAssetSnapshot(initial.assets, assets.buildAssetSnapshot(initial.assets, [], new Date('2026-10-17T03:00:00Z')));
+  await a.save(a.data, initial); vb.files.set(V.VAULT_DATA_PATH, va.text()); await b.receive();
+  const writesA = va.writes, writesB = vb.writes;
+  for (let i = 0; i < 6; i++) {
+    for (const data of [a, b]) {
+      const state = data.data.assets, snapshot = assets.buildAssetSnapshot(state, [], new Date(`2026-10-17T03:0${i}:30Z`));
+      const savedAt = state.snapshots[state.snapshots.length - 1].savedAt;
+      assert.equal(assets.storeAssetSnapshot(state, snapshot), false);
+      assert.equal(state.snapshots[state.snapshots.length - 1].savedAt, savedAt);
+    }
+    va.files.set(V.VAULT_DATA_PATH, vb.text()); await a.receive();
+    vb.files.set(V.VAULT_DATA_PATH, va.text()); await b.receive();
+  }
+  assert.equal(va.writes, writesA); assert.equal(vb.writes, writesB);
 });

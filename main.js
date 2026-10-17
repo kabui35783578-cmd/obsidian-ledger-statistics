@@ -39599,9 +39599,9 @@ function parseObjectRules(text2 = DEFAULT_REPORT_OBJECT_RULES) {
   text2.split(/\r?\n/).forEach((line, i) => {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) return;
-    const equal2 = trimmed.indexOf("="), raw = trimmed.slice(0, equal2).trim(), pattern = trimmed.slice(equal2 + 1).trim();
+    const equal = trimmed.indexOf("="), raw = trimmed.slice(0, equal).trim(), pattern = trimmed.slice(equal + 1).trim();
     const label2 = raw.startsWith("@") ? raw.slice(1).trim() : raw;
-    if (equal2 < 1 || !label2 || !pattern || labels.has(raw)) {
+    if (equal < 1 || !label2 || !pattern || labels.has(raw)) {
       out2.errors.push(`\u7B2C${i + 1}\u884C\uFF1A\u9700\u8981\u4E0D\u91CD\u590D\u7684\u201C\u6807\u7B7E=\u6B63\u5219\u201D`);
       return;
     }
@@ -42531,6 +42531,21 @@ var decimal_default = Decimal;
 
 // src/assets.ts
 init_core();
+
+// src/json-data.ts
+function jsonDataEqual(a, b) {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((value, i) => jsonDataEqual(value, b[i]));
+  }
+  const left = a, right = b;
+  const keys2 = Object.keys(left).filter((key) => left[key] !== void 0);
+  if (keys2.length !== Object.keys(right).filter((key) => right[key] !== void 0).length) return false;
+  return keys2.every((key) => Object.prototype.hasOwnProperty.call(right, key) && jsonDataEqual(left[key], right[key]));
+}
+
+// src/assets.ts
 decimal_default.set({ precision: 32, rounding: decimal_default.ROUND_HALF_UP });
 var ASSET_NAMES = { cash: "\u6D41\u52A8\u8D44\u91D1", investment: "\u6295\u8D44\u7406\u8D22", fixed: "\u56FA\u5B9A\u8D44\u4EA7", receivable: "\u5E94\u6536\u6B3E", liability: "\u8D1F\u503A" };
 function emptyAssets() {
@@ -42785,7 +42800,7 @@ function assetTotals(snapshot, excludeFixed = false) {
 function storeAssetSnapshot(state, snapshot) {
   if (!state.accounts.length) return false;
   const index = state.snapshots.findIndex((s) => s.date === snapshot.date), existing = state.snapshots[index];
-  if (existing && JSON.stringify([existing.accounts, existing.pending]) === JSON.stringify([snapshot.accounts, snapshot.pending])) return false;
+  if (existing && jsonDataEqual(existing.accounts, snapshot.accounts) && jsonDataEqual(existing.pending, snapshot.pending)) return false;
   const copy2 = JSON.parse(JSON.stringify(snapshot));
   if (index >= 0) state.snapshots[index] = copy2;
   else state.snapshots.push(copy2);
@@ -48320,7 +48335,6 @@ var SHARED_SETTING_KEYS = [
   "starredRecordIds"
 ];
 var clone5 = (value) => JSON.parse(JSON.stringify(value));
-var equal = (a, b) => stable(a) === stable(b);
 function stable(value) {
   if (value === void 0) return "undefined";
   if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
@@ -48395,16 +48409,16 @@ function allowedKey(key) {
     return false;
   }
   if (!Array.isArray(path) || !path.every((p) => typeof p === "string") || keyOf(path) !== key) return false;
-  if (path[0] === "$order") return collections.some((c) => !c.set && equal(path.slice(1), c.path));
-  if (collections.some((c) => path.length === c.path.length + 1 && equal(path.slice(0, -1), c.path))) return true;
-  if (dictionaries.some((p) => path.length === p.length + 1 && equal(path.slice(0, -1), p))) return true;
+  if (path[0] === "$order") return collections.some((c) => !c.set && jsonDataEqual(path.slice(1), c.path));
+  if (collections.some((c) => path.length === c.path.length + 1 && jsonDataEqual(path.slice(0, -1), c.path))) return true;
+  if (dictionaries.some((p) => path.length === p.length + 1 && jsonDataEqual(path.slice(0, -1), p))) return true;
   if (path.length === 2 && path[0] === "assets") return assetScalars.includes(path[1]);
   return path.length === 1 && SHARED_SETTING_KEYS.includes(path[0]) && !["assets", ...collections.map((c) => c.path[0]), ...dictionaries.map((p) => p[0])].includes(path[0]);
 }
 function validValue(key, value) {
   const path = JSON.parse(key);
   if (path[0] === "$order") return Array.isArray(value) && value.every((v) => typeof v === "string");
-  const collection = collections.find((c) => path.length === c.path.length + 1 && equal(path.slice(0, -1), c.path));
+  const collection = collections.find((c) => path.length === c.path.length + 1 && jsonDataEqual(path.slice(0, -1), c.path));
   if (collection) return collection.identity(value) === path[path.length - 1] && (collection.set ? typeof value === "string" : record(value));
   if (path[0] === "trendDateNotes" || path[1] === "recordAssignments") return typeof value === "string";
   if (path[1] === "quotes") return record(value) && typeof value.price === "string" && typeof value.asOf === "string";
@@ -48422,13 +48436,13 @@ function materialize(units, defaults2) {
   for (const path of dictionaries) put(result, path, {});
   for (const [key, value] of units) {
     const path = JSON.parse(key);
-    if (path[0] === "$order" || collections.some((c) => path.length === c.path.length + 1 && equal(path.slice(0, -1), c.path))) continue;
+    if (path[0] === "$order" || collections.some((c) => path.length === c.path.length + 1 && jsonDataEqual(path.slice(0, -1), c.path))) continue;
     put(result, path, clone5(value));
   }
   for (const c of collections) {
     const items = [...units].filter(([key]) => {
       const p = JSON.parse(key);
-      return p.length === c.path.length + 1 && equal(p.slice(0, -1), c.path);
+      return p.length === c.path.length + 1 && jsonDataEqual(p.slice(0, -1), c.path);
     });
     const order = units.get(keyOf(["$order", ...c.path]));
     const ranks = new Map((Array.isArray(order) ? order : []).map((v, i) => [v, i]));
@@ -48473,7 +48487,7 @@ function mergeVaultData(a, b) {
       doc.entries[key] = clone5(right);
       continue;
     }
-    const sameValue = left.deleted === right.deleted && equal(left.value, right.value);
+    const sameValue = left.deleted === right.deleted && jsonDataEqual(left.value, right.value);
     if (!sameValue && left.device === right.device && left.clock === right.clock) throw new Error("\u540C\u6B65\u7248\u672C\u91CD\u590D\u4F46\u5185\u5BB9\u4E0D\u540C\uFF0C\u5DF2\u505C\u6B62\u5199\u5165");
     if (!sameValue && JSON.parse(key)[0] !== "$order" && left.clock > ((_b2 = b.seen[left.device]) != null ? _b2 : 0) && right.clock > ((_c2 = a.seen[right.device]) != null ? _c2 : 0)) conflicts.push(key);
     if (right.clock > left.clock || right.clock === left.clock && right.device > left.device) doc.entries[key] = clone5(right);
@@ -48489,7 +48503,7 @@ function documentData(doc, defaults2) {
   return materialize(units, defaults2);
 }
 function editVaultData(doc, before, after, device, now = Date.now()) {
-  const base2 = flattenShared(before), next = flattenShared(after), changed = [.../* @__PURE__ */ new Set([...base2.keys(), ...next.keys()])].filter((k) => !equal(base2.get(k), next.get(k)));
+  const base2 = flattenShared(before), next = flattenShared(after), changed = [.../* @__PURE__ */ new Set([...base2.keys(), ...next.keys()])].filter((k) => !jsonDataEqual(base2.get(k), next.get(k)));
   if (!changed.length) return doc;
   const result = clone5(doc), clock = Math.max(now, ...Object.values(doc.seen).map((n) => n + 1), 1);
   result.seen[device] = clock;
@@ -48596,12 +48610,12 @@ var VaultDataStore = class {
     const merged = await this.join(candidate, disk);
     let committed = merged;
     let writtenText = diskText;
-    if (!equal(merged, disk)) {
+    if (!jsonDataEqual(merged, disk)) {
       let result;
       try {
         result = await this.vault.process(file, (text2) => {
           if (this.stopped) throw new Error("\u63D2\u4EF6\u5DF2\u5173\u95ED\uFF0C\u672A\u5199\u5165\u540C\u6B65\u6570\u636E");
-          if (!equal(parseVaultData(text2), disk)) throw new Error("ledger-vault-retry");
+          if (!jsonDataEqual(parseVaultData(text2), disk)) throw new Error("ledger-vault-retry");
           return stable(committed);
         });
       } catch (error2) {
@@ -48645,7 +48659,7 @@ var VaultDataStore = class {
     const merged = await this.join(this.document, remote);
     this.missing = false;
     await this.persist(merged);
-    return !equal(before, this.data);
+    return !jsonDataEqual(before, this.data);
   }
   async restoreMissing() {
     if (this.vault.getAbstractFileByPath(VAULT_DATA_PATH)) throw new Error("\u6570\u636E\u6587\u4EF6\u4ECD\u5B58\u5728\uFF0C\u672A\u8986\u76D6\uFF1B\u8BF7\u5148\u68C0\u67E5\u6587\u4EF6\u5185\u5BB9");
@@ -48656,7 +48670,7 @@ var VaultDataStore = class {
 };
 function rebaseShared(current, expected, committed, defaults2) {
   const actual = flattenShared(sharedSettings(current)), base2 = flattenShared(expected), next = flattenShared(committed);
-  for (const key of /* @__PURE__ */ new Set([...base2.keys(), ...next.keys()])) if (equal(actual.get(key), base2.get(key))) {
+  for (const key of /* @__PURE__ */ new Set([...base2.keys(), ...next.keys()])) if (jsonDataEqual(actual.get(key), base2.get(key))) {
     if (next.has(key)) actual.set(key, next.get(key));
     else actual.delete(key);
   }
@@ -48821,7 +48835,7 @@ var LedgerStatisticsPlugin = class extends import_obsidian10.Plugin {
     this.saveQueue = saved.catch(() => {
     });
     await saved;
-    this.salaryHistoryDirty = ["salaryCycleStart", "salaryCycles", "salaryCents", "balanceCalibration", "balanceCalibrationNote"].some((key) => JSON.stringify(this.settings[key]) !== JSON.stringify(data[key]));
+    this.salaryHistoryDirty = ["salaryCycleStart", "salaryCycles", "salaryCents", "balanceCalibration", "balanceCalibrationNote"].some((key) => !jsonDataEqual(this.settings[key], data[key]));
     if (rescan) await this.repository.setFolder(this.settings.ledgerFolder);
     if (refresh) this.refreshViews();
     this.checkBudget();
@@ -48896,7 +48910,7 @@ var LedgerStatisticsPlugin = class extends import_obsidian10.Plugin {
       const next = { ...before };
       if (note.trim()) next[date] = note.trim();
       else delete next[date];
-      if (JSON.stringify(before) === JSON.stringify(next)) return;
+      if (jsonDataEqual(before, next)) return;
       this.settings.trendDateNotes = next;
       try {
         await this.saveSettings(false, false);
@@ -48936,7 +48950,7 @@ var LedgerStatisticsPlugin = class extends import_obsidian10.Plugin {
   }
   syncSalaryCycles(now = /* @__PURE__ */ new Date()) {
     const next = reconcileSalaryCycles(this.settings, now);
-    const changed = Object.entries(next).some(([key, value]) => JSON.stringify(this.settings[key]) !== JSON.stringify(value));
+    const changed = Object.entries(next).some(([key, value]) => !jsonDataEqual(this.settings[key], value));
     if (changed) {
       Object.assign(this.settings, next);
       this.salaryHistoryDirty = true;
@@ -49043,7 +49057,7 @@ var LedgerStatisticsPlugin = class extends import_obsidian10.Plugin {
       const before = this.settings.assets, next = JSON.parse(JSON.stringify(before));
       change(next);
       storeAssetSnapshot(next, buildAssetSnapshot(next, flattenRecords(this.repository.files.values())));
-      if (JSON.stringify(next) === JSON.stringify(before)) return;
+      if (jsonDataEqual(next, before)) return;
       this.settings.assets = next;
       try {
         await this.saveSettings(false, false);
