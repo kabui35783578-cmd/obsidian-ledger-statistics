@@ -159,6 +159,7 @@ export class LedgerStatisticsView extends ItemView {
   private recordCache: LedgerRecord[] = [];
   private detailSearchTimer: number | null = null;
   private longPressTimers = new Set<number>();
+  private monitorTypingStartedAt: number | null = null;
 
   constructor(leaf: WorkspaceLeaf, private plugin: LedgerStatisticsPlugin) {
     super(leaf);
@@ -328,10 +329,15 @@ export class LedgerStatisticsView extends ItemView {
     const header = root.createDiv({ cls: "ledger-header" });
     const title = header.createDiv();
     if (this.activeView === "overview") {
-      const heading = title.createEl("h2", { cls: "ledger-monitor-title", attr: { "aria-label": "数据监测中..." } });
+      this.monitorTypingStartedAt ??= performance.now();
+      const elapsed = performance.now() - this.monitorTypingStartedAt;
+      const heading = title.createEl("h2", { cls: "ledger-monitor-title", attr: { "aria-label": "数据监控中..." } });
       const typing = heading.createSpan({ cls: "ledger-monitor-typing", attr: { "aria-hidden": "true" } });
-      typing.createSpan({ text: "数据监测中" });
-      for (let i = 0; i < 3; i++) typing.createSpan({ cls: "ledger-monitor-dot", text: "." });
+      const words = typing.createSpan({ cls: "ledger-monitor-words", text: "数据监控中" });
+      words.style.animationDelay = `-${elapsed}ms`;
+      const dots = typing.createSpan({ cls: "ledger-monitor-dots" });
+      dots.style.animationDelay = `${900 - elapsed}ms`;
+      for (let i = 0; i < 3; i++) dots.createSpan({ cls: "ledger-monitor-dot", text: "." });
     } else {
       title.createEl("h2", { text: VIEW_NAMES.find(([id]) => id === this.activeView)![1] });
     }

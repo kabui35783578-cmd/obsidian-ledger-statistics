@@ -46906,6 +46906,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
     this.recordCache = [];
     this.detailSearchTimer = null;
     this.longPressTimers = /* @__PURE__ */ new Set();
+    this.monitorTypingStartedAt = null;
     this.activeView = normalizeLedgerView(plugin.settings.defaultView);
     this.preset = plugin.settings.defaultDatePreset;
     const range = this.rangeForPreset(this.preset, /* @__PURE__ */ new Date(), 0);
@@ -47063,20 +47064,25 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian9.
     }
   }
   renderHeader(root) {
-    var _a2, _b2;
+    var _a2, _b2, _c2;
     const header = root.createDiv({ cls: "ledger-header" });
     const title = header.createDiv();
     if (this.activeView === "overview") {
-      const heading = title.createEl("h2", { cls: "ledger-monitor-title", attr: { "aria-label": "\u6570\u636E\u76D1\u6D4B\u4E2D..." } });
+      (_a2 = this.monitorTypingStartedAt) != null ? _a2 : this.monitorTypingStartedAt = performance.now();
+      const elapsed = performance.now() - this.monitorTypingStartedAt;
+      const heading = title.createEl("h2", { cls: "ledger-monitor-title", attr: { "aria-label": "\u6570\u636E\u76D1\u63A7\u4E2D..." } });
       const typing = heading.createSpan({ cls: "ledger-monitor-typing", attr: { "aria-hidden": "true" } });
-      typing.createSpan({ text: "\u6570\u636E\u76D1\u6D4B\u4E2D" });
-      for (let i = 0; i < 3; i++) typing.createSpan({ cls: "ledger-monitor-dot", text: "." });
+      const words = typing.createSpan({ cls: "ledger-monitor-words", text: "\u6570\u636E\u76D1\u63A7\u4E2D" });
+      words.style.animationDelay = `-${elapsed}ms`;
+      const dots = typing.createSpan({ cls: "ledger-monitor-dots" });
+      dots.style.animationDelay = `${900 - elapsed}ms`;
+      for (let i = 0; i < 3; i++) dots.createSpan({ cls: "ledger-monitor-dot", text: "." });
     } else {
       title.createEl("h2", { text: VIEW_NAMES2.find(([id2]) => id2 === this.activeView)[1] });
     }
     title.createDiv({ cls: "ledger-subtitle", text: "\u672C\u5730\u53EA\u8BFB \xB7 \u6B63\u6587\u9010\u7B14\u8BB0\u5F55\u4E3A\u7EDF\u8BA1\u6765\u6E90" });
     if (this.activeView === "assets" || this.activeView === "insights") return;
-    const selectedScope = this.activeView === "report" ? (_b2 = (_a2 = this.plugin.settings.reportPreferences) == null ? void 0 : _a2.scope) != null ? _b2 : "consumption" : this.filter.scope;
+    const selectedScope = this.activeView === "report" ? (_c2 = (_b2 = this.plugin.settings.reportPreferences) == null ? void 0 : _b2.scope) != null ? _c2 : "consumption" : this.filter.scope;
     const scope = header.createDiv({ cls: `ledger-scope-badge is-${selectedScope}` });
     scope.setText(selectedScope === "consumption" ? "\u7B5B\u9009\u53E3\u5F84\uFF1A\u6D88\u8D39\u652F\u51FA" : "\u7B5B\u9009\u53E3\u5F84\uFF1A\u5168\u90E8\u652F\u51FA");
   }
