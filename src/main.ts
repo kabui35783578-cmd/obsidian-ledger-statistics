@@ -1,4 +1,4 @@
-import { Notice, Plugin, requestUrl } from "obsidian";
+import { Notice, Plugin, TAbstractFile, requestUrl } from "obsidian";
 import { BudgetMonitor } from "./budget-monitor";
 import { sharedRequestGate } from "./request-gate";
 import { flattenRecords, isValidIsoDate, migrateStarredIds, normalizeTrendDateNotes, renameStarredIds } from "./core";
@@ -13,6 +13,7 @@ import { AssetSnapshot, AssetState, SecurityKind, applyAssetQuote, assetId, buil
 import { AssetQuoteMonitor } from "./asset-quotes";
 import { disposeAssetGestures } from "./asset-gestures";
 import { migrateAiSecret, withoutLegacyAiSecret } from "./ai-secrets";
+import { VAULT_DATA_PATH, VaultDataStore, rebaseShared, sharedSettings } from "./vault-data";
 
 export default class LedgerStatisticsPlugin extends Plugin {
   settings: LedgerSettings = DEFAULT_SETTINGS;
@@ -25,6 +26,11 @@ export default class LedgerStatisticsPlugin extends Plugin {
   private assetQuotes!: AssetQuoteMonitor;
   private assetsStopped = false;
   private salaryHistoryDirty = false;
+  private vaultData?: VaultDataStore;
+  private vaultSyncMeta?: { version: 1; device: string };
+  private sharedDefaults = sharedSettings(DEFAULT_SETTINGS);
+  private syncError = "";
+  private localSettingsText = "";
 
   openAiSettings(): void {
     this.settingTab?.selectAiSection();
@@ -37,8 +43,38 @@ export default class LedgerStatisticsPlugin extends Plugin {
     const stored = await this.loadData();
     const migratedSecrets = migrateAiSecret(stored ?? {}, this.app.secretStorage);
     this.settings = Object.assign({}, DEFAULT_SETTINGS, migratedSecrets.data);
-    this.settings.trendDateNotes = normalizeTrendDateNotes(this.settings.trendDateNotes);
-    if (migratedSecrets.changed) await this.saveSettings(false, false);
+    this.normalizeSettings();
+    const meta = stored?.vaultDataSync;
+    const migrate = meta?.version !== 1;
+    const pluginDir = `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
+    const devicePath = `${pluginDir}/sync-device.json`;
+    let device = "";
+    if (await this.app.vault.adapter.exists(devicePath)) {
+      const identity: unknown = JSON.parse(await this.app.vault.adapter.read(devicePath));
+      if (identity && typeof identity === "object" && "device" in identity && typeof identity.device === "string" && /^device-[a-f0-9]{32}$/.test(identity.device)) device = identity.device;
+      else throw new Error("本机同步标识损坏，请保留 sync-device.json 后检查，未写入业务数据");
+    }
+    if (!device) {
+      device = `device-${Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, "0")).join("")}`;
+      await this.app.vault.adapter.write(devicePath, JSON.stringify({ device }));
+    }
+    this.vaultSyncMeta = { version: 1, device };
+    this.vaultData = new VaultDataStore(this.app.vault, pluginDir, device, this.sharedDefaults, message => new Notice(message, 10000));
+    const legacyPath = `${pluginDir}/data.json`;
+    const legacyStat = await this.app.vault.adapter.stat(legacyPath);
+    if (migrate && legacyStat) await this.vaultData.backup("migration", await this.app.vault.adapter.read(legacyPath));
+    Object.assign(this.settings, await this.vaultData.initialize(sharedSettings(this.settings), migrate, legacyStat?.mtime ?? Date.now()));
+    this.normalizeSettings();
+    if (migrate || migratedSecrets.changed) await this.persistLocalSettings();
+    const onVaultDataChange = (file: TAbstractFile): void => {
+      if (file.path === VAULT_DATA_PATH || VAULT_DATA_PATH.startsWith(`${file.path}/`)) this.queueVaultDataReceive();
+    };
+    this.registerEvent(this.app.vault.on("create", onVaultDataChange));
+    this.registerEvent(this.app.vault.on("modify", onVaultDataChange));
+    this.registerEvent(this.app.vault.on("delete", onVaultDataChange));
+    this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
+      if (file.path === VAULT_DATA_PATH || oldPath === VAULT_DATA_PATH || VAULT_DATA_PATH.startsWith(`${oldPath}/`) || VAULT_DATA_PATH.startsWith(`${file.path}/`)) this.queueVaultDataReceive();
+    }));
     this.settings.defaultView = normalizeLedgerView(this.settings.defaultView);
     this.settings.assets = normalizeAssets(this.settings.assets);
     this.assetsStopped = false;
@@ -50,13 +86,6 @@ export default class LedgerStatisticsPlugin extends Plugin {
       const held = new Set(state.holdings.filter(h => active.has(h.accountId)).map(h => quoteKey(h.kind, h.code)));
       for (const quote of quotes) if (held.has(quote.key)) applyAssetQuote(state, quote);
     }));
-    this.settings.reportPreferences = normalizeReportPreferences(this.settings.reportPreferences);
-    this.settings.reportCaches = normalizeReportCaches(this.settings.reportCaches);
-    if (typeof this.settings.reportObjectRules !== "string") this.settings.reportObjectRules = DEFAULT_SETTINGS.reportObjectRules;
-    this.settings.fixedExpenses = Array.isArray(this.settings.fixedExpenses) ? this.settings.fixedExpenses.filter((item) => item && typeof item.name === "string" && typeof item.id === "string" && item.payments && typeof item.payments === "object") : [];
-    this.settings.insightHistory = Array.isArray(this.settings.insightHistory) ? this.settings.insightHistory.filter((item) => item && typeof item.id === "string" && typeof item.cycle === "string" && typeof item.date === "string" && Number.isFinite(item.impact)) : [];
-    if (!isBalanceCalibration(this.settings.balanceCalibration)) this.settings.balanceCalibration = null;
-    if (typeof this.settings.balanceCalibrationNote !== "string") this.settings.balanceCalibrationNote = "";
     if (this.syncSalaryCycles()) await this.saveSettings(false, false);
     this.budgetMonitor = new BudgetMonitor(() => this.settings, (url) => requestUrl({ url, method: "GET", throw: true }),
       () => this.saveSettings(false, false), (message) => new Notice(message), sharedRequestGate(`bark:${this.app.vault.getName()}`));
@@ -98,11 +127,20 @@ export default class LedgerStatisticsPlugin extends Plugin {
     this.registerDomEvent(window, "focus", () => this.tick());
     this.checkBudget();
     await this.captureAssetSnapshot();
+    // A vault-file migration can outlast Obsidian's view restoration during a
+    // plugin reload. Replace the temporary "unknown view" with the real view.
+    for (const leaf of this.app.workspace.getLeavesOfType(LEDGER_VIEW_TYPE)) {
+      if (leaf.view instanceof LedgerStatisticsView) continue;
+      const state = leaf.getViewState();
+      await leaf.setViewState({ type: "empty" });
+      await leaf.setViewState({ type: LEDGER_VIEW_TYPE, state: state.state });
+    }
     void this.refreshAssetQuotes().catch(() => {});
   }
 
   onunload(): void {
     this.assetsStopped = true;
+    this.vaultData?.stop();
     this.assetQuotes?.stop();
     this.budgetMonitor?.stop();
     for (const leaf of this.app.workspace.getLeavesOfType(LEDGER_VIEW_TYPE)) {
@@ -115,7 +153,15 @@ export default class LedgerStatisticsPlugin extends Plugin {
   async saveSettings(rescan: boolean, refresh = true, now = new Date()): Promise<void> {
     this.syncSalaryCycles(now);
     const data = JSON.parse(JSON.stringify(withoutLegacyAiSecret(this.settings)));
-    const saved = this.saveQueue.then(() => this.saveData(data));
+    const before = this.vaultData?.data;
+    const saved = this.saveQueue.then(async () => {
+      if (this.vaultData && before) {
+        await this.persistLocalSettings();
+        const committed = await this.vaultData.save(before, sharedSettings(data));
+        Object.assign(this.settings, rebaseShared(this.settings, sharedSettings(data), committed, this.sharedDefaults));
+        this.normalizeSettings();
+      } else await this.saveData(data);
+    });
     this.saveQueue = saved.catch(() => {});
     await saved;
     this.salaryHistoryDirty = ["salaryCycleStart", "salaryCycles", "salaryCents", "balanceCalibration", "balanceCalibrationNote"].some(key =>
@@ -123,6 +169,73 @@ export default class LedgerStatisticsPlugin extends Plugin {
     if (rescan) await this.repository.setFolder(this.settings.ledgerFolder);
     if (refresh) this.refreshViews();
     this.checkBudget();
+  }
+
+  private normalizeSettings(): void {
+    this.settings.trendDateNotes = normalizeTrendDateNotes(this.settings.trendDateNotes);
+    this.settings.defaultView = normalizeLedgerView(this.settings.defaultView);
+    this.settings.assets = normalizeAssets(this.settings.assets);
+    this.settings.reportPreferences = normalizeReportPreferences(this.settings.reportPreferences);
+    this.settings.reportCaches = normalizeReportCaches(this.settings.reportCaches);
+    if (typeof this.settings.reportObjectRules !== "string") this.settings.reportObjectRules = DEFAULT_SETTINGS.reportObjectRules;
+    this.settings.fixedExpenses = Array.isArray(this.settings.fixedExpenses) ? this.settings.fixedExpenses.filter(item => item && typeof item.name === "string" && typeof item.id === "string" && item.payments && typeof item.payments === "object") : [];
+    this.settings.insightHistory = Array.isArray(this.settings.insightHistory) ? this.settings.insightHistory.filter(item => item && typeof item.id === "string" && typeof item.cycle === "string" && typeof item.date === "string" && Number.isFinite(item.impact)) : [];
+    if (!isBalanceCalibration(this.settings.balanceCalibration)) this.settings.balanceCalibration = null;
+    if (typeof this.settings.balanceCalibrationNote !== "string") this.settings.balanceCalibrationNote = "";
+  }
+
+  private async persistLocalSettings(): Promise<void> {
+    const data = withoutLegacyAiSecret(this.settings) as Record<string, unknown>;
+    for (const key of Object.keys(sharedSettings(this.settings))) delete data[key];
+    const local = { ...data, vaultDataSync: this.vaultSyncMeta };
+    const text = JSON.stringify(local);
+    if (text === this.localSettingsText) return;
+    await this.saveData(local);
+    this.localSettingsText = text;
+  }
+
+  private queueVaultDataReceive(): void {
+    const receive = this.saveQueue.then(async () => {
+      if (this.assetsStopped || !this.vaultData) return;
+      const expected = this.vaultData.data;
+      const changed = await this.vaultData.receive();
+      this.syncError = "";
+      if (!changed) return;
+      const oldFolder = this.settings.ledgerFolder;
+      Object.assign(this.settings, rebaseShared(this.settings, expected, this.vaultData.data, this.sharedDefaults));
+      this.normalizeSettings();
+      if (oldFolder !== this.settings.ledgerFolder) await this.repository?.setFolder(this.settings.ledgerFolder);
+      this.refreshViews();
+      this.settingTab?.refreshBalanceSummary();
+    });
+    this.saveQueue = receive.catch(error => {
+      const message = error instanceof Error ? error.message : "同步数据读取失败";
+      if (message !== this.syncError) new Notice(message, 10000);
+      this.syncError = message;
+    });
+  }
+
+  async restoreVaultData(): Promise<void> {
+    const restore = this.saveQueue.then(async () => {
+      if (!this.vaultData) throw new Error("数据存储尚未就绪");
+      await this.vaultData.restoreMissing();
+      this.syncError = "";
+      new Notice("已从本机副本恢复同步数据文件");
+    });
+    this.saveQueue = restore.catch(() => {});
+    await restore;
+  }
+
+  async onExternalSettingsChange(): Promise<void> {
+    // Legacy config sync can still deliver device preferences. Business data now
+    // has one authority in the vault; never import old data.json over that file.
+    const stored = await this.loadData();
+    const clean = withoutLegacyAiSecret(stored ?? {}) as Record<string, unknown>;
+    for (const key of Object.keys(DEFAULT_SETTINGS)) if (!Object.prototype.hasOwnProperty.call(this.sharedDefaults, key) && Object.prototype.hasOwnProperty.call(clean, key)) {
+      (this.settings as unknown as Record<string, unknown>)[key] = clean[key];
+    }
+    this.queueVaultDataReceive();
+    await this.saveQueue;
   }
 
   updateTrendDateNote(date: string, note: string): Promise<void> {

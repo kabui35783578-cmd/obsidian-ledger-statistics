@@ -308,6 +308,32 @@ test('manual AI request shares transport gate, preserves timeout lock and permit
   release(); await new Promise(resolve => setImmediate(resolve)); assert.equal(gate.busy, false);
 });
 
+test('report request carries plain-language guidance while retaining facts, caveats and evidence links', async () => {
+  const s = snapshot(coffeeData());
+  const response = { title: '咖啡买得更频繁了', summary: '本期记录咖啡的日子比上期更多。', paragraphs: [{
+    heading: '多花的钱与购买次数有关',
+    text: '记录次数增加，但一次付款可能包含多杯，不能据此判断喝了多少杯。', evidence_ids: ['overview']
+  }] };
+  let messages;
+  global.__ledgerTestRequest = request => {
+    messages = JSON.parse(request.body).messages;
+    return { status: 200, json: { choices: [{ message: { content: JSON.stringify(response) } }] } };
+  };
+  try {
+    const report = await AI.requestSpendingReport({ endpoint: 'https://example.test/v1', model: 'mock', apiKey: '' }, s, undefined, new RequestGate());
+    const system = messages.find(m => m.role === 'system').content;
+    assert.match(system, /表达方式借鉴“清楚解释”/);
+    assert.match(system, /先给结论/);
+    assert.match(system, /首次出现就用一句日常话就地解释/);
+    assert.match(system, /以下是假设，不是用户账目/);
+    assert.match(system, /缺失日期不能当零消费/);
+    assert.match(system, /原因猜测保留/);
+    assert.deepEqual(JSON.parse(messages.find(m => m.role === 'user').content), JSON.parse(AI.reportAiInput(s)));
+    assert.deepEqual(report.paragraphs[0].evidenceIds, ['overview']);
+    assert.equal(report.paragraphs[0].text, response.paragraphs[0].text);
+  } finally { delete global.__ledgerTestRequest; }
+});
+
 class Element {
   constructor(tag = 'div', o = {}) { this.tag = tag; this.textContent = o.text ?? ''; this.children = []; this.listeners = {}; this.classes = new Set((o.cls ?? '').split(' ')); this.attributes = {}; this.classList = { add: (...n) => n.forEach(v => this.classes.add(v)) }; }
   createEl(tag, o = {}) { const e = new Element(tag, o); this.children.push(e); return e; }

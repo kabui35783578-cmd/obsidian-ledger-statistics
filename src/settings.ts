@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, SecretComponent, Setting, setIcon } from "obsidian";
+import { App, Notice, PluginSettingTab, SecretComponent, Setting, setIcon } from "obsidian";
 import { financeAiConfig, normalizeAiSecretId } from "./ai-secrets";
 import type LedgerStatisticsPlugin from "./main";
 import { flattenRecords, formatCents, parseMoneyToCents, salaryDayRange } from "./core";
@@ -169,6 +169,16 @@ export class LedgerSettingTab extends PluginSettingTab {
     const balancePanel = bodies.get("balance")!;
     const aiPanel = bodies.get("ai")!;
     const budgetPanel = bodies.get("budget")!;
+
+    new Setting(ledgerPanel)
+      .setName("跨设备数据同步")
+      .setDesc("资产、工资周期、备注和报告保存在「记账统计数据/状态.json」，随库内普通文件同步。AI 服务、密钥和通知配置保留在本机。迁移与冲突备份保存在插件目录的 sync-backups 文件夹。")
+      .addButton(button => button.setButtonText("恢复缺失的数据文件").onClick(async () => {
+        button.setDisabled(true);
+        try { await this.plugin.restoreVaultData(); }
+        catch (error) { new Notice(error instanceof Error ? error.message : "恢复失败"); }
+        finally { button.setDisabled(false); }
+      }));
 
     const rules = document.createElement("details");
     rules.className = "ledger-settings-advanced";

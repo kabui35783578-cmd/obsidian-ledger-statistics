@@ -1,0 +1,221 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const V = require('../dist/vault-data.cjs');
+const Plugin = require('../dist/main.cjs').default;
+const DEFAULT_SETTINGS = new Plugin().settings;
+const copy = value => structuredClone(value);
+const defaults = () => V.sharedSettings(copy(DEFAULT_SETTINGS));
+
+class FakeVault {
+  constructor() { this.files = new Map(); this.dirs = new Set(); this.writes = 0; this.processes = 0; this.chain = Promise.resolve(); }
+  configDir = '.obsidian';
+  adapter = {
+    exists: async path => this.files.has(path) || this.dirs.has(path),
+    read: async path => { if (!this.files.has(path)) throw Error('missing'); return this.files.get(path); },
+    write: async (path, text) => { if (this.failMirror && path.endsWith('sync-replica.json')) throw Error('disk'); this.files.set(path, text); },
+  };
+  getAbstractFileByPath(path) { return this.files.has(path) ? { path } : null; }
+  async createFolder(path) { this.dirs.add(path); }
+  async read(file) { return this.files.get(file.path); }
+  async create(path, text) { if (this.files.has(path)) throw Error('exists'); this.files.set(path, text); this.writes++; return { path }; }
+  process(file, fn) {
+    const save = this.chain.then(() => {
+      if (this.beforeProcess) { const hook = this.beforeProcess; this.beforeProcess = null; hook(); }
+      const text = fn(this.files.get(file.path));
+      this.files.set(file.path, text); this.writes++; this.processes++; return text;
+    });
+    this.chain = save.catch(() => {}); return save;
+  }
+  text() { return this.files.get(V.VAULT_DATA_PATH); }
+}
+function store(vault, device, clock = () => 200) {
+  const notices = [];
+  const data = new V.VaultDataStore(vault, `.obsidian/plugins/${device}`, device, defaults(), text => notices.push(text), clock);
+  data.notices = notices; return data;
+}
+function legacy() {
+  const d = defaults(); d.salaryCents = 600000; d.trendDateNotes = { '2026-10-01': '聚餐' };
+  d.assets.accounts.push({ id: 'cash', name: '现金', kind: 'cash', balanceCents: 12345, baselineAt: '2026-10-01T00:00:00Z', includedEventIds: [], includedRecordIds: [] });
+  d.assets.defaultCashId = 'cash';
+  return d;
+}
+async function offlinePair() {
+  const va = new FakeVault(), vb = new FakeVault(), a = store(va, 'A', () => 300), b = store(vb, 'B', () => 400);
+  await a.initialize(legacy(), true, 100);
+  vb.files.set(V.VAULT_DATA_PATH, va.text());
+  await b.initialize(defaults(), true, 100);
+  return { va, vb, a, b };
+}
+
+test('migration round-trips every shared field and keeps device secrets out of the sync file', async () => {
+  const vault = new FakeVault(), s = store(vault, 'A'), input = { ...legacy(), financeAiApiKey: 'private-key', financeAiSecretId: 'local-ref', barkUrl: 'private-url' };
+  const restored = await s.initialize(V.sharedSettings(input), true, 100);
+  assert.deepEqual(restored, V.sharedSettings(input));
+  assert.doesNotMatch(vault.text(), /private-key|private-url|local-ref|financeAiApiKey|barkUrl/);
+  assert.ok(vault.files.has(s.replicaPath));
+  const restarted = store(vault, 'A');
+  assert.deepEqual(await restarted.initialize(defaults(), false, 0), restored);
+});
+
+test('a fresh second installation keeps the existing synced data instead of seeding defaults over it', async () => {
+  const vault = new FakeVault(), a = store(vault, 'A'), b = store(vault, 'B');
+  await a.initialize(legacy(), true, 100);
+  const writes = vault.writes;
+  assert.deepEqual(await b.initialize(defaults(), true, 200), legacy());
+  assert.equal(vault.writes, writes);
+});
+
+test('unchanged saves and repeated identical receives neither write nor redraw', async () => {
+  const vault = new FakeVault(), s = store(vault, 'A');
+  await s.initialize(legacy(), true, 100); const writes = vault.writes;
+  for (let i = 0; i < 10; i++) { await s.save(s.data, copy(s.data)); assert.equal(await s.receive(), false); }
+  assert.equal(vault.writes, writes);
+});
+
+test('two stale writers editing different records merge their changes under the file lock', async () => {
+  const vault = new FakeVault(), a = store(vault, 'A', () => 300), b = store(vault, 'B', () => 400);
+  await a.initialize(legacy(), true, 100); await b.initialize(defaults(), true, 100);
+  const beforeB = b.data, nextA = a.data; nextA.trendDateNotes['2026-10-02'] = '交通';
+  await a.save(a.data, nextA);
+  const nextB = copy(beforeB); nextB.assets.accounts[0].balanceCents = 99999;
+  await b.save(beforeB, nextB); await a.receive();
+  assert.equal(a.data.assets.accounts[0].balanceCents, 99999);
+  assert.equal(a.data.trendDateNotes['2026-10-02'], '交通');
+  assert.deepEqual(a.data, b.data);
+  assert.equal(b.notices.length, 0);
+});
+
+test('offline edits on separate dates survive file replacement and converge without a feedback loop', async () => {
+  const { va, vb, a, b } = await offlinePair();
+  const aa = a.data; aa.trendDateNotes['2026-10-02'] = 'A修改'; await a.save(a.data, aa);
+  const bb = b.data; bb.trendDateNotes['2026-10-03'] = 'B修改'; await b.save(b.data, bb);
+  const staleA = va.text(), staleB = vb.text();
+  va.files.set(V.VAULT_DATA_PATH, staleB); assert.equal(await a.receive(), true);
+  vb.files.set(V.VAULT_DATA_PATH, va.text()); await b.receive();
+  assert.deepEqual(a.data.trendDateNotes, { '2026-10-01': '聚餐', '2026-10-02': 'A修改', '2026-10-03': 'B修改' });
+  assert.deepEqual(a.data, b.data);
+  vb.files.set(V.VAULT_DATA_PATH, staleA); await b.receive();
+  assert.deepEqual(a.data, b.data);
+  const writes = vb.writes;
+  for (let i = 0; i < 5; i++) assert.equal(await b.receive(), false);
+  assert.equal(vb.writes, writes);
+});
+
+test('deletion tombstones stop old synced notes and removed accounts from reappearing', async () => {
+  const vault = new FakeVault(), s = store(vault, 'A'); await s.initialize(legacy(), true, 100);
+  const stale = vault.text(), next = s.data; delete next.trendDateNotes['2026-10-01']; next.assets.accounts = [];
+  await s.save(s.data, next);
+  vault.files.set(V.VAULT_DATA_PATH, stale); await s.receive();
+  assert.deepEqual(s.data.trendDateNotes, {}); assert.deepEqual(s.data.assets.accounts, []);
+});
+
+test('concurrent changes to the same item keep both documents in a conflict backup and choose deterministically', async () => {
+  const { va, vb, a, b } = await offlinePair();
+  const aa = a.data; aa.trendDateNotes['2026-10-01'] = '电脑修改'; await a.save(a.data, aa);
+  const bb = b.data; bb.trendDateNotes['2026-10-01'] = '手机修改'; await b.save(b.data, bb);
+  va.files.set(V.VAULT_DATA_PATH, vb.text()); await a.receive();
+  assert.equal(a.data.trendDateNotes['2026-10-01'], '手机修改');
+  const backups = [...va.files].filter(([path]) => path.includes('/conflict-'));
+  assert.equal(backups.length, 1); assert.match(backups[0][1], /电脑修改/); assert.match(backups[0][1], /手机修改/);
+  assert.match(a.notices[0], /同步冲突/);
+  await a.receive(); assert.equal(a.notices.length, 1);
+});
+
+test('unrelated concurrent account additions retain both accounts without order-only conflict warnings', async () => {
+  const { va, vb, a, b } = await offlinePair();
+  const aa = a.data; aa.assets.accounts.push({ ...aa.assets.accounts[0], id: 'a' }); await a.save(a.data, aa);
+  const bb = b.data; bb.assets.accounts.push({ ...bb.assets.accounts[0], id: 'b' }); await b.save(b.data, bb);
+  va.files.set(V.VAULT_DATA_PATH, vb.text()); await a.receive();
+  assert.deepEqual(a.data.assets.accounts.map(x => x.id).sort(), ['a', 'b', 'cash']); assert.equal(a.notices.length, 0);
+});
+
+test('an incoming write between read and process is still merged rather than erased', async () => {
+  const { va, vb, a, b } = await offlinePair();
+  const bb = b.data; bb.trendDateNotes['2026-10-03'] = '刚收到'; await b.save(b.data, bb);
+  va.beforeProcess = () => va.files.set(V.VAULT_DATA_PATH, vb.text());
+  const aa = a.data; aa.trendDateNotes['2026-10-02'] = '正在保存'; await a.save(a.data, aa);
+  assert.equal(a.data.trendDateNotes['2026-10-03'], '刚收到'); assert.equal(a.data.trendDateNotes['2026-10-02'], '正在保存');
+});
+
+test('invalid JSON, unsupported versions and forbidden credentials never overwrite the last good replica', async () => {
+  const vault = new FakeVault(), s = store(vault, 'A'); await s.initialize(legacy(), true, 100);
+  const before = copy(s.data), mirror = vault.files.get(s.replicaPath);
+  for (const text of ['{broken', JSON.stringify({ format: 'ledger-statistics', version: 2, seen: {}, entries: {} }), JSON.stringify({ format: 'ledger-statistics', version: 1, seen: { x: 1 }, entries: { '["financeAiApiKey"]': { clock: 1, device: 'x', value: 'secret' } } })]) {
+    vault.files.set(V.VAULT_DATA_PATH, text); await assert.rejects(s.receive(), /同步/);
+    assert.equal(vault.text(), text); assert.equal(vault.files.get(s.replicaPath), mirror); assert.deepEqual(s.data, before);
+  }
+});
+
+test('a deleted data file blocks writes and is restored only by the explicit recovery action', async () => {
+  const vault = new FakeVault(), s = store(vault, 'A'); await s.initialize(legacy(), true, 100);
+  vault.files.delete(V.VAULT_DATA_PATH);
+  const changed = s.data; changed.salaryCents++;
+  await assert.rejects(s.save(s.data, changed), /删除/); assert.equal(vault.text(), undefined);
+  await s.receive(); await s.restoreMissing(); assert.ok(vault.text()); assert.equal(s.data.salaryCents, 600000);
+  await assert.rejects(s.restoreMissing(), /仍存在/);
+});
+
+test('a restarted migrated device retains its replica when the sync file is missing', async () => {
+  const vault = new FakeVault(), first = store(vault, 'A'); await first.initialize(legacy(), true, 100);
+  vault.files.delete(V.VAULT_DATA_PATH);
+  const next = store(vault, 'A'); assert.deepEqual(await next.initialize(defaults(), false, 0), legacy());
+  assert.equal(vault.text(), undefined); await assert.rejects(next.save(next.data, next.data), /不可写/);
+});
+
+test('a local recovery-cache failure does not roll back an already committed financial edit', async () => {
+  const vault = new FakeVault(), s = store(vault, 'A'); await s.initialize(legacy(), true, 100);
+  vault.failMirror = true; const next = s.data; next.salaryCents = 700000;
+  await s.save(s.data, next); assert.equal(s.data.salaryCents, 700000); assert.match(s.notices[0], /副本写入失败/);
+});
+
+test('rebasing a completed write preserves newer unsaved edits while applying remote changes', () => {
+  const before = legacy(), current = copy(before), committed = copy(before);
+  current.trendDateNotes['2026-10-01'] = '仍在输入'; committed.trendDateNotes['2026-10-02'] = '同步收到'; committed.salaryCents = 700000;
+  const result = V.rebaseShared(current, before, committed, defaults());
+  assert.equal(result.trendDateNotes['2026-10-01'], '仍在输入'); assert.equal(result.trendDateNotes['2026-10-02'], '同步收到'); assert.equal(result.salaryCents, 700000);
+});
+
+test('production saveSettings separates credentials from shared data and external receive never calls AI', async () => {
+  const vault = new FakeVault(), data = store(vault, 'A'); await data.initialize(legacy(), true, 100);
+  const p = new Plugin(); p.settings = { ...copy(DEFAULT_SETTINGS), ...data.data, financeAiEndpoint: 'https://private.example', barkUrl: 'private-notification' };
+  p.vaultData = data; p.vaultSyncMeta = { version: 1, device: 'A' }; p.sharedDefaults = defaults(); p.assetsStopped = false;
+  p.app = { workspace: { getLeavesOfType: () => [] } }; p.refreshViews = () => {}; p.checkBudget = () => {};
+  let saved; p.saveData = async d => { saved = copy(d); };
+  p.settings.trendDateNotes['2026-10-04'] = '新备注'; await p.saveSettings(false, false);
+  assert.equal(data.data.trendDateNotes['2026-10-04'], '新备注'); assert.equal(saved.financeAiEndpoint, 'https://private.example'); assert.equal(saved.barkUrl, 'private-notification'); assert.equal(saved.assets, undefined); assert.equal(saved.trendDateNotes, undefined);
+  assert.doesNotMatch(vault.text(), /private\.example|private-notification/);
+  const before = data.data; const remote = V.editVaultData(V.parseVaultData(vault.text()), before, { ...before, salaryCents: 800000 }, 'B', 500);
+  vault.files.set(V.VAULT_DATA_PATH, JSON.stringify(remote)); p.queueVaultDataReceive(); await p.saveQueue;
+  assert.equal(p.settings.salaryCents, 800000); assert.equal(p.settings.financeAiEndpoint, 'https://private.example');
+  const writes = vault.writes; p.queueVaultDataReceive(); await p.saveQueue; assert.equal(vault.writes, writes);
+});
+
+test('unloaded stores cannot write after reload', async () => {
+  const vault = new FakeVault(), s = store(vault, 'A'); await s.initialize(legacy(), true, 100); const text = vault.text(); s.stop();
+  const next = s.data; next.salaryCents++;
+  await assert.rejects(s.save(s.data, next), /关闭/); assert.equal(vault.text(), text);
+});
+
+test('malformed entry types and mismatched record identities are rejected before use', () => {
+  for (const [key, value] of [
+    ['["salaryCents"]', '不是金额'], ['["assets","accounts","cash"]', { id: 'different' }],
+    ['["$order","assets","accounts"]', {}], ['["trendDateNotes","2026-10-01"]', 42]
+  ]) assert.throws(() => V.parseVaultData(JSON.stringify({ format: 'ledger-statistics', version: 1, seen: { A: 1 }, entries: { [key]: { clock: 1, device: 'A', value } } })), /损坏/);
+});
+
+test('set membership and unusual note keys survive serialization without changing object prototypes', async () => {
+  const vault = new FakeVault(), s = store(vault, 'A'), input = legacy(); input.starredRecordIds = ['z', 'a'];
+  input.assets.recordAssignments = JSON.parse('{"__proto__":"cash","constructor":"exclude"}');
+  const result = await s.initialize(input, true, 100);
+  assert.deepEqual([...result.starredRecordIds].sort(), ['a', 'z']);
+  assert.equal(Object.getPrototypeOf(result.assets.recordAssignments), Object.prototype);
+  assert.equal(Object.getOwnPropertyDescriptor(result.assets.recordAssignments, '__proto__').value, 'cash');
+});
+
+test('a conflict arriving inside the locked write is backed up before the final merge is saved', async () => {
+  const { va, vb, a, b } = await offlinePair();
+  const bb = b.data; bb.trendDateNotes['2026-10-01'] = '晚到的手机修改'; await b.save(b.data, bb);
+  va.beforeProcess = () => va.files.set(V.VAULT_DATA_PATH, vb.text());
+  const aa = a.data; aa.trendDateNotes['2026-10-01'] = '电脑修改'; await a.save(a.data, aa);
+  assert.ok([...va.files].some(([p, text]) => p.includes('/conflict-') && text.includes('晚到的手机修改') && text.includes('电脑修改')));
+});

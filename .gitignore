@@ -7,3 +7,6 @@ output/
 Thumbs.db
 *.zip
 data.json
+sync-replica.json
+sync-device.json
+sync-backups/

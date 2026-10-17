@@ -327,9 +327,16 @@ export class LedgerStatisticsView extends ItemView {
   private renderHeader(root: HTMLElement): void {
     const header = root.createDiv({ cls: "ledger-header" });
     const title = header.createDiv();
-    title.createEl("h2", { text: this.activeView === "overview" ? "记账统计" : VIEW_NAMES.find(([id]) => id === this.activeView)![1] });
-    if (this.activeView === "assets" || this.activeView === "insights") return;
+    if (this.activeView === "overview") {
+      const heading = title.createEl("h2", { cls: "ledger-monitor-title", attr: { "aria-label": "数据监测中..." } });
+      const typing = heading.createSpan({ cls: "ledger-monitor-typing", attr: { "aria-hidden": "true" } });
+      typing.createSpan({ text: "数据监测中" });
+      for (let i = 0; i < 3; i++) typing.createSpan({ cls: "ledger-monitor-dot", text: "." });
+    } else {
+      title.createEl("h2", { text: VIEW_NAMES.find(([id]) => id === this.activeView)![1] });
+    }
     title.createDiv({ cls: "ledger-subtitle", text: "本地只读 · 正文逐笔记录为统计来源" });
+    if (this.activeView === "assets" || this.activeView === "insights") return;
     const selectedScope = this.activeView === "report" ? this.plugin.settings.reportPreferences?.scope ?? "consumption" : this.filter.scope;
     const scope = header.createDiv({ cls: `ledger-scope-badge is-${selectedScope}` });
     scope.setText(selectedScope === "consumption" ? "筛选口径：消费支出" : "筛选口径：全部支出");
@@ -1053,9 +1060,6 @@ export class LedgerStatisticsView extends ItemView {
     const card = parent.createEl(onClick ? "button" : "div", { cls: "ledger-metric" });
     card.createDiv({ cls: "ledger-metric-label", text: label });
     const number = card.createDiv({ cls: "ledger-metric-value" });
-    if (change?.difference) {
-      number.createSpan({ cls: "ledger-assets-change-arrow ledger-metric-change-arrow", text: change.difference > 0 ? "↑" : "↓", attr: { "aria-hidden": "true" } });
-    }
     number.createSpan({ text: value });
     card.createDiv({ cls: "ledger-metric-detail", text: detail });
     if (change) {
