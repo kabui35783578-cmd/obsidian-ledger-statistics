@@ -34,9 +34,10 @@ export function previousTrendRange(range: DateRange, preset: string): DateRange 
 
 /** Ongoing periods compare posted days with the same elapsed part of the previous period. */
 export function comparisonRanges(range: DateRange, preset: string, today: string): { current: DateRange; previous: DateRange; description: string } {
+  const monthlySelection = validRange(range) && addDays(shiftMonths(range.start, 1), -1) === range.end;
   const current = { ...range };
   if (validRange(range) && isValidIsoDate(today) && current.start <= today && current.end > today) current.end = today;
-  const previous = previousTrendRange(current, preset);
+  const previous = previousTrendRange(current, preset === "custom" && monthlySelection ? "month" : preset);
   const currentDays = validRange(current) ? dayOffset(current.start, current.end) + 1 : 0;
   const previousDays = validRange(previous) ? dayOffset(previous.start, previous.end) + 1 : 0;
   return { current, previous, description: `本期 ${currentDays} 天，上期 ${previousDays} 天；比较实际金额，不按天数折算` };

@@ -38,6 +38,7 @@ test('completed salary and calendar periods compare whole actual periods, preser
 test('ongoing salary, month, week, and year selections compare equal elapsed days and exclude future dates', () => {
   const cases = [
     ['salary', { start: '2026-10-15', end: '2026-11-14' }, '2026-10-17', { start: '2026-09-15', end: '2026-09-17' }],
+    ['custom', { start: '2026-10-15', end: '2026-11-14' }, '2026-10-17', { start: '2026-09-15', end: '2026-09-17' }],
     ['salary', { start: '2026-10-15', end: '2026-10-17' }, '2026-10-17', { start: '2026-09-15', end: '2026-09-17' }],
     ['month', { start: '2026-10-01', end: '2026-10-31' }, '2026-10-17', { start: '2026-09-01', end: '2026-09-17' }],
     ['week', { start: '2026-10-12', end: '2026-10-18' }, '2026-10-14', { start: '2026-10-05', end: '2026-10-07' }],

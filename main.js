@@ -45313,9 +45313,10 @@ function previousTrendRange(range, preset) {
   return { start: addDays(end2, -dayOffset(range.start, range.end)), end: end2 };
 }
 function comparisonRanges(range, preset, today) {
+  const monthlySelection = validRange2(range) && addDays(shiftMonths(range.start, 1), -1) === range.end;
   const current = { ...range };
   if (validRange2(range) && isValidIsoDate(today) && current.start <= today && current.end > today) current.end = today;
-  const previous = previousTrendRange(current, preset);
+  const previous = previousTrendRange(current, preset === "custom" && monthlySelection ? "month" : preset);
   const currentDays = validRange2(current) ? dayOffset(current.start, current.end) + 1 : 0;
   const previousDays = validRange2(previous) ? dayOffset(previous.start, previous.end) + 1 : 0;
   return { current, previous, description: `\u672C\u671F ${currentDays} \u5929\uFF0C\u4E0A\u671F ${previousDays} \u5929\uFF1B\u6BD4\u8F83\u5B9E\u9645\u91D1\u989D\uFF0C\u4E0D\u6309\u5929\u6570\u6298\u7B97` };
