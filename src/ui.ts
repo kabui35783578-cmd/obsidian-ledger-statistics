@@ -854,7 +854,7 @@ export function renderDumbbell(parent: HTMLElement, data: DumbbellDatum[], curre
       svgEl("circle", { cx: previousX, cy: y, r: 4.8, fill: PAPER, stroke: INK, "stroke-width": 1.2, class: "ledger-pop" }),
       svgEl("circle", { cx: currentX, cy: y, r: 4.8, fill: INK, class: "ledger-pop" })
     );
-    const value = svgEl("text", { x: Math.min(right, Math.max(previousX, currentX) + 10), y: y + 4, class: "ledger-value-label ledger-dumbbell-value" });
+    const value = svgEl("text", { x: Math.max(previousX, currentX) + 10, y: y + 4, class: "ledger-value-label ledger-dumbbell-value" });
     value.textContent = formatCents(item.currentCents - item.previousCents);
     group.append(value);
     svg.append(group);

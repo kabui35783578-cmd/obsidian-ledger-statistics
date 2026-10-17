@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { previousTrendRange, alignedTrendSeries } = require('../dist/trend-comparison.cjs');
+const { previousTrendRange, comparisonRanges, alignedTrendSeries } = require('../dist/trend-comparison.cjs');
 const { addDays } = require('../dist/core.cjs');
 const record = (date, cents) => ({ date, cents });
 const dates = (range) => {
@@ -20,9 +20,36 @@ test('salary and custom monthly cycles use calendar boundaries even when month l
 
 test('month, year, and arbitrary intervals retain their own comparison boundaries', () => {
   assert.deepEqual(previousTrendRange({ start: '2024-03-01', end: '2024-03-31' }, 'month'), { start: '2024-02-01', end: '2024-02-29' });
-  assert.deepEqual(previousTrendRange({ start: '2024-01-01', end: '2024-02-29' }, 'year'), { start: '2023-01-01', end: '2023-02-28' });
+  assert.deepEqual(previousTrendRange({ start: '2024-01-01', end: '2024-02-29' }, 'year'), { start: '2023-01-01', end: '2023-03-01' });
   assert.deepEqual(previousTrendRange({ start: '2026-10-05', end: '2026-10-07' }, 'custom'), { start: '2026-10-02', end: '2026-10-04' });
-  assert.deepEqual(previousTrendRange({ start: '2026-10-01', end: '2026-10-04' }, 'week'), { start: '2026-09-27', end: '2026-09-30' });
+  assert.deepEqual(previousTrendRange({ start: '2026-10-01', end: '2026-10-04' }, 'week'), { start: '2026-09-24', end: '2026-09-27' });
+});
+
+test('completed salary and calendar periods compare whole actual periods, preserving longer previous periods', () => {
+  for (const preset of ['salary', 'custom']) {
+    const result = comparisonRanges({ start: '2026-09-15', end: '2026-10-14' }, preset, '2026-10-17');
+    assert.deepEqual(result.previous, { start: '2026-08-15', end: '2026-09-14' });
+    assert.match(result.description, /本期 30 天，上期 31 天/);
+  }
+  assert.deepEqual(comparisonRanges({ start: '2026-02-01', end: '2026-02-28' }, 'month', '2026-10-17').previous, { start: '2026-01-01', end: '2026-01-31' });
+  assert.deepEqual(comparisonRanges({ start: '2024-01-01', end: '2024-12-31' }, 'year', '2026-10-17').previous, { start: '2023-01-01', end: '2023-12-31' });
+});
+
+test('ongoing salary, month, week, and year selections compare equal elapsed days and exclude future dates', () => {
+  const cases = [
+    ['salary', { start: '2026-10-15', end: '2026-11-14' }, '2026-10-17', { start: '2026-09-15', end: '2026-09-17' }],
+    ['salary', { start: '2026-10-15', end: '2026-10-17' }, '2026-10-17', { start: '2026-09-15', end: '2026-09-17' }],
+    ['month', { start: '2026-10-01', end: '2026-10-31' }, '2026-10-17', { start: '2026-09-01', end: '2026-09-17' }],
+    ['week', { start: '2026-10-12', end: '2026-10-18' }, '2026-10-14', { start: '2026-10-05', end: '2026-10-07' }],
+    ['year', { start: '2024-01-01', end: '2024-12-31' }, '2024-02-29', { start: '2023-01-01', end: '2023-03-01' }]
+  ];
+  for (const [preset, range, today, expected] of cases) {
+    const original = structuredClone(range);
+    const result = comparisonRanges(range, preset, today);
+    assert.equal(result.current.end, today);
+    assert.deepEqual(result.previous, expected);
+    assert.deepEqual(range, original);
+  }
 });
 
 test('daily comparison includes zero days, keeps cents exact, and does not move previous transactions into current dates', () => {

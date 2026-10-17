@@ -70,6 +70,7 @@ test('prior ranges anchor to previous week, month and salary cycle, including hi
   assert.deepEqual(categoryPreviousRange({ start: '2026-09-15', end: '2026-10-04' }, 'salary'), { start: '2026-08-15', end: '2026-09-03' });
   assert.deepEqual(categoryPreviousRange({ start: '2026-09-28', end: '2026-10-01' }, 'week'), { start: '2026-09-21', end: '2026-09-24' });
   assert.deepEqual(categoryPreviousRange({ start: '2026-03-01', end: '2026-03-31' }, 'month'), { start: '2026-02-01', end: '2026-02-28' });
+  assert.deepEqual(categoryPreviousRange({ start: '2026-09-15', end: '2026-10-14' }, 'salary'), { start: '2026-08-15', end: '2026-09-14' });
   assert.deepEqual(categoryPreviousRange(range, 'custom'), { start: '2026-09-13', end: '2026-09-14' });
 });
 

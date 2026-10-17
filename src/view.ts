@@ -12,11 +12,11 @@ import { insightAsOf, withDailyInsight } from "./daily-insight";
 import { withWeeklyInsight } from "./weekly-insight";
 import { ReportPanel } from "./report-ui";
 import { reportCoverage } from "./report";
-import { buildCategoryAnalysis, categoryPreviousRange } from "./category-analysis";
+import { buildCategoryAnalysis } from "./category-analysis";
 import { renderCategoryAnalysis, renderOverviewAnalysis, showCategoryRecords } from "./category-ui";
 import { disposeChartAnimations } from "./chart-animation";
 import { disposeAssetGestures } from "./asset-gestures";
-import { alignedTrendSeries, previousTrendRange } from "./trend-comparison";
+import { alignedTrendSeries, comparisonRanges } from "./trend-comparison";
 import { buildOverviewDetails, OverviewMetric, OverviewMetricModal } from "./overview-details";
 import { AssetPanel } from "./asset-ui";
 import {
@@ -502,12 +502,12 @@ export class LedgerStatisticsView extends ItemView {
       return;
     }
     const files = [...this.plugin.repository.files.values()];
-    const records = this.matchingRecords(this.filter);
-    const stats = summarize(files, records, this.filter.range);
-    const { previous, description } = this.autoComparisonRanges();
+    const { current, previous, description } = this.autoComparisonRanges();
+    const records = this.matchingRecords({ ...this.filter, range: current });
+    const stats = summarize(files, records, current);
     const previousStats = summarize(files, this.matchingRecords({ ...this.filter, range: previous }), previous);
     // A missing ledger is unknown spending, not a zero-value comparison.
-    const comparable = reportCoverage(files, this.filter.range).complete && reportCoverage(files, previous).complete && files.every(file => file.date !== null);
+    const comparable = reportCoverage(files, current).complete && reportCoverage(files, previous).complete && files.every(file => file.date !== null);
     const reference = `${description}；上期 ${previous.start} 至 ${previous.end}`;
     const change = (difference: number, count = false) => ({ difference: comparable ? difference : null, count, reference });
     const section = this.overviewSection(parent, "期间概览", "layout-dashboard");
@@ -588,8 +588,9 @@ export class LedgerStatisticsView extends ItemView {
   }
 
   private renderSpendingAnalysis(parent: HTMLElement): void {
-    const analysis = buildCategoryAnalysis([...this.plugin.repository.files.values()], this.filter,
-      previousTrendRange(this.filter.range, this.preset), this.plugin.settings.reportObjectRules, true);
+    const { current, previous } = this.autoComparisonRanges();
+    const analysis = buildCategoryAnalysis([...this.plugin.repository.files.values()], { ...this.filter, range: current },
+      previous, this.plugin.settings.reportObjectRules, true);
     renderOverviewAnalysis(parent, analysis, record => void this.openRecord(record),
       (label, records) => showCategoryRecords(this.app, label, records, record => void this.openRecord(record)));
   }
@@ -597,7 +598,8 @@ export class LedgerStatisticsView extends ItemView {
   private renderSingleCategory(parent: HTMLElement): void {
     const category = this.filter.categories[0];
     const files = [...this.plugin.repository.files.values()];
-    const analysis = buildCategoryAnalysis(files, this.filter, categoryPreviousRange(this.filter.range, this.preset), this.plugin.settings.reportObjectRules);
+    const { current, previous } = this.autoComparisonRanges();
+    const analysis = buildCategoryAnalysis(files, { ...this.filter, range: current }, previous, this.plugin.settings.reportObjectRules);
     renderCategoryAnalysis(this.overviewSection(parent, `${category} · 分类分析`, "chart-pie"), category, analysis, this.rangeTrendUnit(), record => void this.openRecord(record),
       (label, records) => showCategoryRecords(this.app, `${category} · ${label}`, records, record => void this.openRecord(record)), () => this.goDetails());
     const starred = this.starredRecords();
@@ -741,7 +743,7 @@ export class LedgerStatisticsView extends ItemView {
         this.refreshOverviewSection(parent, () => this.renderCategory(parent));
       });
     }
-    const records = this.matchingRecords(this.filter);
+    const records = this.matchingRecords({ ...this.filter, range: this.autoComparisonRanges().current });
     const summaries = categorySummaries(records, this.categorySort);
     if (this.categoryChart === "bar") renderCategoryTreemap(parent, summaries, (category) => this.drillCategory(category), this.categorySort);
     if (this.categoryChart === "donut") renderDonut(parent, summaries, (category) => this.drillCategory(category));
@@ -775,12 +777,11 @@ export class LedgerStatisticsView extends ItemView {
       this.trendUnit = value as "auto" | "day" | "week" | "month";
       this.refreshOverviewSection(parent, () => this.renderTrend(parent));
     });
-    const records = this.matchingRecords(this.filter);
+    const { current: range, previous: previousRange } = this.autoComparisonRanges();
+    const records = this.matchingRecords({ ...this.filter, range });
     const unit = this.trendUnit === "auto" ? this.rangeTrendUnit() : this.trendUnit;
     const cumulative = this.trendChart === "cumulative";
-    const range = { ...this.filter.range };
     if (this.trendChart !== "bar" && range.end > todayIso()) range.end = todayIso();
-    const previousRange = previousTrendRange(this.filter.range, this.preset);
     const previousRecords = this.matchingRecords({ ...this.filter, range: previousRange });
     const knownDates = new Set<string>();
     for (const file of this.plugin.repository.files.values()) {
@@ -1082,7 +1083,7 @@ export class LedgerStatisticsView extends ItemView {
 
   private openOverviewMetric(metric: OverviewMetric): void {
     new OverviewMetricModal(this.app, metric,
-      buildOverviewDetails([...this.plugin.repository.files.values()], this.filter), record => void this.openRecord(record)).open();
+      buildOverviewDetails([...this.plugin.repository.files.values()], { ...this.filter, range: this.autoComparisonRanges().current }), record => void this.openRecord(record)).open();
   }
 
   private metric(parent: HTMLElement, label: string, value: string, detail: string, onClick?: () => void, change?: { difference: number | null; count: boolean; reference: string }): void {
@@ -1410,25 +1411,7 @@ export class LedgerStatisticsView extends ItemView {
   }
 
   private autoComparisonRanges(): { current: DateRange; previous: DateRange; description: string } {
-    const current = { ...this.filter.range };
-    const today = todayIso();
-    const currentMonthStart = `${today.slice(0, 7)}-01`;
-    if (current.start === currentMonthStart && current.end === today) {
-      const date = new Date(`${current.start}T12:00:00`);
-      const previousFull = monthRange(date.getFullYear(), date.getMonth() - 1);
-      const sameDay = Math.min(Number(today.slice(8, 10)), Number(previousFull.end.slice(8, 10)));
-      return {
-        current,
-        previous: { start: previousFull.start, end: `${previousFull.start.slice(0, 8)}${String(sameDay).padStart(2, "0")}` },
-        description: "进行中月份默认同期比较"
-      };
-    }
-    const previousEnd = addDays(current.start, -1);
-    return {
-      current,
-      previous: { start: addDays(previousEnd, -daysInclusive(current) + 1), end: previousEnd },
-      description: "按相同天数的紧邻上一期间比较"
-    };
+    return comparisonRanges(this.filter.range, this.preset, todayIso());
   }
 
   private async openRecord(record: LedgerRecord): Promise<void> {

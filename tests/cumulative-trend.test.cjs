@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { cumulativeTrendPoints, cumulativeAverageProgress, dailySpendingAverage, normalizeTrendDateNotes } = require('../dist/core.cjs');
-const { renderTrendChart, renderDonut } = require('../dist/ui.cjs');
+const { renderTrendChart, renderDonut, renderDumbbell } = require('../dist/ui.cjs');
 const { alignedTrendSeries, previousTrendRange } = require('../dist/trend-comparison.cjs');
 const { LedgerStatisticsView } = require('../dist/view.cjs');
 const record = (date, cents) => ({ date, cents });
@@ -98,6 +98,20 @@ class Element {
   all() { return this.children.flatMap(child => [child, ...child.all()]); }
   querySelectorAll(selector) { return this.all().filter(child => selector.slice(1).split('.').every(c => child.classList.contains(c))); }
 }
+
+test('a rightmost previous-period point never covers the negative difference label', () => {
+  const previous = global.document;
+  global.document = { createElementNS: (_, tag) => new Element(tag) };
+  try {
+    const root = new Element('div');
+    renderDumbbell(root, [{ category: '餐饮 · 晚餐', currentCents: 19346, previousCents: 63010 }], '本期', '上期', () => {});
+    const label = root.all().find(el => el.classList.contains('ledger-dumbbell-value'));
+    assert.equal(label.textContent, '-¥436.64');
+    const points = label.parentElement.children.filter(el => el.tag === 'circle').slice(-2);
+    const edge = Math.max(...points.map(p => Number(p.attributes.cx) + Number(p.attributes.r)));
+    assert.ok(Number(label.attributes.x) > edge + 4, 'Leave a visible gap beyond the circle edge, even at the chart maximum');
+  } finally { global.document = previous; }
+});
 
 test('both donut layouts retain a leader and percentage label for every segment, including narrow overview containers', () => {
   const previous = global.document;

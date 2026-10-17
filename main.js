@@ -44592,7 +44592,7 @@ function renderDumbbell(parent, data, currentLabel, previousLabel, onClick) {
       svgEl("circle", { cx: previousX, cy: y, r: 4.8, fill: PAPER, stroke: INK, "stroke-width": 1.2, class: "ledger-pop" }),
       svgEl("circle", { cx: currentX, cy: y, r: 4.8, fill: INK, class: "ledger-pop" })
     );
-    const value = svgEl("text", { x: Math.min(right, Math.max(previousX, currentX) + 10), y: y + 4, class: "ledger-value-label ledger-dumbbell-value" });
+    const value = svgEl("text", { x: Math.max(previousX, currentX) + 10, y: y + 4, class: "ledger-value-label ledger-dumbbell-value" });
     value.textContent = formatCents(item.currentCents - item.previousCents);
     group2.append(value);
     svg.append(group2);
@@ -45282,17 +45282,99 @@ function renderReportArticle(parent, report, snapshot, evidence) {
 
 // src/category-analysis.ts
 init_core();
-function categoryPreviousRange(range, preset) {
-  const anchor = /* @__PURE__ */ new Date(`${range.start}T12:00:00`);
-  const days = reportDays(range);
-  let full;
-  if (preset === "salary") full = salaryCycleFullRange(anchor, 1);
-  else if (preset === "month" || preset === "previous") full = monthRange(anchor.getFullYear(), anchor.getMonth() - 1);
-  else if (preset === "week") full = { start: addDays(range.start, -7), end: addDays(range.start, -1) };
-  else if (preset === "year") full = { start: `${anchor.getFullYear() - 1}-01-01`, end: `${anchor.getFullYear() - 1}-12-31` };
-  else return { start: addDays(range.start, -days), end: addDays(range.start, -1) };
-  return { start: full.start, end: [addDays(full.start, days - 1), full.end].sort()[0] };
+
+// src/trend-comparison.ts
+init_core();
+var dayOffset = (start2, end2) => Math.round((Date.parse(`${end2}T00:00:00Z`) - Date.parse(`${start2}T00:00:00Z`)) / 864e5);
+var validRange2 = (range) => isValidIsoDate(range.start) && isValidIsoDate(range.end) && range.start <= range.end;
+function shiftMonths(date, months) {
+  const [year, month, day] = date.split("-").map(Number);
+  const target2 = new Date(Date.UTC(year, month - 1 + months, 1));
+  const lastDay = new Date(Date.UTC(target2.getUTCFullYear(), target2.getUTCMonth() + 1, 0)).getUTCDate();
+  target2.setUTCDate(Math.min(day, lastDay));
+  return target2.toISOString().slice(0, 10);
 }
+function previousTrendRange(range, preset) {
+  if (!validRange2(range)) return { ...range };
+  if (preset === "week") return { start: addDays(range.start, -7), end: addDays(range.end, -7) };
+  if (preset === "year") {
+    const start2 = shiftMonths(range.start, -12);
+    const fullEnd = `${start2.slice(0, 4)}-12-31`;
+    const alignedEnd = range.end.endsWith("-12-31") ? fullEnd : addDays(start2, dayOffset(range.start, range.end));
+    return { start: start2, end: alignedEnd < fullEnd ? alignedEnd : fullEnd };
+  }
+  const fullMonthlyCycle = addDays(shiftMonths(range.start, 1), -1) === range.end;
+  if (["salary", "month", "previous"].includes(preset) || fullMonthlyCycle) {
+    const start2 = shiftMonths(range.start, -1);
+    const alignedEnd = fullMonthlyCycle ? addDays(range.start, -1) : addDays(start2, dayOffset(range.start, range.end));
+    return { start: start2, end: alignedEnd < range.start ? alignedEnd : addDays(range.start, -1) };
+  }
+  const end2 = addDays(range.start, -1);
+  return { start: addDays(end2, -dayOffset(range.start, range.end)), end: end2 };
+}
+function comparisonRanges(range, preset, today) {
+  const current = { ...range };
+  if (validRange2(range) && isValidIsoDate(today) && current.start <= today && current.end > today) current.end = today;
+  const previous = previousTrendRange(current, preset);
+  const currentDays = validRange2(current) ? dayOffset(current.start, current.end) + 1 : 0;
+  const previousDays = validRange2(previous) ? dayOffset(previous.start, previous.end) + 1 : 0;
+  return { current, previous, description: `\u672C\u671F ${currentDays} \u5929\uFF0C\u4E0A\u671F ${previousDays} \u5929\uFF1B\u6BD4\u8F83\u5B9E\u9645\u91D1\u989D\uFF0C\u4E0D\u6309\u5929\u6570\u6298\u7B97` };
+}
+function alignedTrendSeries(records, previousRecords, range, previousRange, unit, cumulative, previousKnownDates) {
+  var _a2, _b2, _c2, _d2, _e, _f;
+  const comparison = { range: previousRange, points: [], missingDays: 0 };
+  if (!validRange2(range) || !validRange2(previousRange)) return { points: [], comparison };
+  const selected = records.filter((record2) => record2.date >= range.start && record2.date <= range.end);
+  const selectedPrevious = previousRecords.filter((record2) => record2.date >= previousRange.start && record2.date <= previousRange.end);
+  const hasLedger = [...previousKnownDates].some((date) => date >= range.start && date <= range.end || date >= previousRange.start && date <= previousRange.end);
+  if (!selected.length && !selectedPrevious.length && !hasLedger) return { points: [], comparison };
+  const current = new Map(trendPoints(selected, unit).map((point) => [point.key, point]));
+  const previous = new Map(trendPoints(selectedPrevious, "day").map((point) => [point.key, point]));
+  const points2 = [];
+  let total3 = 0;
+  let count = 0;
+  let previousTotal = 0;
+  let previousCount = 0;
+  let incomplete = false;
+  const mappedPreviousEnd = addDays(range.start, dayOffset(previousRange.start, previousRange.end));
+  const timelineEnd = range.end > mappedPreviousEnd ? range.end : mappedPreviousEnd;
+  for (let date = range.start; date <= timelineEnd; ) {
+    const bucket = trendPoints([{ date, cents: 0 }], unit)[0];
+    const bucketLimit = date <= range.end ? range.end : timelineEnd;
+    const end2 = bucket.end < bucketLimit ? bucket.end : bucketLimit;
+    const amount = current.get(bucket.key);
+    total3 = (cumulative ? total3 : 0) + ((_a2 = amount == null ? void 0 : amount.cents) != null ? _a2 : 0);
+    count = (cumulative ? count : 0) + ((_b2 = amount == null ? void 0 : amount.count) != null ? _b2 : 0);
+    if (date <= range.end) points2.push({ ...bucket, start: cumulative ? range.start : date, end: end2, cents: total3, count });
+    const sourceStart = addDays(previousRange.start, dayOffset(range.start, date));
+    const sourceEnd = addDays(previousRange.start, dayOffset(range.start, end2));
+    const clippedEnd = sourceEnd < previousRange.end ? sourceEnd : previousRange.end;
+    let missing = false;
+    previousTotal = cumulative ? previousTotal : 0;
+    previousCount = cumulative ? previousCount : 0;
+    for (let source = sourceStart; source <= clippedEnd; source = addDays(source, 1)) {
+      if (!previousKnownDates.has(source)) {
+        missing = true;
+        comparison.missingDays += 1;
+      }
+      previousTotal += (_d2 = (_c2 = previous.get(source)) == null ? void 0 : _c2.cents) != null ? _d2 : 0;
+      previousCount += (_f = (_e = previous.get(source)) == null ? void 0 : _e.count) != null ? _f : 0;
+    }
+    incomplete = cumulative && incomplete || missing;
+    comparison.points.push(sourceStart > previousRange.end || incomplete ? null : {
+      key: sourceStart,
+      label: sourceStart.slice(5),
+      start: cumulative ? previousRange.start : sourceStart,
+      end: clippedEnd,
+      cents: previousTotal,
+      count: previousCount
+    });
+    date = addDays(end2, 1);
+  }
+  return { points: points2, comparison };
+}
+
+// src/category-analysis.ts
 var total2 = (records) => records.reduce((sum3, record2) => sum3 + record2.cents, 0);
 var ranked = (records) => [...records].sort((a, b) => b.cents - a.cents || b.date.localeCompare(a.date) || b.time.localeCompare(a.time) || a.id.localeCompare(b.id));
 function categoryNoteLabel(record2) {
@@ -45326,7 +45408,8 @@ function buildCategoryAnalysis(files, filter2, previousRange, objectRules, acros
   const summary = summarize(files, records, filter2.range), previousSummary = summarize(files, previous, previousRange);
   const coverage2 = reportCoverage(files, filter2.range), previousCoverage = reportCoverage(files, previousRange);
   const comparable = coverage2.complete && previousCoverage.complete && files.every((file) => file.date !== null);
-  const scale3 = reportDays(filter2.range) / Math.max(1, reportDays(previousRange));
+  const currentDays = reportDays(filter2.range), previousDays = reportDays(previousRange);
+  const comparisonBasis = `\u672C\u671F ${currentDays} \u5929\uFF0C\u4E0A\u671F ${previousDays} \u5929 \xB7 \u6BD4\u8F83\u5B9E\u9645\u91D1\u989D\uFF0C\u4E0D\u6309\u5929\u6570\u6298\u7B97`;
   const amounts = records.map((r) => r.cents).sort((a, b) => a - b);
   const quantile3 = (p) => {
     if (!amounts.length) return null;
@@ -45365,7 +45448,11 @@ function buildCategoryAnalysis(files, filter2, previousRange, objectRules, acros
     coverage: coverage2,
     previousCoverage,
     comparable,
-    scale: scale3,
+    currentDays,
+    previousDays,
+    comparisonBasis,
+    currentDailyCents: comparable && currentDays ? summary.cents / currentDays : null,
+    previousDailyCents: comparable && previousDays ? previousSummary.cents / previousDays : null,
     mean: records.length ? summary.cents / records.length : null,
     median: amounts.length ? reportMedian(amounts) : null,
     previousMean: previous.length ? previousSummary.cents / previous.length : null,
@@ -45380,7 +45467,7 @@ function buildCategoryAnalysis(files, filter2, previousRange, objectRules, acros
     previousGroups,
     bins,
     weekdays,
-    decomposition: comparable && records.length && previous.length ? symmetricDecomposition(previous.length * scale3, previousSummary.cents * scale3, records.length, summary.cents) : null
+    decomposition: comparable && records.length && previous.length ? symmetricDecomposition(previous.length, previousSummary.cents, records.length, summary.cents) : null
   };
 }
 
@@ -45574,17 +45661,17 @@ function renderCategoryAnalysis(parent, category, analysis, trendUnit, open, sho
     details
   );
   if (!a.coverage.complete) section.createDiv({ cls: "ledger-category-warning", text: `\u672C\u671F\u7F3A\u5C11 ${a.coverage.missingDates.length} \u5929\u8D26\u672C\uFF0C${a.coverage.problems.length} \u9879\u8D26\u672C\u9700\u6838\u5BF9\uFF1B\u5F53\u524D\u4EC5\u5C55\u793A\u5DF2\u89E3\u6790\u8BB0\u5F55\uFF0C\u4E0D\u5C06\u672A\u77E5\u65E5\u671F\u5F53\u4F5C\u96F6\u6D88\u8D39\u3002` });
-  const comparison = card(section, "\u540C\u671F\u53D8\u5316", `\u4E0A\u671F ${a.previousRange.start} \u81F3 ${a.previousRange.end} \xB7 \u540C\u4E00\u5206\u7C7B\u4E0E\u7B5B\u9009\u53E3\u5F84`, "ledger-category-comparison");
+  const comparison = card(section, "\u540C\u671F\u53D8\u5316", `\u4E0A\u671F ${a.previousRange.start} \u81F3 ${a.previousRange.end} \xB7 ${a.comparisonBasis}`, "ledger-category-comparison");
   const comparisonMetrics = comparison.createDiv({ cls: "ledger-category-comparison-metrics" });
   metric(comparisonMetrics, "\u672C\u671F\u91D1\u989D", money2(a.summary.cents), `${a.records.length} \u7B14 \xB7 \u5E73\u5747\u6BCF\u7B14 ${money2(a.mean)}`);
   metric(comparisonMetrics, "\u4E0A\u671F\u5DF2\u8BB0\u5F55\u91D1\u989D", money2(a.previousSummary.cents), `${a.previous.length} \u7B14 \xB7 \u5E73\u5747\u6BCF\u7B14 ${money2(a.previousMean)}`);
   if (a.comparable) {
-    const delta = a.summary.cents - a.previousSummary.cents * a.scale;
-    const ratio = a.previousSummary.cents ? `${delta > 0 ? "+" : ""}${(delta / (a.previousSummary.cents * a.scale) * 100).toFixed(1)}%` : a.summary.cents ? "\u4E0A\u671F\u4E3A\u96F6\uFF0C\u4E0D\u8BA1\u7B97\u6DA8\u5E45" : "\u4E24\u671F\u5747\u4E3A\u96F6";
+    const delta = a.summary.cents - a.previousSummary.cents;
+    const ratio = a.previousSummary.cents ? `${delta > 0 ? "+" : ""}${(delta / a.previousSummary.cents * 100).toFixed(1)}%` : a.summary.cents ? "\u4E0A\u671F\u4E3A\u96F6\uFF0C\u4E0D\u8BA1\u7B97\u6DA8\u5E45" : "\u4E24\u671F\u5747\u4E3A\u96F6";
     metric(comparisonMetrics, "\u91D1\u989D\u53D8\u5316", signedMoney(delta), ratio);
-    const countDelta = a.records.length - a.previous.length * a.scale;
-    metric(comparisonMetrics, "\u7B14\u6570\u53D8\u5316", `${countDelta > 0 ? "+" : ""}${Number(countDelta.toFixed(1))}`, a.scale === 1 ? "\u672C\u671F\u51CF\u4E0A\u671F" : "\u4E0A\u671F\u6309\u672C\u671F\u5929\u6570\u6298\u7B97");
-    if (a.scale !== 1) comparison.createDiv({ cls: "ledger-note", text: `\u4E24\u671F\u5929\u6570\u4E0D\u540C\uFF0C\u4E0A\u671F\u6309 ${a.scale.toFixed(3)} \u500D\u6298\u7B97\uFF1B\u4E0A\u65B9\u4ECD\u4FDD\u7559\u5B9E\u9645\u5DF2\u8BB0\u5F55\u91D1\u989D\u3002` });
+    const countDelta = a.records.length - a.previous.length;
+    metric(comparisonMetrics, "\u7B14\u6570\u53D8\u5316", `${countDelta > 0 ? "+" : ""}${countDelta}`, "\u672C\u671F\u5B9E\u9645\u7B14\u6570\u51CF\u4E0A\u671F\u5B9E\u9645\u7B14\u6570");
+    comparison.createDiv({ cls: "ledger-note", text: `\u8F85\u52A9\u770B\u6D88\u8D39\u901F\u5EA6\uFF08\u6309\u81EA\u7136\u65E5\uFF09\uFF1A\u672C\u671F\u65E5\u5747 ${money2(a.currentDailyCents)}\uFF0C\u4E0A\u671F\u65E5\u5747 ${money2(a.previousDailyCents)}\u3002` });
     if (a.decomposition) comparison.createDiv({ cls: "ledger-note", text: `\u91D1\u989D\u5DEE\u989D\u62C6\u89E3\uFF1A\u7B14\u6570\u53D8\u5316\u5BF9\u5E94 ${signedMoney(a.decomposition.frequency)}\uFF0C\u5E73\u5747\u6BCF\u7B14\u53D8\u5316\u5BF9\u5E94 ${signedMoney(a.decomposition.ticket)}\u3002\u8FD9\u662F\u8BA1\u7B97\u5173\u7CFB\uFF0C\u4E0D\u4EE3\u8868\u5546\u54C1\u6DA8\u4EF7\u3002` });
   } else comparison.createDiv({ cls: "ledger-category-warning", text: `\u53EF\u6BD4\u6570\u636E\u4E0D\u8DB3\uFF0C\u6682\u4E0D\u5224\u65AD\u6DA8\u8DCC\u3002\u4E0A\u671F\u7F3A\u5C11 ${a.previousCoverage.missingDates.length} \u5929\u8D26\u672C\uFF0C${a.previousCoverage.problems.length} \u9879\u8D26\u672C\u9700\u6838\u5BF9\uFF1B\u672C\u671F\u6216\u672A\u5F52\u671F\u8D26\u672C\u4E5F\u53EF\u80FD\u5F71\u54CD\u6BD4\u8F83\u3002` });
   if (!a.records.length) {
@@ -45644,13 +45731,13 @@ function renderRepeatedProjects(parent, a, show) {
   if (repeatGroups.length && a.comparable) {
     renderDumbbell(repeatsWrap, repeatGroups.map((group2) => {
       var _a2, _b2;
-      return { category: group2.label, currentCents: group2.cents, previousCents: Math.round(((_b2 = (_a2 = a.previousGroups.find((previous) => previous.label === group2.label)) == null ? void 0 : _a2.cents) != null ? _b2 : 0) * a.scale) };
-    }), "\u672C\u671F", a.scale === 1 ? "\u4E0A\u671F" : "\u4E0A\u671F\u6298\u7B97", (label2) => {
+      return { category: group2.label, currentCents: group2.cents, previousCents: (_b2 = (_a2 = a.previousGroups.find((previous) => previous.label === group2.label)) == null ? void 0 : _a2.cents) != null ? _b2 : 0 };
+    }), "\u672C\u671F", "\u4E0A\u671F", (label2) => {
       var _a2, _b2, _c2, _d2;
       show(`\u91CD\u590D\u9879\u76EE \xB7 ${label2}`, [...(_b2 = (_a2 = repeatGroups.find((group2) => group2.label === label2)) == null ? void 0 : _a2.records) != null ? _b2 : [], ...(_d2 = (_c2 = a.previousGroups.find((group2) => group2.label === label2)) == null ? void 0 : _c2.records) != null ? _d2 : []]);
     });
     repeatsWrap.querySelector("h3").textContent = `${repeatGroups[0].label}\u662F\u82B1\u8D39\u6700\u591A\u7684\u91CD\u590D\u9879\u76EE`;
-    repeatsWrap.querySelector(".ledger-mono-sub").textContent = "\u672C\u671F\u81F3\u5C11\u51FA\u73B0\u4E24\u7B14\u7684\u5907\u6CE8\u9879\u76EE \xB7 \u6700\u591A\u516D\u7EC4 \xB7 \u4EC5\u5408\u5E76\u660E\u786E\u9910\u6B21\u540C\u4E49\u8BCD";
+    repeatsWrap.querySelector(".ledger-mono-sub").textContent = `\u5B9E\u5FC3\u70B9\u4E3A\u672C\u671F\uFF0C\u7A7A\u5FC3\u70B9\u4E3A\u4E0A\u671F \xB7 ${a.comparisonBasis} \xB7 \u672C\u671F\u81F3\u5C11\u4E24\u7B14\uFF0C\u6700\u591A\u516D\u7EC4`;
   } else {
     const repeats = card(repeatsWrap, "\u91CD\u590D\u9879\u76EE", "\u6309\u5907\u6CE8\u7D2F\u8BA1\u91D1\u989D\u6392\u5217 \xB7 \u70B9\u51FB\u67E5\u770B\u6D41\u6C34");
     if (repeatGroups.length) groupList(repeats, repeatGroups, a.summary.cents, show);
@@ -45678,6 +45765,8 @@ function renderWeekdayDistribution(parent, a, show) {
 function renderOverviewAnalysis(parent, a, open, show) {
   const surface = parent.createDiv({ cls: "ledger-category-analysis ledger-overview-analysis" });
   surface.createDiv({ cls: "ledger-note", text: `${a.coverage.range.start} \u81F3 ${a.coverage.range.end} \xB7 \u5F53\u524D\u7B5B\u9009\u4E0B\u7684\u5168\u90E8\u5206\u7C7B \xB7 \u4E0A\u671F ${a.previousRange.start} \u81F3 ${a.previousRange.end}` });
+  surface.createDiv({ cls: "ledger-note", text: a.comparisonBasis });
+  if (a.comparable) surface.createDiv({ cls: "ledger-note", text: `\u8F85\u52A9\u770B\u6D88\u8D39\u901F\u5EA6\uFF08\u6309\u81EA\u7136\u65E5\uFF09\uFF1A\u672C\u671F\u65E5\u5747 ${money2(a.currentDailyCents)}\uFF0C\u4E0A\u671F\u65E5\u5747 ${money2(a.previousDailyCents)}\u3002` });
   if (!a.records.length) {
     surface.createDiv({ cls: "ledger-empty", text: "\u5F53\u524D\u671F\u95F4\u548C\u7B5B\u9009\u6761\u4EF6\u4E0B\u6CA1\u6709\u6D88\u8D39\u8BB0\u5F55\u3002" });
     return;
@@ -45928,83 +46017,6 @@ function enableAssetGestures(viewport, svg, tools, fit = false, allowPageScroll 
       event.stopImmediatePropagation();
     }
   }, true);
-}
-
-// src/trend-comparison.ts
-init_core();
-var dayOffset = (start2, end2) => Math.round((Date.parse(`${end2}T00:00:00Z`) - Date.parse(`${start2}T00:00:00Z`)) / 864e5);
-var validRange2 = (range) => isValidIsoDate(range.start) && isValidIsoDate(range.end) && range.start <= range.end;
-function shiftMonths(date, months) {
-  const [year, month, day] = date.split("-").map(Number);
-  const target2 = new Date(Date.UTC(year, month - 1 + months, 1));
-  const lastDay = new Date(Date.UTC(target2.getUTCFullYear(), target2.getUTCMonth() + 1, 0)).getUTCDate();
-  target2.setUTCDate(Math.min(day, lastDay));
-  return target2.toISOString().slice(0, 10);
-}
-function previousTrendRange(range, preset) {
-  if (!validRange2(range)) return { ...range };
-  if (preset === "year") return { start: shiftMonths(range.start, -12), end: shiftMonths(range.end, -12) };
-  const fullMonthlyCycle = addDays(shiftMonths(range.start, 1), -1) === range.end;
-  if (["salary", "month", "previous"].includes(preset) || fullMonthlyCycle) {
-    const start2 = shiftMonths(range.start, -1);
-    const alignedEnd = fullMonthlyCycle ? addDays(range.start, -1) : addDays(start2, dayOffset(range.start, range.end));
-    return { start: start2, end: alignedEnd < range.start ? alignedEnd : addDays(range.start, -1) };
-  }
-  const end2 = addDays(range.start, -1);
-  return { start: addDays(end2, -dayOffset(range.start, range.end)), end: end2 };
-}
-function alignedTrendSeries(records, previousRecords, range, previousRange, unit, cumulative, previousKnownDates) {
-  var _a2, _b2, _c2, _d2, _e, _f;
-  const comparison = { range: previousRange, points: [], missingDays: 0 };
-  if (!validRange2(range) || !validRange2(previousRange)) return { points: [], comparison };
-  const selected = records.filter((record2) => record2.date >= range.start && record2.date <= range.end);
-  const selectedPrevious = previousRecords.filter((record2) => record2.date >= previousRange.start && record2.date <= previousRange.end);
-  const hasLedger = [...previousKnownDates].some((date) => date >= range.start && date <= range.end || date >= previousRange.start && date <= previousRange.end);
-  if (!selected.length && !selectedPrevious.length && !hasLedger) return { points: [], comparison };
-  const current = new Map(trendPoints(selected, unit).map((point) => [point.key, point]));
-  const previous = new Map(trendPoints(selectedPrevious, "day").map((point) => [point.key, point]));
-  const points2 = [];
-  let total3 = 0;
-  let count = 0;
-  let previousTotal = 0;
-  let previousCount = 0;
-  let incomplete = false;
-  const mappedPreviousEnd = addDays(range.start, dayOffset(previousRange.start, previousRange.end));
-  const timelineEnd = range.end > mappedPreviousEnd ? range.end : mappedPreviousEnd;
-  for (let date = range.start; date <= timelineEnd; ) {
-    const bucket = trendPoints([{ date, cents: 0 }], unit)[0];
-    const bucketLimit = date <= range.end ? range.end : timelineEnd;
-    const end2 = bucket.end < bucketLimit ? bucket.end : bucketLimit;
-    const amount = current.get(bucket.key);
-    total3 = (cumulative ? total3 : 0) + ((_a2 = amount == null ? void 0 : amount.cents) != null ? _a2 : 0);
-    count = (cumulative ? count : 0) + ((_b2 = amount == null ? void 0 : amount.count) != null ? _b2 : 0);
-    if (date <= range.end) points2.push({ ...bucket, start: cumulative ? range.start : date, end: end2, cents: total3, count });
-    const sourceStart = addDays(previousRange.start, dayOffset(range.start, date));
-    const sourceEnd = addDays(previousRange.start, dayOffset(range.start, end2));
-    const clippedEnd = sourceEnd < previousRange.end ? sourceEnd : previousRange.end;
-    let missing = false;
-    previousTotal = cumulative ? previousTotal : 0;
-    previousCount = cumulative ? previousCount : 0;
-    for (let source = sourceStart; source <= clippedEnd; source = addDays(source, 1)) {
-      if (!previousKnownDates.has(source)) {
-        missing = true;
-        comparison.missingDays += 1;
-      }
-      previousTotal += (_d2 = (_c2 = previous.get(source)) == null ? void 0 : _c2.cents) != null ? _d2 : 0;
-      previousCount += (_f = (_e = previous.get(source)) == null ? void 0 : _e.count) != null ? _f : 0;
-    }
-    incomplete = cumulative && incomplete || missing;
-    comparison.points.push(sourceStart > previousRange.end || incomplete ? null : {
-      key: sourceStart,
-      label: sourceStart.slice(5),
-      start: cumulative ? previousRange.start : sourceStart,
-      end: clippedEnd,
-      cents: previousTotal,
-      count: previousCount
-    });
-    date = addDays(end2, 1);
-  }
-  return { points: points2, comparison };
 }
 
 // src/overview-details.ts
@@ -47510,11 +47522,11 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian10
       return;
     }
     const files = [...this.plugin.repository.files.values()];
-    const records = this.matchingRecords(this.filter);
-    const stats2 = summarize(files, records, this.filter.range);
-    const { previous, description } = this.autoComparisonRanges();
+    const { current, previous, description } = this.autoComparisonRanges();
+    const records = this.matchingRecords({ ...this.filter, range: current });
+    const stats2 = summarize(files, records, current);
     const previousStats = summarize(files, this.matchingRecords({ ...this.filter, range: previous }), previous);
-    const comparable = reportCoverage(files, this.filter.range).complete && reportCoverage(files, previous).complete && files.every((file) => file.date !== null);
+    const comparable = reportCoverage(files, current).complete && reportCoverage(files, previous).complete && files.every((file) => file.date !== null);
     const reference = `${description}\uFF1B\u4E0A\u671F ${previous.start} \u81F3 ${previous.end}`;
     const change = (difference, count = false) => ({ difference: comparable ? difference : null, count, reference });
     const section = this.overviewSection(parent, "\u671F\u95F4\u6982\u89C8", "layout-dashboard");
@@ -47602,10 +47614,11 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian10
     return section.createDiv({ cls: "ledger-overview-body" });
   }
   renderSpendingAnalysis(parent) {
+    const { current, previous } = this.autoComparisonRanges();
     const analysis = buildCategoryAnalysis(
       [...this.plugin.repository.files.values()],
-      this.filter,
-      previousTrendRange(this.filter.range, this.preset),
+      { ...this.filter, range: current },
+      previous,
       this.plugin.settings.reportObjectRules,
       true
     );
@@ -47619,7 +47632,8 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian10
   renderSingleCategory(parent) {
     const category = this.filter.categories[0];
     const files = [...this.plugin.repository.files.values()];
-    const analysis = buildCategoryAnalysis(files, this.filter, categoryPreviousRange(this.filter.range, this.preset), this.plugin.settings.reportObjectRules);
+    const { current, previous } = this.autoComparisonRanges();
+    const analysis = buildCategoryAnalysis(files, { ...this.filter, range: current }, previous, this.plugin.settings.reportObjectRules);
     renderCategoryAnalysis(
       this.overviewSection(parent, `${category} \xB7 \u5206\u7C7B\u5206\u6790`, "chart-pie"),
       category,
@@ -47786,7 +47800,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian10
         this.refreshOverviewSection(parent, () => this.renderCategory(parent));
       });
     }
-    const records = this.matchingRecords(this.filter);
+    const records = this.matchingRecords({ ...this.filter, range: this.autoComparisonRanges().current });
     const summaries = categorySummaries(records, this.categorySort);
     if (this.categoryChart === "bar") renderCategoryTreemap(parent, summaries, (category) => this.drillCategory(category), this.categorySort);
     if (this.categoryChart === "donut") renderDonut(parent, summaries, (category) => this.drillCategory(category));
@@ -47818,12 +47832,11 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian10
       this.trendUnit = value;
       this.refreshOverviewSection(parent, () => this.renderTrend(parent));
     });
-    const records = this.matchingRecords(this.filter);
+    const { current: range, previous: previousRange } = this.autoComparisonRanges();
+    const records = this.matchingRecords({ ...this.filter, range });
     const unit = this.trendUnit === "auto" ? this.rangeTrendUnit() : this.trendUnit;
     const cumulative = this.trendChart === "cumulative";
-    const range = { ...this.filter.range };
     if (this.trendChart !== "bar" && range.end > todayIso()) range.end = todayIso();
-    const previousRange = previousTrendRange(this.filter.range, this.preset);
     const previousRecords = this.matchingRecords({ ...this.filter, range: previousRange });
     const knownDates = /* @__PURE__ */ new Set();
     for (const file of this.plugin.repository.files.values()) {
@@ -48154,7 +48167,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian10
     new OverviewMetricModal(
       this.app,
       metric2,
-      buildOverviewDetails([...this.plugin.repository.files.values()], this.filter),
+      buildOverviewDetails([...this.plugin.repository.files.values()], { ...this.filter, range: this.autoComparisonRanges().current }),
       (record2) => void this.openRecord(record2)
     ).open();
   }
@@ -48447,25 +48460,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian10
     else menu.showAtPosition(event);
   }
   autoComparisonRanges() {
-    const current = { ...this.filter.range };
-    const today = todayIso();
-    const currentMonthStart = `${today.slice(0, 7)}-01`;
-    if (current.start === currentMonthStart && current.end === today) {
-      const date = /* @__PURE__ */ new Date(`${current.start}T12:00:00`);
-      const previousFull = monthRange(date.getFullYear(), date.getMonth() - 1);
-      const sameDay = Math.min(Number(today.slice(8, 10)), Number(previousFull.end.slice(8, 10)));
-      return {
-        current,
-        previous: { start: previousFull.start, end: `${previousFull.start.slice(0, 8)}${String(sameDay).padStart(2, "0")}` },
-        description: "\u8FDB\u884C\u4E2D\u6708\u4EFD\u9ED8\u8BA4\u540C\u671F\u6BD4\u8F83"
-      };
-    }
-    const previousEnd = addDays(current.start, -1);
-    return {
-      current,
-      previous: { start: addDays(previousEnd, -daysInclusive2(current) + 1), end: previousEnd },
-      description: "\u6309\u76F8\u540C\u5929\u6570\u7684\u7D27\u90BB\u4E0A\u4E00\u671F\u95F4\u6BD4\u8F83"
-    };
+    return comparisonRanges(this.filter.range, this.preset, todayIso());
   }
   async openRecord(record2) {
     await this.openPath(record2.path, record2.line);

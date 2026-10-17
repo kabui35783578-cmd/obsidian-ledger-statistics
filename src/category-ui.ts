@@ -85,17 +85,17 @@ export function renderCategoryAnalysis(parent: HTMLElement, category: string, an
     `分母：${a.summary.recordedDays} 个有账本日期`, details);
   if (!a.coverage.complete) section.createDiv({ cls: "ledger-category-warning", text: `本期缺少 ${a.coverage.missingDates.length} 天账本，${a.coverage.problems.length} 项账本需核对；当前仅展示已解析记录，不将未知日期当作零消费。` });
 
-  const comparison = card(section, "同期变化", `上期 ${a.previousRange.start} 至 ${a.previousRange.end} · 同一分类与筛选口径`, "ledger-category-comparison");
+  const comparison = card(section, "同期变化", `上期 ${a.previousRange.start} 至 ${a.previousRange.end} · ${a.comparisonBasis}`, "ledger-category-comparison");
   const comparisonMetrics = comparison.createDiv({ cls: "ledger-category-comparison-metrics" });
   metric(comparisonMetrics, "本期金额", money(a.summary.cents), `${a.records.length} 笔 · 平均每笔 ${money(a.mean)}`);
   metric(comparisonMetrics, "上期已记录金额", money(a.previousSummary.cents), `${a.previous.length} 笔 · 平均每笔 ${money(a.previousMean)}`);
   if (a.comparable) {
-    const delta = a.summary.cents - a.previousSummary.cents * a.scale;
-    const ratio = a.previousSummary.cents ? `${(delta > 0 ? "+" : "")}${(delta / (a.previousSummary.cents * a.scale) * 100).toFixed(1)}%` : a.summary.cents ? "上期为零，不计算涨幅" : "两期均为零";
+    const delta = a.summary.cents - a.previousSummary.cents;
+    const ratio = a.previousSummary.cents ? `${(delta > 0 ? "+" : "")}${(delta / a.previousSummary.cents * 100).toFixed(1)}%` : a.summary.cents ? "上期为零，不计算涨幅" : "两期均为零";
     metric(comparisonMetrics, "金额变化", signedMoney(delta), ratio);
-    const countDelta = a.records.length - a.previous.length * a.scale;
-    metric(comparisonMetrics, "笔数变化", `${countDelta > 0 ? "+" : ""}${Number(countDelta.toFixed(1))}`, a.scale === 1 ? "本期减上期" : "上期按本期天数折算");
-    if (a.scale !== 1) comparison.createDiv({ cls: "ledger-note", text: `两期天数不同，上期按 ${a.scale.toFixed(3)} 倍折算；上方仍保留实际已记录金额。` });
+    const countDelta = a.records.length - a.previous.length;
+    metric(comparisonMetrics, "笔数变化", `${countDelta > 0 ? "+" : ""}${countDelta}`, "本期实际笔数减上期实际笔数");
+    comparison.createDiv({ cls: "ledger-note", text: `辅助看消费速度（按自然日）：本期日均 ${money(a.currentDailyCents)}，上期日均 ${money(a.previousDailyCents)}。` });
     if (a.decomposition) comparison.createDiv({ cls: "ledger-note", text: `金额差额拆解：笔数变化对应 ${signedMoney(a.decomposition.frequency)}，平均每笔变化对应 ${signedMoney(a.decomposition.ticket)}。这是计算关系，不代表商品涨价。` });
   } else comparison.createDiv({ cls: "ledger-category-warning", text: `可比数据不足，暂不判断涨跌。上期缺少 ${a.previousCoverage.missingDates.length} 天账本，${a.previousCoverage.problems.length} 项账本需核对；本期或未归期账本也可能影响比较。` });
   if (!a.records.length) {
@@ -143,11 +143,11 @@ function renderAmountDistribution(parent: HTMLElement, a: CategoryAnalysis, open
 function renderRepeatedProjects(parent: HTMLElement, a: CategoryAnalysis, show: (label: string, records: LedgerRecord[]) => void): void {
   const repeatGroups = a.repeats.slice(0, 6), repeatsWrap = parent.createDiv({ cls: "ledger-category-chart-cell" });
   if (repeatGroups.length && a.comparable) {
-    renderDumbbell(repeatsWrap, repeatGroups.map(group => ({ category: group.label, currentCents: group.cents, previousCents: Math.round((a.previousGroups.find(previous => previous.label === group.label)?.cents ?? 0) * a.scale) })), "本期", a.scale === 1 ? "上期" : "上期折算", label => {
+    renderDumbbell(repeatsWrap, repeatGroups.map(group => ({ category: group.label, currentCents: group.cents, previousCents: a.previousGroups.find(previous => previous.label === group.label)?.cents ?? 0 })), "本期", "上期", label => {
       show(`重复项目 · ${label}`, [...(repeatGroups.find(group => group.label === label)?.records ?? []), ...(a.previousGroups.find(group => group.label === label)?.records ?? [])]);
     });
     repeatsWrap.querySelector("h3")!.textContent = `${repeatGroups[0].label}是花费最多的重复项目`;
-    repeatsWrap.querySelector(".ledger-mono-sub")!.textContent = "本期至少出现两笔的备注项目 · 最多六组 · 仅合并明确餐次同义词";
+    repeatsWrap.querySelector(".ledger-mono-sub")!.textContent = `实心点为本期，空心点为上期 · ${a.comparisonBasis} · 本期至少两笔，最多六组`;
   } else {
     const repeats = card(repeatsWrap, "重复项目", "按备注累计金额排列 · 点击查看流水");
     if (repeatGroups.length) groupList(repeats, repeatGroups, a.summary.cents, show);
@@ -177,6 +177,8 @@ function renderWeekdayDistribution(parent: HTMLElement, a: CategoryAnalysis, sho
 export function renderOverviewAnalysis(parent: HTMLElement, a: CategoryAnalysis, open: (record: LedgerRecord) => void, show: (label: string, records: LedgerRecord[]) => void): void {
   const surface = parent.createDiv({ cls: "ledger-category-analysis ledger-overview-analysis" });
   surface.createDiv({ cls: "ledger-note", text: `${a.coverage.range.start} 至 ${a.coverage.range.end} · 当前筛选下的全部分类 · 上期 ${a.previousRange.start} 至 ${a.previousRange.end}` });
+  surface.createDiv({ cls: "ledger-note", text: a.comparisonBasis });
+  if (a.comparable) surface.createDiv({ cls: "ledger-note", text: `辅助看消费速度（按自然日）：本期日均 ${money(a.currentDailyCents)}，上期日均 ${money(a.previousDailyCents)}。` });
   if (!a.records.length) {
     surface.createDiv({ cls: "ledger-empty", text: "当前期间和筛选条件下没有消费记录。" });
     return;

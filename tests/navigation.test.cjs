@@ -197,8 +197,8 @@ test('overview arrows compare the same filters and dates, and distinguish increa
     const v = view();
     v.filter.range = { start: '2026-10-01', end: '2026-10-02' };
     const previous = previousEntries
-      ? [file('2026-09-29', [...previousEntries, ['债务/还款', 1000]]), file('2026-09-30', previousEntries)]
-      : [file('2026-09-29', [['餐饮', 10], ['购物', 20]]), file('2026-09-30', [['餐饮', 30]])];
+      ? [file('2026-09-01', [...previousEntries, ['债务/还款', 1000]]), file('2026-09-02', previousEntries)]
+      : [file('2026-09-01', [['餐饮', 10], ['购物', 20]]), file('2026-09-02', [['餐饮', 30]])];
     previous.forEach(f => v.plugin.repository.files.set(f.path, f));
     v.renderSalaryCycle = v.renderTrend = v.renderCategory = () => {};
     const root = new Element();
@@ -208,10 +208,10 @@ test('overview arrows compare the same filters and dates, and distinguish increa
     metrics.slice(0, 3).forEach((m, i) => {
       const delta = m.all().find(e => e.classes.has('ledger-metric-change-detail'));
       assert.equal(delta.children.at(-1).textContent, changes[i]);
-      assert.ok(delta.attributes.title.includes('2026-09-29 至 2026-09-30'));
+      assert.ok(delta.attributes.title.includes('2026-09-01 至 2026-09-02'));
     });
     assert.deepEqual(root.all().filter(e => e.classes.has('ledger-metric-change-triangle')).map(e => e.textContent), arrows.map(a => a === '↑' ? '▲' : '▼'));
-    assert.equal(root.all().find(e => e.classes.has('ledger-metric-comparison-note')).textContent, '2026-09-29 至 2026-09-30');
+    assert.equal(root.all().find(e => e.classes.has('ledger-metric-comparison-note')).textContent, '2026-09-01 至 2026-09-02');
     assert.equal(metrics[2].all().find(e => e.classes.has('ledger-metric-value')).children.at(-1).textContent, '¥30.00', 'Show the current daily amount, not the delta');
     assert.ok(!metrics[3].all().some(e => e.classes.has('ledger-metric-change-detail')), 'Keep the largest transaction free of an unrelated change marker');
   }
@@ -223,7 +223,7 @@ test('overview does not invent decreases when the previous ledger or current dat
     v.filter.range = { start: '2026-10-01', end: '2026-10-02' };
     if (missingCurrent) {
       v.plugin.repository.files.delete('记账/2026-10-02.md');
-      for (const day of ['2026-09-29', '2026-09-30']) {
+      for (const day of ['2026-09-01', '2026-09-02']) {
         const f = file(day, [['餐饮', 10]]); v.plugin.repository.files.set(f.path, f);
       }
     }

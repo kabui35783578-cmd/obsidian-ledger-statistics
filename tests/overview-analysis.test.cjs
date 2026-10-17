@@ -2,7 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { parseLedgerFile, addDays } = require('../dist/core.cjs');
 const { buildCategoryAnalysis } = require('../dist/category-analysis.cjs');
-const { renderOverviewAnalysis } = require('../dist/category-ui.cjs');
+const { renderOverviewAnalysis, renderCategoryAnalysis } = require('../dist/category-ui.cjs');
+const { comparisonRanges } = require('../dist/trend-comparison.cjs');
 
 const range = { start: '2026-09-15', end: '2026-09-28' };
 const prior = { start: '2026-08-15', end: '2026-08-28' };
@@ -29,14 +30,16 @@ class Element {
   querySelector(selector) { return this.querySelectorAll(selector)[0] ?? null; }
   querySelectorAll(selector) { return this.all().filter(el => selector.startsWith('.') ? el.classes.has(selector.slice(1)) : el.tag === selector); }
 }
-function render(files = fixture(), selected = filter) {
+function render(files = fixture(), selected = filter, previousRange = prior, category = false) {
   const previous = global.document;
   global.document = { createElementNS: (_, tag) => new Element(tag) };
   try {
     const root = new Element();
-    const a = buildCategoryAnalysis(files, selected, prior, undefined, true);
+    const a = buildCategoryAnalysis(files, selected, previousRange, undefined, !category);
     const shown = [];
-    renderOverviewAnalysis(root, a, () => {}, (label, records) => shown.push({ label, records }));
+    const show = (label, records) => shown.push({ label, records });
+    if (category) renderCategoryAnalysis(root, '咖啡奶茶', a, 'day', () => {}, show, () => {});
+    else renderOverviewAnalysis(root, a, () => {}, show);
     return { root, a, shown };
   } finally { global.document = previous; }
 }
@@ -88,4 +91,52 @@ test('empty overview analysis does not render invented distributions or peaks', 
   const { root } = render([]);
   assert.equal(root.querySelectorAll('.ledger-mono-card').length, 0);
   assert.ok(root.all().some(e => e.classes.has('ledger-empty')));
+});
+
+function spendingFile(date, amounts) {
+  return parseLedgerFile(`记账/${date}.md`, `---\ndate: ${date}\ntotal: ${amounts.reduce((s, x) => s + x, 0).toFixed(2)}\n---\n# 今日消费记录\n${amounts.map((amount, i) => `- 12:0${i}｜咖啡奶茶｜￥${amount.toFixed(2)}（咖啡）`).join('\n')}`);
+}
+function cycleFiles(current, previous) {
+  return [current, previous].flatMap((r, period) => {
+    const files = [];
+    for (let date = r.start; date <= r.end; date = addDays(date, 1)) files.push(spendingFile(date, date === r.start ? period ? [33.68, 33.68] : [33.70, 33.70] : []));
+    return files;
+  });
+}
+
+test('unequal full cycles display the actual four-cent coffee increase in overview and category charts', () => {
+  const { current, previous } = comparisonRanges({ start: '2026-09-15', end: '2026-10-14' }, 'salary', '2026-10-17');
+  const files = cycleFiles(current, previous);
+  for (const category of [false, true]) {
+    const { root, a, shown } = render(files, { ...filter, range: current, categories: category ? ['咖啡奶茶'] : [] }, previous, category);
+    assert.equal(a.comparable, true);
+    assert.equal(a.currentDays, 30);
+    assert.equal(a.previousDays, 31);
+    assert.equal(a.summary.cents - a.previousSummary.cents, 4);
+    assert.equal(a.decomposition.frequency + a.decomposition.ticket, 4);
+    const delta = root.querySelector('.ledger-dumbbell-value');
+    assert.equal(delta.textContent, '¥0.04', 'Do not inflate actual spending with a 30/31 multiplier');
+    assert.ok(root.all().some(e => e.textContent.includes('本期 30 天，上期 31 天')));
+    assert.ok(!root.all().some(e => e.textContent.includes('上期折算')));
+    const target = root.all().find(e => e.attributes['aria-label']?.includes('本期 ¥67.40，基期 ¥67.36') && e.listeners.click);
+    assert.ok(target);
+    target.listeners.click();
+    assert.equal(shown.at(-1).records.reduce((s, r) => s + r.cents, 0), 13476);
+    assert.equal(a.currentDailyCents, 6740 / 30);
+    assert.equal(a.previousDailyCents, 6736 / 31);
+  }
+});
+
+test('ongoing cycles use only matching elapsed transactions, preserving category and keyword filters', () => {
+  const { current, previous } = comparisonRanges({ start: '2026-10-15', end: '2026-11-14' }, 'salary', '2026-10-17');
+  const files = cycleFiles(current, previous).concat([spendingFile('2026-10-18', [999]), spendingFile('2026-09-18', [999])]);
+  const { a } = render(files, { ...filter, range: current, categories: ['咖啡奶茶'], keyword: '咖啡' }, previous);
+  assert.equal(a.currentDays, 3);
+  assert.equal(a.previousDays, 3);
+  assert.equal(a.summary.cents, 6740);
+  assert.equal(a.previousSummary.cents, 6736);
+  const incomplete = render(files.filter(f => f.date !== previous.end), { ...filter, range: current }, previous);
+  assert.equal(incomplete.a.comparable, false);
+  assert.equal(incomplete.a.currentDailyCents, null);
+  assert.ok(!incomplete.root.querySelector('.ledger-dumbbell-value'));
 });

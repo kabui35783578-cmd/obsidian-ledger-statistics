@@ -1,17 +1,10 @@
-import { addDays, DateRange, filteredRecords, FilterState, LedgerRecord, monthRange, ParsedLedgerFile, salaryCycleFullRange, summarize } from "./core";
+import { addDays, DateRange, filteredRecords, FilterState, LedgerRecord, ParsedLedgerFile, summarize } from "./core";
+import { previousTrendRange } from "./trend-comparison";
 import { identifyReportObjects, reportCoverage, reportDays, reportMedian, symmetricDecomposition } from "./report";
 import { parseObjectRules } from "./report-config";
 
 export function categoryPreviousRange(range: DateRange, preset: string): DateRange {
-  const anchor = new Date(`${range.start}T12:00:00`);
-  const days = reportDays(range);
-  let full: DateRange;
-  if (preset === "salary") full = salaryCycleFullRange(anchor, 1);
-  else if (preset === "month" || preset === "previous") full = monthRange(anchor.getFullYear(), anchor.getMonth() - 1);
-  else if (preset === "week") full = { start: addDays(range.start, -7), end: addDays(range.start, -1) };
-  else if (preset === "year") full = { start: `${anchor.getFullYear() - 1}-01-01`, end: `${anchor.getFullYear() - 1}-12-31` };
-  else return { start: addDays(range.start, -days), end: addDays(range.start, -1) };
-  return { start: full.start, end: [addDays(full.start, days - 1), full.end].sort()[0] };
+  return previousTrendRange(range, preset);
 }
 
 export interface CategoryGroup { label: string; records: LedgerRecord[]; cents: number; days: number }
@@ -49,7 +42,8 @@ export function buildCategoryAnalysis(files: ParsedLedgerFile[], filter: FilterS
   const summary = summarize(files, records, filter.range), previousSummary = summarize(files, previous, previousRange);
   const coverage = reportCoverage(files, filter.range), previousCoverage = reportCoverage(files, previousRange);
   const comparable = coverage.complete && previousCoverage.complete && files.every(file => file.date !== null);
-  const scale = reportDays(filter.range) / Math.max(1, reportDays(previousRange));
+  const currentDays = reportDays(filter.range), previousDays = reportDays(previousRange);
+  const comparisonBasis = `本期 ${currentDays} 天，上期 ${previousDays} 天 · 比较实际金额，不按天数折算`;
   const amounts = records.map(r => r.cents).sort((a, b) => a - b);
   const quantile = (p: number) => {
     if (!amounts.length) return null;
@@ -78,12 +72,14 @@ export function buildCategoryAnalysis(files: ParsedLedgerFile[], filter: FilterS
     }
     return { label: ["周一", "周二", "周三", "周四", "周五", "周六", "周日"][day], records: entries, mean: observed ? total(entries) / observed : 0, observed };
   });
-  return { records, previous, summary, previousSummary, previousRange, coverage, previousCoverage, comparable, scale,
+  return { records, previous, summary, previousSummary, previousRange, coverage, previousCoverage, comparable, currentDays, previousDays, comparisonBasis,
+    currentDailyCents: comparable && currentDays ? summary.cents / currentDays : null,
+    previousDailyCents: comparable && previousDays ? previousSummary.cents / previousDays : null,
     mean: records.length ? summary.cents / records.length : null, median: amounts.length ? reportMedian(amounts) : null,
     previousMean: previous.length ? previousSummary.cents / previous.length : null, activeDays,
     activeDayMean: activeDays ? summary.cents / activeDays : null, q1: quantile(.25), q3: quantile(.75),
     topTen, topThreeCents: total(topThree), purposes, repeats, previousGroups, bins, weekdays,
-    decomposition: comparable && records.length && previous.length ? symmetricDecomposition(previous.length * scale, previousSummary.cents * scale, records.length, summary.cents) : null };
+    decomposition: comparable && records.length && previous.length ? symmetricDecomposition(previous.length, previousSummary.cents, records.length, summary.cents) : null };
 }
 
 export type CategoryAnalysis = ReturnType<typeof buildCategoryAnalysis>;
