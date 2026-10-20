@@ -43012,7 +43012,7 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
     const balancePanel = bodies.get("balance");
     const aiPanel = bodies.get("ai");
     const budgetPanel = bodies.get("budget");
-    new import_obsidian4.Setting(ledgerPanel).setName("\u8DE8\u8BBE\u5907\u6570\u636E\u540C\u6B65").setDesc("\u8D44\u4EA7\u3001\u5DE5\u8D44\u5468\u671F\u3001\u5907\u6CE8\u548C\u62A5\u544A\u4FDD\u5B58\u5728\u300C\u8BB0\u8D26\u7EDF\u8BA1\u6570\u636E/\u72B6\u6001.json\u300D\uFF0C\u968F\u5E93\u5185\u666E\u901A\u6587\u4EF6\u540C\u6B65\u3002AI \u670D\u52A1\u3001\u5BC6\u94A5\u548C\u901A\u77E5\u914D\u7F6E\u4FDD\u7559\u5728\u672C\u673A\u3002\u8FC1\u79FB\u4E0E\u51B2\u7A81\u5907\u4EFD\u4FDD\u5B58\u5728\u63D2\u4EF6\u76EE\u5F55\u7684 sync-backups \u6587\u4EF6\u5939\u3002").addButton((button2) => button2.setButtonText("\u6062\u590D\u7F3A\u5931\u7684\u6570\u636E\u6587\u4EF6").onClick(async () => {
+    new import_obsidian4.Setting(ledgerPanel).setName("\u8DE8\u8BBE\u5907\u6570\u636E\u540C\u6B65").setDesc((this.plugin.vaultDataReadOnly ? "\u5F53\u524D\u4E3A\u53EA\u8BFB\u6A21\u5F0F\uFF0C\u4E1A\u52A1\u6570\u636E\u6682\u505C\u5199\u5165\u3002" : "") + "\u8D44\u4EA7\u3001\u5DE5\u8D44\u5468\u671F\u3001\u5907\u6CE8\u548C\u62A5\u544A\u4FDD\u5B58\u5728\u300C\u8BB0\u8D26\u7EDF\u8BA1\u6570\u636E/\u72B6\u6001.json\u300D\uFF0C\u968F\u5E93\u5185\u666E\u901A\u6587\u4EF6\u540C\u6B65\u3002AI \u670D\u52A1\u3001\u5BC6\u94A5\u548C\u901A\u77E5\u914D\u7F6E\u4FDD\u7559\u5728\u672C\u673A\u3002\u6570\u636E\u5F02\u5E38\u65F6\u6682\u505C\u5199\u5165\uFF1B\u6062\u590D\u524D\u4F1A\u5907\u4EFD\u635F\u574F\u539F\u6587\uFF0C\u6062\u590D\u6570\u636E\u6765\u81EA\u672C\u673A\u6709\u6548\u526F\u672C\uFF0C\u53EF\u80FD\u4E0D\u542B\u5176\u4ED6\u8BBE\u5907\u5C1A\u672A\u540C\u6B65\u7684\u4FEE\u6539\u3002\u8FC1\u79FB\u4E0E\u6062\u590D\u5907\u4EFD\u4FDD\u5B58\u5728\u63D2\u4EF6\u76EE\u5F55\u7684 sync-backups \u6587\u4EF6\u5939\u3002").addButton((button2) => button2.setButtonText("\u6062\u590D\u7F3A\u5931\u6216\u635F\u574F\u7684\u6570\u636E\u6587\u4EF6").onClick(async () => {
       button2.setDisabled(true);
       try {
         await this.plugin.restoreVaultData();
@@ -48776,18 +48776,25 @@ function materialize(units, defaults2) {
   return result;
 }
 var emptyDocument = () => ({ format: "ledger-statistics", version: 1, seen: {}, entries: {} });
+var VaultDataParseError = class extends Error {
+  constructor(message, recoverable = true) {
+    super(message);
+    this.recoverable = recoverable;
+  }
+};
 function parseVaultData(text2) {
   let doc;
   try {
     doc = JSON.parse(text2);
   } catch (e2) {
-    throw new Error("\u540C\u6B65\u6570\u636E\u6587\u4EF6\u65E0\u6CD5\u89E3\u6790\uFF0C\u5DF2\u505C\u6B62\u5199\u5165\u5E76\u4FDD\u7559\u672C\u673A\u526F\u672C");
+    throw new VaultDataParseError("\u540C\u6B65\u6570\u636E\u6587\u4EF6\u65E0\u6CD5\u89E3\u6790\uFF0C\u5DF2\u505C\u6B62\u5199\u5165\u5E76\u4FDD\u7559\u672C\u673A\u526F\u672C");
   }
-  if (!record(doc) || doc.format !== "ledger-statistics" || doc.version !== 1 || !record(doc.seen) || !record(doc.entries) || Object.keys(doc).some((k) => !["format", "version", "seen", "entries"].includes(k))) throw new Error("\u540C\u6B65\u6570\u636E\u683C\u5F0F\u6216\u7248\u672C\u4E0D\u652F\u6301\uFF0C\u5DF2\u505C\u6B62\u5199\u5165");
+  if (!record(doc) || doc.format !== "ledger-statistics" || doc.version !== 1) throw new VaultDataParseError("\u540C\u6B65\u6570\u636E\u683C\u5F0F\u6216\u7248\u672C\u4E0D\u652F\u6301\uFF0C\u5DF2\u505C\u6B62\u5199\u5165", false);
+  if (!record(doc.seen) || !record(doc.entries) || Object.keys(doc).some((k) => !["format", "version", "seen", "entries"].includes(k))) throw new VaultDataParseError("\u540C\u6B65\u6570\u636E\u7ED3\u6784\u635F\u574F\uFF0C\u5DF2\u505C\u6B62\u5199\u5165");
   const validClock = (n) => typeof n === "number" && Number.isSafeInteger(n) && n > 0;
-  for (const [device, clock] of Object.entries(doc.seen)) if (!/^[\w-]{1,100}$/.test(device) || ["__proto__", "constructor", "prototype"].includes(device) || !validClock(clock)) throw new Error("\u540C\u6B65\u7248\u672C\u4FE1\u606F\u635F\u574F");
+  for (const [device, clock] of Object.entries(doc.seen)) if (!/^[\w-]{1,100}$/.test(device) || ["__proto__", "constructor", "prototype"].includes(device) || !validClock(clock)) throw new VaultDataParseError("\u540C\u6B65\u7248\u672C\u4FE1\u606F\u635F\u574F");
   for (const [key, cell] of Object.entries(doc.entries)) {
-    if (!allowedKey(key) || !record(cell) || !validClock(cell.clock) || typeof cell.device !== "string" || !Object.hasOwnProperty.call(doc.seen, cell.device) || doc.seen[cell.device] < cell.clock || cell.deleted !== void 0 && cell.deleted !== true || !cell.deleted && (!Object.hasOwnProperty.call(cell, "value") || !validValue(key, cell.value))) throw new Error("\u540C\u6B65\u6570\u636E\u6761\u76EE\u635F\u574F\uFF0C\u5DF2\u505C\u6B62\u5199\u5165");
+    if (!allowedKey(key) || !record(cell) || !validClock(cell.clock) || typeof cell.device !== "string" || !Object.hasOwnProperty.call(doc.seen, cell.device) || doc.seen[cell.device] < cell.clock || cell.deleted !== void 0 && cell.deleted !== true || !cell.deleted && (!Object.hasOwnProperty.call(cell, "value") || !validValue(key, cell.value))) throw new VaultDataParseError("\u540C\u6B65\u6570\u636E\u6761\u76EE\u635F\u574F\uFF0C\u5DF2\u505C\u6B62\u5199\u5165");
   }
   return doc;
 }
@@ -48835,6 +48842,9 @@ var VaultDataStore = class {
     this.replicaText = "";
     this.ready = false;
     this.missing = false;
+    this.awaitingIndex = false;
+    this.blocked = false;
+    this.hasRecoveryData = false;
     this.backupSequence = 0;
     this.stopped = false;
     this.diskText = "";
@@ -48846,8 +48856,19 @@ var VaultDataStore = class {
     var _a2;
     return clone5((_a2 = this.materialized) != null ? _a2 : this.materialized = documentData(this.document, this.defaults));
   }
+  get writable() {
+    return this.ready && !this.missing && !this.awaitingIndex && !this.blocked && !this.stopped;
+  }
   stop() {
     this.stopped = true;
+  }
+  parse(text2) {
+    try {
+      return parseVaultData(text2);
+    } catch (error2) {
+      this.blocked = true;
+      throw error2;
+    }
   }
   async folder(path) {
     let current = "";
@@ -48864,27 +48885,63 @@ var VaultDataStore = class {
   }
   async backup(label2, content = stable(this.document)) {
     await this.folder(this.backupFolder);
-    const path = `${this.backupFolder}/${label2}-${this.clock()}-${++this.backupSequence}.json`;
+    let path;
+    do {
+      path = `${this.backupFolder}/${label2}-${this.clock()}-${++this.backupSequence}.json`;
+    } while (await this.vault.adapter.exists(path));
     await this.vault.adapter.write(path, content);
     return path;
   }
   async initialize(legacy, migrate, legacyTime) {
+    const errors = [];
+    const load = async (read) => {
+      try {
+        return parseVaultData(await read());
+      } catch (error2) {
+        errors.push(error2 instanceof Error ? error2.message : "\u540C\u6B65\u6570\u636E\u8BFB\u53D6\u5931\u8D25");
+        return void 0;
+      }
+    };
     if (await this.vault.adapter.exists(this.replicaPath)) {
-      this.replicaText = await this.vault.adapter.read(this.replicaPath);
-      this.document = parseVaultData(this.replicaText);
+      const replica = await load(async () => {
+        const text2 = await this.vault.adapter.read(this.replicaPath);
+        parseVaultData(text2);
+        this.replicaText = text2;
+        return text2;
+      });
+      if (replica) {
+        this.document = replica;
+        this.hasRecoveryData = true;
+      }
     }
     const file = this.vault.getAbstractFileByPath(VAULT_DATA_PATH);
-    if (file) this.document = await this.join(this.document, parseVaultData(await this.vault.read(file)));
+    const exists = !!file || await this.vault.adapter.exists(VAULT_DATA_PATH);
+    this.awaitingIndex = exists && !file;
+    if (exists) {
+      const remote = await load(() => file ? this.vault.read(file) : this.vault.adapter.read(VAULT_DATA_PATH));
+      if (remote) {
+        this.document = await this.join(this.document, remote);
+        this.hasRecoveryData = true;
+      }
+    }
     if (migrate) {
       const seed = editVaultData(emptyDocument(), this.defaults, legacy, this.device, Math.max(1, legacyTime));
       this.document = await this.join(this.document, seed);
+      if (Object.keys(seed.entries).length) this.hasRecoveryData = true;
     }
     this.ready = true;
-    if (!file && !migrate) {
-      this.missing = true;
-      await this.mirror();
-      this.notify("\u540C\u6B65\u6570\u636E\u6587\u4EF6\u7F3A\u5931\uFF0C\u5DF2\u4FDD\u7559\u672C\u673A\u526F\u672C\uFF1B\u8BF7\u5728\u63D2\u4EF6\u8BBE\u7F6E\u4E2D\u6062\u590D\u6570\u636E\u6587\u4EF6\u3002");
-    } else await this.persist(this.document, true);
+    this.blocked = errors.length > 0;
+    this.missing = !exists && !migrate;
+    if (this.blocked || this.missing) {
+      this.notify(this.blocked ? "\u540C\u6B65\u6570\u636E\u8BFB\u53D6\u5F02\u5E38\uFF0C\u5DF2\u8FDB\u5165\u53EA\u8BFB\u6A21\u5F0F\uFF1B" + (this.hasRecoveryData ? "\u6B63\u5728\u663E\u793A\u6709\u6548\u526F\u672C\uFF0C\u8BF7\u5728\u63D2\u4EF6\u8BBE\u7F6E\u4E2D\u6062\u590D\u7F3A\u5931\u6216\u635F\u574F\u7684\u6570\u636E\u6587\u4EF6\u3002" : "\u6CA1\u6709\u53EF\u7528\u7684\u6709\u6548\u526F\u672C\uFF0C\u8BF7\u4ECE\u5907\u4EFD\u8FD8\u539F\u6570\u636E\u6587\u4EF6\u540E\u91CD\u65B0\u52A0\u8F7D\u63D2\u4EF6\u3002") + "\uFF08" + errors.join("\uFF1B") + "\uFF09" : "\u540C\u6B65\u6570\u636E\u6587\u4EF6\u7F3A\u5931\uFF0C\u5DF2\u4FDD\u7559\u672C\u673A\u526F\u672C\uFF1B\u8BF7\u5728\u63D2\u4EF6\u8BBE\u7F6E\u4E2D\u6062\u590D\u6570\u636E\u6587\u4EF6\u3002");
+    } else if (!this.awaitingIndex) {
+      try {
+        await this.persist(this.document, true);
+      } catch (error2) {
+        if (!(error2 instanceof VaultDataParseError)) throw error2;
+        this.notify("\u540C\u6B65\u6570\u636E\u5728\u542F\u52A8\u65F6\u53D1\u751F\u5F02\u5E38\uFF0C\u5DF2\u8FDB\u5165\u53EA\u8BFB\u6A21\u5F0F\uFF0C\u8BF7\u5728\u63D2\u4EF6\u8BBE\u7F6E\u4E2D\u6062\u590D\u6570\u636E\u6587\u4EF6\u3002");
+      }
+    }
     return this.data;
   }
   async join(a, b) {
@@ -48908,6 +48965,10 @@ var VaultDataStore = class {
     await this.folder(VAULT_DATA_FOLDER);
     let file = this.vault.getAbstractFileByPath(VAULT_DATA_PATH);
     if (!file) {
+      if (await this.vault.adapter.exists(VAULT_DATA_PATH)) {
+        this.awaitingIndex = true;
+        throw new Error("\u540C\u6B65\u6570\u636E\u6587\u4EF6\u6B63\u5728\u52A0\u8F7D\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5");
+      }
       if (this.missing || !allowCreate) {
         this.missing = true;
         throw new Error("\u540C\u6B65\u6570\u636E\u6587\u4EF6\u5DF2\u88AB\u5220\u9664\uFF0C\u5DF2\u505C\u6B62\u5199\u5165\uFF1B\u8BF7\u5148\u5728\u8BBE\u7F6E\u4E2D\u6062\u590D");
@@ -48920,7 +48981,7 @@ var VaultDataStore = class {
       }
     }
     const diskText = await this.vault.read(file);
-    const disk = parseVaultData(diskText);
+    const disk = this.parse(diskText);
     const merged = await this.join(candidate, disk);
     let committed = merged;
     let writtenText = diskText;
@@ -48929,7 +48990,7 @@ var VaultDataStore = class {
       try {
         result = await this.vault.process(file, (text2) => {
           if (this.stopped) throw new Error("\u63D2\u4EF6\u5DF2\u5173\u95ED\uFF0C\u672A\u5199\u5165\u540C\u6B65\u6570\u636E");
-          if (!jsonDataEqual(parseVaultData(text2), disk)) throw new Error("ledger-vault-retry");
+          if (!jsonDataEqual(this.parse(text2), disk)) throw new Error("ledger-vault-retry");
           return stable(committed);
         });
       } catch (error2) {
@@ -48943,6 +49004,7 @@ var VaultDataStore = class {
       writtenText = result;
     }
     this.document = committed;
+    this.hasRecoveryData = true;
     this.materialized = void 0;
     this.diskText = writtenText;
     try {
@@ -48952,7 +49014,8 @@ var VaultDataStore = class {
     }
   }
   async save(before, after) {
-    if (!this.ready || this.missing) throw new Error("\u540C\u6B65\u6570\u636E\u6587\u4EF6\u4E0D\u53EF\u5199\uFF0C\u8BF7\u5728\u8BBE\u7F6E\u4E2D\u68C0\u67E5\u6216\u6062\u590D");
+    if (this.stopped) throw new Error("\u63D2\u4EF6\u5DF2\u5173\u95ED\uFF0C\u672A\u5199\u5165\u540C\u6B65\u6570\u636E");
+    if (!this.writable) throw new Error("\u540C\u6B65\u6570\u636E\u6587\u4EF6\u4E0D\u53EF\u5199\uFF0C\u8BF7\u5728\u8BBE\u7F6E\u4E2D\u68C0\u67E5\u6216\u6062\u590D");
     const candidate = editVaultData(this.document, before, after, this.device, this.clock());
     await this.persist(candidate);
     return this.data;
@@ -48960,26 +49023,82 @@ var VaultDataStore = class {
   async receive() {
     const file = this.vault.getAbstractFileByPath(VAULT_DATA_PATH);
     if (!file) {
+      this.awaitingIndex = await this.vault.adapter.exists(VAULT_DATA_PATH);
+      if (this.awaitingIndex) return false;
       if (!this.missing) this.notify("\u540C\u6B65\u6570\u636E\u6587\u4EF6\u88AB\u79FB\u8D70\u6216\u5220\u9664\uFF0C\u5DF2\u505C\u6B62\u5199\u5165\u5E76\u4FDD\u7559\u672C\u673A\u526F\u672C\u3002");
       this.missing = true;
       return false;
     }
+    this.awaitingIndex = false;
     const text2 = await this.vault.read(file);
-    if (text2 === this.diskText) {
+    if (text2 === this.diskText && !this.blocked) {
       this.missing = false;
       return false;
     }
-    const before = this.data, remote = parseVaultData(text2);
+    const before = this.data, remote = this.parse(text2);
     const merged = await this.join(this.document, remote);
     this.missing = false;
+    if (this.blocked && await this.vault.adapter.exists(this.replicaPath)) {
+      const replica = await this.vault.adapter.read(this.replicaPath);
+      try {
+        parseVaultData(replica);
+      } catch (e2) {
+        await this.backup("before-restore-replica", replica);
+        this.replicaText = "";
+      }
+    }
     await this.persist(merged);
+    this.blocked = false;
     return !jsonDataEqual(before, this.data);
   }
-  async restoreMissing() {
-    if (this.vault.getAbstractFileByPath(VAULT_DATA_PATH)) throw new Error("\u6570\u636E\u6587\u4EF6\u4ECD\u5B58\u5728\uFF0C\u672A\u8986\u76D6\uFF1B\u8BF7\u5148\u68C0\u67E5\u6587\u4EF6\u5185\u5BB9");
+  async restoreData() {
+    if (this.stopped) throw new Error("\u63D2\u4EF6\u5DF2\u5173\u95ED\uFF0C\u672A\u6062\u590D\u540C\u6B65\u6570\u636E");
+    const file = this.vault.getAbstractFileByPath(VAULT_DATA_PATH);
+    if (!file && await this.vault.adapter.exists(VAULT_DATA_PATH)) throw new Error("\u540C\u6B65\u6570\u636E\u6587\u4EF6\u6B63\u5728\u52A0\u8F7D\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\uFF0C\u65E0\u9700\u6062\u590D");
+    let broken;
+    if (file) {
+      const text2 = await this.vault.read(file);
+      try {
+        parseVaultData(text2);
+      } catch (error2) {
+        if (!(error2 instanceof VaultDataParseError) || !error2.recoverable) throw error2;
+        broken = text2;
+      }
+      if (broken === void 0) {
+        if (!this.blocked) throw new Error("\u6570\u636E\u6587\u4EF6\u4ECD\u5B58\u5728\u4E14\u6709\u6548\uFF0C\u672A\u8986\u76D6");
+        await this.receive();
+        return;
+      }
+    }
+    if (!this.hasRecoveryData) throw new Error("\u6CA1\u6709\u53EF\u7528\u4E8E\u6062\u590D\u7684\u6709\u6548\u526F\u672C\uFF0C\u8BF7\u4ECE\u5916\u90E8\u5907\u4EFD\u8FD8\u539F\u6570\u636E\u6587\u4EF6");
+    if (broken !== void 0) await this.backup("corrupt-data", broken);
+    if (await this.vault.adapter.exists(this.replicaPath)) await this.backup("before-restore-replica", await this.vault.adapter.read(this.replicaPath));
+    this.replicaText = "";
     await this.backup("before-restore");
+    if (file && broken !== void 0) {
+      const expected = broken;
+      const result = await this.vault.process(file, (text2) => {
+        if (this.stopped) throw new Error("\u63D2\u4EF6\u5DF2\u5173\u95ED\uFF0C\u672A\u6062\u590D\u540C\u6B65\u6570\u636E");
+        if (text2 !== expected) throw new Error("\u540C\u6B65\u6587\u4EF6\u5DF2\u53D8\u5316\uFF0C\u672A\u8986\u76D6\uFF0C\u8BF7\u91CD\u65B0\u68C0\u67E5\u540E\u6062\u590D");
+        return stable(this.document);
+      });
+      this.diskText = result;
+      try {
+        await this.mirror();
+      } catch (e2) {
+        this.notify("\u6570\u636E\u6587\u4EF6\u5DF2\u6062\u590D\uFF0C\u4F46\u672C\u673A\u6062\u590D\u526F\u672C\u5199\u5165\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u78C1\u76D8\u7A7A\u95F4\u548C\u6743\u9650\u3002");
+      }
+    } else {
+      this.missing = false;
+      try {
+        await this.persist(this.document, true);
+      } catch (error2) {
+        this.missing = true;
+        throw error2;
+      }
+    }
+    this.blocked = false;
     this.missing = false;
-    await this.persist(this.document, true);
   }
 };
 function rebaseShared(current, expected, committed, defaults2) {
@@ -49004,6 +49123,9 @@ var LedgerStatisticsPlugin = class extends import_obsidian11.Plugin {
     this.sharedDefaults = sharedSettings(DEFAULT_SETTINGS);
     this.syncError = "";
     this.localSettingsText = "";
+  }
+  get vaultDataReadOnly() {
+    return !!this.vaultData && !this.vaultData.writable;
   }
   openAiSettings() {
     var _a2;
@@ -49039,7 +49161,7 @@ var LedgerStatisticsPlugin = class extends import_obsidian11.Plugin {
     if (migrate && legacyStat) await this.vaultData.backup("migration", await this.app.vault.adapter.read(legacyPath));
     Object.assign(this.settings, await this.vaultData.initialize(sharedSettings(this.settings), migrate, (_a2 = legacyStat == null ? void 0 : legacyStat.mtime) != null ? _a2 : Date.now()));
     this.normalizeSettings();
-    if (migrate || migratedSecrets.changed) await this.persistLocalSettings();
+    if (this.vaultData.writable && (migrate || migratedSecrets.changed)) await this.persistLocalSettings();
     const onVaultDataChange = (file) => {
       if (file.path === VAULT_DATA_PATH || VAULT_DATA_PATH.startsWith(`${file.path}/`)) this.queueVaultDataReceive();
     };
@@ -49049,6 +49171,7 @@ var LedgerStatisticsPlugin = class extends import_obsidian11.Plugin {
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
       if (file.path === VAULT_DATA_PATH || oldPath === VAULT_DATA_PATH || VAULT_DATA_PATH.startsWith(`${oldPath}/`) || VAULT_DATA_PATH.startsWith(`${file.path}/`)) this.queueVaultDataReceive();
     }));
+    this.app.workspace.onLayoutReady(() => this.queueVaultDataReceive());
     this.settings.defaultView = normalizeLedgerView(this.settings.defaultView);
     this.settings.assets = normalizeAssets(this.settings.assets);
     this.assetsStopped = false;
@@ -49060,7 +49183,7 @@ var LedgerStatisticsPlugin = class extends import_obsidian11.Plugin {
       const held = new Set(state.holdings.filter((h) => active.has(h.accountId)).map((h) => quoteKey(h.kind, h.code)));
       for (const quote of quotes) if (held.has(quote.key)) applyAssetQuote(state, quote);
     }));
-    if (this.syncSalaryCycles()) await this.saveSettings(false, false);
+    if (this.vaultData.writable && this.syncSalaryCycles()) await this.saveSettings(false, false);
     this.budgetMonitor = new BudgetMonitor(
       () => this.settings,
       (url) => (0, import_obsidian11.requestUrl)({ url, method: "GET", throw: true }),
@@ -49086,7 +49209,7 @@ var LedgerStatisticsPlugin = class extends import_obsidian11.Plugin {
     const migrated = migrateStarredIds(this.settings.starredRecordIds, flattenRecords(this.repository.files.values()));
     if (JSON.stringify(migrated) !== JSON.stringify(this.settings.starredRecordIds)) {
       this.settings.starredRecordIds = migrated;
-      await this.saveSettings(false);
+      if (this.vaultData.writable) await this.saveSettings(false);
     }
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
       if (this.settings.assets.accounts.length) void this.updateAssets((state) => renameAssetLinks(state, oldPath, file.path)).catch(() => {
@@ -49135,6 +49258,7 @@ var LedgerStatisticsPlugin = class extends import_obsidian11.Plugin {
   }
   async saveSettings(rescan, refresh = true, now = /* @__PURE__ */ new Date()) {
     var _a2;
+    if (this.vaultData && !this.vaultData.writable) throw new Error("\u540C\u6B65\u6570\u636E\u6587\u4EF6\u4E0D\u53EF\u5199\uFF0C\u8BF7\u5728\u8BBE\u7F6E\u4E2D\u68C0\u67E5\u6216\u6062\u590D");
     this.syncSalaryCycles(now);
     const data = JSON.parse(JSON.stringify(withoutLegacyAiSecret(this.settings)));
     const before = (_a2 = this.vaultData) == null ? void 0 : _a2.data;
@@ -49198,8 +49322,16 @@ var LedgerStatisticsPlugin = class extends import_obsidian11.Plugin {
   }
   async restoreVaultData() {
     const restore = this.saveQueue.then(async () => {
+      var _a2, _b2;
       if (!this.vaultData) throw new Error("\u6570\u636E\u5B58\u50A8\u5C1A\u672A\u5C31\u7EEA");
-      await this.vaultData.restoreMissing();
+      const oldFolder = this.settings.ledgerFolder;
+      await this.vaultData.restoreData();
+      Object.assign(this.settings, this.vaultData.data);
+      this.normalizeSettings();
+      await this.persistLocalSettings();
+      if (oldFolder !== this.settings.ledgerFolder) await ((_a2 = this.repository) == null ? void 0 : _a2.setFolder(this.settings.ledgerFolder));
+      this.refreshViews();
+      (_b2 = this.settingTab) == null ? void 0 : _b2.display();
       this.syncError = "";
       new import_obsidian11.Notice("\u5DF2\u4ECE\u672C\u673A\u526F\u672C\u6062\u590D\u540C\u6B65\u6570\u636E\u6587\u4EF6");
     });
@@ -49242,11 +49374,11 @@ var LedgerStatisticsPlugin = class extends import_obsidian11.Plugin {
   }
   checkBudget() {
     var _a2;
-    if ((_a2 = this.repository) == null ? void 0 : _a2.loaded) void this.budgetMonitor.check([...this.repository.files.values()]);
+    if (!this.vaultDataReadOnly && ((_a2 = this.repository) == null ? void 0 : _a2.loaded)) void this.budgetMonitor.check([...this.repository.files.values()]);
   }
   tick() {
     var _a2;
-    if (this.syncSalaryCycles() || this.salaryHistoryDirty) void this.saveSettings(false).catch(() => new import_obsidian11.Notice("\u5DE5\u8D44\u5468\u671F\u4FDD\u5B58\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u540C\u6B65\u6216\u78C1\u76D8\u540E\u91CD\u65B0\u4FDD\u5B58\u8BBE\u7F6E\u3002"));
+    if ((!this.vaultData || this.vaultData.writable) && (this.syncSalaryCycles() || this.salaryHistoryDirty)) void this.saveSettings(false).catch(() => new import_obsidian11.Notice("\u5DE5\u8D44\u5468\u671F\u4FDD\u5B58\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u540C\u6B65\u6216\u78C1\u76D8\u540E\u91CD\u65B0\u4FDD\u5B58\u8BBE\u7F6E\u3002"));
     for (const leaf of this.app.workspace.getLeavesOfType(LEDGER_VIEW_TYPE)) {
       if (leaf.view instanceof LedgerStatisticsView) leaf.view.refreshDate();
     }
@@ -49276,7 +49408,7 @@ var LedgerStatisticsPlugin = class extends import_obsidian11.Plugin {
     return { salaryCycleStart, salaryCycles, salaryCents, balanceCalibration, balanceCalibrationNote };
   }
   refreshAssetQuotes(force = false) {
-    return this.assetQuotes.refresh(force);
+    return this.vaultData && !this.vaultData.writable ? Promise.resolve() : this.assetQuotes.refresh(force);
   }
   lookupAssetQuote(kind, code) {
     return this.assetQuotes.lookup(kind, code);
@@ -49387,7 +49519,7 @@ var LedgerStatisticsPlugin = class extends import_obsidian11.Plugin {
   }
   captureAssetSnapshot() {
     var _a2;
-    if (!((_a2 = this.repository) == null ? void 0 : _a2.loaded) || !this.settings.assets.accounts.length || this.assetsStopped) return Promise.resolve();
+    if (this.vaultData && !this.vaultData.writable || !((_a2 = this.repository) == null ? void 0 : _a2.loaded) || !this.settings.assets.accounts.length || this.assetsStopped) return Promise.resolve();
     const snapshot = this.assetSnapshot(), clone6 = JSON.parse(JSON.stringify(this.settings.assets));
     if (!storeAssetSnapshot(clone6, snapshot)) return Promise.resolve();
     return this.updateAssets(() => {

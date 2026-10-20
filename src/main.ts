@@ -33,6 +33,8 @@ export default class LedgerStatisticsPlugin extends Plugin {
   private syncError = "";
   private localSettingsText = "";
 
+  get vaultDataReadOnly(): boolean { return !!this.vaultData && !this.vaultData.writable; }
+
   openAiSettings(): void {
     this.settingTab?.selectAiSection();
     const settings = (this.app as typeof this.app & { setting: { open(): void; openTabById(id: string): void } }).setting;
@@ -66,7 +68,7 @@ export default class LedgerStatisticsPlugin extends Plugin {
     if (migrate && legacyStat) await this.vaultData.backup("migration", await this.app.vault.adapter.read(legacyPath));
     Object.assign(this.settings, await this.vaultData.initialize(sharedSettings(this.settings), migrate, legacyStat?.mtime ?? Date.now()));
     this.normalizeSettings();
-    if (migrate || migratedSecrets.changed) await this.persistLocalSettings();
+    if (this.vaultData.writable && (migrate || migratedSecrets.changed)) await this.persistLocalSettings();
     const onVaultDataChange = (file: TAbstractFile): void => {
       if (file.path === VAULT_DATA_PATH || VAULT_DATA_PATH.startsWith(`${file.path}/`)) this.queueVaultDataReceive();
     };
@@ -76,6 +78,7 @@ export default class LedgerStatisticsPlugin extends Plugin {
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
       if (file.path === VAULT_DATA_PATH || oldPath === VAULT_DATA_PATH || VAULT_DATA_PATH.startsWith(`${oldPath}/`) || VAULT_DATA_PATH.startsWith(`${file.path}/`)) this.queueVaultDataReceive();
     }));
+    this.app.workspace.onLayoutReady(() => this.queueVaultDataReceive());
     this.settings.defaultView = normalizeLedgerView(this.settings.defaultView);
     this.settings.assets = normalizeAssets(this.settings.assets);
     this.assetsStopped = false;
@@ -87,7 +90,7 @@ export default class LedgerStatisticsPlugin extends Plugin {
       const held = new Set(state.holdings.filter(h => active.has(h.accountId)).map(h => quoteKey(h.kind, h.code)));
       for (const quote of quotes) if (held.has(quote.key)) applyAssetQuote(state, quote);
     }));
-    if (this.syncSalaryCycles()) await this.saveSettings(false, false);
+    if (this.vaultData.writable && this.syncSalaryCycles()) await this.saveSettings(false, false);
     this.budgetMonitor = new BudgetMonitor(() => this.settings, (url) => requestUrl({ url, method: "GET", throw: true }),
       () => this.saveSettings(false, false), (message) => new Notice(message), sharedRequestGate(`bark:${this.app.vault.getName()}`));
     this.repository = new LedgerRepository(this.app, this.settings.ledgerFolder, () => {
@@ -106,7 +109,7 @@ export default class LedgerStatisticsPlugin extends Plugin {
     const migrated = migrateStarredIds(this.settings.starredRecordIds, flattenRecords(this.repository.files.values()));
     if (JSON.stringify(migrated) !== JSON.stringify(this.settings.starredRecordIds)) {
       this.settings.starredRecordIds = migrated;
-      await this.saveSettings(false);
+      if (this.vaultData.writable) await this.saveSettings(false);
     }
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
       if (this.settings.assets.accounts.length) void this.updateAssets(state => renameAssetLinks(state, oldPath, file.path)).catch(() => {});
@@ -152,6 +155,7 @@ export default class LedgerStatisticsPlugin extends Plugin {
   }
 
   async saveSettings(rescan: boolean, refresh = true, now = new Date()): Promise<void> {
+    if (this.vaultData && !this.vaultData.writable) throw new Error("同步数据文件不可写，请在设置中检查或恢复");
     this.syncSalaryCycles(now);
     const data = JSON.parse(JSON.stringify(withoutLegacyAiSecret(this.settings)));
     const before = this.vaultData?.data;
@@ -219,7 +223,14 @@ export default class LedgerStatisticsPlugin extends Plugin {
   async restoreVaultData(): Promise<void> {
     const restore = this.saveQueue.then(async () => {
       if (!this.vaultData) throw new Error("数据存储尚未就绪");
-      await this.vaultData.restoreMissing();
+      const oldFolder = this.settings.ledgerFolder;
+      await this.vaultData.restoreData();
+      Object.assign(this.settings, this.vaultData.data);
+      this.normalizeSettings();
+      await this.persistLocalSettings();
+      if (oldFolder !== this.settings.ledgerFolder) await this.repository?.setFolder(this.settings.ledgerFolder);
+      this.refreshViews();
+      this.settingTab?.display();
       this.syncError = "";
       new Notice("已从本机副本恢复同步数据文件");
     });
@@ -259,11 +270,11 @@ export default class LedgerStatisticsPlugin extends Plugin {
   }
 
   private checkBudget(): void {
-    if (this.repository?.loaded) void this.budgetMonitor.check([...this.repository.files.values()]);
+    if (!this.vaultDataReadOnly && this.repository?.loaded) void this.budgetMonitor.check([...this.repository.files.values()]);
   }
 
   private tick(): void {
-    if (this.syncSalaryCycles() || this.salaryHistoryDirty) void this.saveSettings(false).catch(() => new Notice("工资周期保存失败，请检查同步或磁盘后重新保存设置。"));
+    if ((!this.vaultData || this.vaultData.writable) && (this.syncSalaryCycles() || this.salaryHistoryDirty)) void this.saveSettings(false).catch(() => new Notice("工资周期保存失败，请检查同步或磁盘后重新保存设置。"));
     for (const leaf of this.app.workspace.getLeavesOfType(LEDGER_VIEW_TYPE)) {
       if (leaf.view instanceof LedgerStatisticsView) leaf.view.refreshDate();
     }
@@ -291,7 +302,7 @@ export default class LedgerStatisticsPlugin extends Plugin {
     return { salaryCycleStart, salaryCycles, salaryCents, balanceCalibration, balanceCalibrationNote };
   }
 
-  refreshAssetQuotes(force = false): Promise<void> { return this.assetQuotes.refresh(force); }
+  refreshAssetQuotes(force = false): Promise<void> { return this.vaultData && !this.vaultData.writable ? Promise.resolve() : this.assetQuotes.refresh(force); }
   lookupAssetQuote(kind: SecurityKind, code: string) { return this.assetQuotes.lookup(kind, code); }
 
   refreshAssetViews(): void { this.refreshViews(); }
@@ -381,7 +392,7 @@ export default class LedgerStatisticsPlugin extends Plugin {
   }
 
   private captureAssetSnapshot(): Promise<void> {
-    if (!this.repository?.loaded || !this.settings.assets.accounts.length || this.assetsStopped) return Promise.resolve();
+    if ((this.vaultData && !this.vaultData.writable) || !this.repository?.loaded || !this.settings.assets.accounts.length || this.assetsStopped) return Promise.resolve();
     const snapshot = this.assetSnapshot(), clone = JSON.parse(JSON.stringify(this.settings.assets)) as AssetState;
     if (!storeAssetSnapshot(clone, snapshot)) return Promise.resolve();
     return this.updateAssets(() => {});

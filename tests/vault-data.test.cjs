@@ -153,8 +153,8 @@ test('a deleted data file blocks writes and is restored only by the explicit rec
   vault.files.delete(V.VAULT_DATA_PATH);
   const changed = s.data; changed.salaryCents++;
   await assert.rejects(s.save(s.data, changed), /删除/); assert.equal(vault.text(), undefined);
-  await s.receive(); await s.restoreMissing(); assert.ok(vault.text()); assert.equal(s.data.salaryCents, 600000);
-  await assert.rejects(s.restoreMissing(), /仍存在/);
+  await s.receive(); await s.restoreData(); assert.ok(vault.text()); assert.equal(s.data.salaryCents, 600000);
+  await assert.rejects(s.restoreData(), /仍存在/);
 });
 
 test('a restarted migrated device retains its replica when the sync file is missing', async () => {
@@ -162,6 +162,31 @@ test('a restarted migrated device retains its replica when the sync file is miss
   vault.files.delete(V.VAULT_DATA_PATH);
   const next = store(vault, 'A'); assert.deepEqual(await next.initialize(defaults(), false, 0), legacy());
   assert.equal(vault.text(), undefined); await assert.rejects(next.save(next.data, next.data), /不可写/);
+});
+
+test('startup reads an unindexed disk file without a missing warning or writes, then resumes after indexing', async () => {
+  const vault = new FakeVault(), first = store(vault, 'A');
+  await first.initialize(legacy(), true, 100);
+  const staleReplica = vault.files.get(first.replicaPath);
+  const next = first.data; next.salaryCents = 700000;
+  await first.save(first.data, next);
+  vault.files.set(first.replicaPath, staleReplica);
+  const canonical = vault.text(), writes = vault.writes;
+  const lookup = vault.getAbstractFileByPath.bind(vault);
+  let indexed = false;
+  vault.getAbstractFileByPath = path => path === V.VAULT_DATA_PATH && !indexed ? null : lookup(path);
+  const restarted = store(vault, 'A');
+  assert.equal((await restarted.initialize(defaults(), false, 0)).salaryCents, 700000);
+  assert.equal(restarted.writable, false); assert.deepEqual(restarted.notices, []);
+  assert.equal(await restarted.receive(), false);
+  await assert.rejects(restarted.restoreData(), /正在加载/);
+  await assert.rejects(restarted.save(restarted.data, restarted.data), /不可写/);
+  assert.equal(vault.text(), canonical); assert.equal(vault.writes, writes);
+  assert.equal(vault.files.get(first.replicaPath), staleReplica);
+  indexed = true; await restarted.receive();
+  assert.equal(restarted.writable, true); assert.deepEqual(restarted.notices, []);
+  assert.equal(vault.text(), canonical); assert.equal(vault.writes, writes);
+  assert.deepEqual(V.parseVaultData(vault.files.get(first.replicaPath)), V.parseVaultData(canonical));
 });
 
 test('a local recovery-cache failure does not roll back an already committed financial edit', async () => {
@@ -269,4 +294,135 @@ test('two devices receiving each others reordered snapshots converge and remain 
     vb.files.set(V.VAULT_DATA_PATH, va.text()); await b.receive();
   }
   assert.equal(va.writes, writesA); assert.equal(vb.writes, writesB);
+});
+
+
+test('corrupt canonical data starts read-only from the replica and recovery backs up exact broken bytes', async () => {
+  const vault = new FakeVault(), first = store(vault, 'A'); await first.initialize(legacy(), true, 100);
+  const mirror = vault.files.get(first.replicaPath), broken = '{"format":"ledger-statistics",';
+  vault.files.set(V.VAULT_DATA_PATH, broken);
+  const next = store(vault, 'A'); assert.deepEqual(await next.initialize(defaults(), false, 0), legacy());
+  assert.equal(next.writable, false); assert.equal(vault.text(), broken); assert.equal(vault.files.get(first.replicaPath), mirror);
+  await assert.rejects(next.save(next.data, { ...next.data, salaryCents: 1 }), /不可写/);
+  await next.restoreData();
+  assert.ok([...vault.files].some(([p, text]) => p.includes('/corrupt-data-') && text === broken));
+  V.parseVaultData(vault.text()); assert.deepEqual(next.data, legacy());
+  assert.deepEqual(await store(vault, 'A').initialize(defaults(), false, 0), legacy());
+  assert.equal(next.writable, true);
+});
+
+test('a corrupt replica cannot prevent reading healthy canonical data and is preserved before repair', async () => {
+  const vault = new FakeVault(), first = store(vault, 'A'); await first.initialize(legacy(), true, 100);
+  const canonical = vault.text(); vault.files.set(first.replicaPath, '{broken-replica');
+  const next = store(vault, 'A'); assert.deepEqual(await next.initialize(defaults(), false, 0), legacy());
+  assert.equal(next.writable, false); assert.equal(vault.text(), canonical);
+  await next.restoreData(); assert.equal(next.writable, true); assert.equal(vault.text(), canonical);
+  assert.ok([...vault.files].some(([p, text]) => p.includes('/before-restore-replica-') && text === '{broken-replica'));
+});
+
+test('both broken sources keep the settings accessible but cannot restore defaults over user data', async () => {
+  const vault = new FakeVault(), s = store(vault, 'A');
+  vault.files.set(V.VAULT_DATA_PATH, '{broken'); vault.files.set(s.replicaPath, 'broken-replica');
+  assert.deepEqual(await s.initialize(defaults(), false, 0), defaults());
+  assert.equal(s.writable, false);
+  await assert.rejects(s.restoreData(), /没有.*有效/);
+  assert.equal(vault.text(), '{broken'); assert.equal(vault.files.get(s.replicaPath), 'broken-replica');
+});
+
+test('recovery refuses unsupported future formats and preserves them unchanged', async () => {
+  const vault = new FakeVault(), first = store(vault, 'A'); await first.initialize(legacy(), true, 100);
+  const future = JSON.stringify({format:'ledger-statistics', version:2, seen:{}, entries:{}});
+  vault.files.set(V.VAULT_DATA_PATH, future);
+  const next = store(vault, 'A'); await next.initialize(defaults(), false, 0);
+  await assert.rejects(next.restoreData(), /不支持/); assert.equal(vault.text(), future);
+});
+
+test('failed backup and a simultaneous sync replacement both prevent corrupt recovery overwrites', async () => {
+  const vault = new FakeVault(), s = store(vault, 'A'); await s.initialize(legacy(), true, 100);
+  const good = vault.text(); vault.files.set(V.VAULT_DATA_PATH, '{broken');
+  await assert.rejects(s.receive(), /同步/);
+  const write = vault.adapter.write;
+  vault.adapter.write = async path => { if (path.includes('sync-backups')) throw Error('disk full'); };
+  await assert.rejects(s.restoreData(), /disk full/); assert.equal(vault.text(), '{broken'); assert.equal(s.writable, false);
+  vault.adapter.write = write;
+  vault.beforeProcess = () => vault.files.set(V.VAULT_DATA_PATH, good);
+  await assert.rejects(s.restoreData(), /变化/); assert.equal(vault.text(), good);
+  await s.receive(); assert.equal(s.writable, true);
+});
+
+
+async function loadPluginFixture(vault, stored) {
+  const p = new Plugin(), device = 'device-' + 'a'.repeat(32), registrations = [];
+  vault.files.set('.obsidian/plugins/ledger-statistics/sync-device.json', JSON.stringify({device}));
+  vault.adapter.stat = async () => null;
+  vault.getMarkdownFiles = () => []; vault.on = () => ({}); vault.offref = () => {}; vault.getName = () => 'test';
+  p.app = { vault, secretStorage: { getSecret: () => null }, workspace: { getLeavesOfType: () => [], onLayoutReady: callback => { p.layoutReady = callback; } } };
+  p.manifest = { id: 'ledger-statistics' }; p.loadData = async () => stored;
+  p.saveData = async () => { registrations.push('saved local settings'); };
+  for (const method of ['registerEvent','registerInterval','registerDomEvent','registerView','addRibbonIcon','addCommand','addSettingTab']) {
+    p[method] = (...args) => registrations.push([method, ...args]);
+  }
+  const oldWindow = global.window, oldDocument = global.document;
+  global.window = { setInterval: () => 0, setTimeout: () => 0, clearTimeout: () => {} }; global.document = { hidden: false };
+  try { await p.onload(); } finally { global.window = oldWindow; global.document = oldDocument; }
+  p.settingTab.display = () => {};
+  return {p, registrations};
+}
+
+test('production onload finishes and registers settings/view even with damaged state and a new salary cycle', async () => {
+  const vault = new FakeVault(), first = new V.VaultDataStore(vault, '.obsidian/plugins/ledger-statistics', 'A', defaults(), () => {}, () => 200);
+  const input = legacy(); input.salaryCycleStart = '2026-01-01';
+  await first.initialize(input, true, 100); const mirror = vault.files.get(first.replicaPath);
+  vault.files.set(V.VAULT_DATA_PATH, '{broken');
+  const {p, registrations} = await loadPluginFixture(vault, {vaultDataSync:{version:1}});
+  assert.ok(registrations.some(x => x[0] === 'addSettingTab')); assert.ok(registrations.some(x => x[0] === 'registerView'));
+  assert.equal(p.settings.salaryCents, 600000); assert.equal(p.vaultDataReadOnly, true);
+  assert.equal(vault.text(), '{broken'); assert.equal(vault.files.get(first.replicaPath), mirror);
+  assert.ok(!registrations.includes('saved local settings'));
+  await assert.rejects(p.saveSettings(false), /不可写/);
+  const oldDocument = global.document; global.document = { hidden: false };
+  try { p.tick(); await p.saveQueue; await p.assetQueue; } finally { global.document = oldDocument; }
+  assert.equal(vault.text(), '{broken');
+  await p.restoreVaultData(); assert.equal(p.vaultDataReadOnly, false);
+});
+
+test('production onload registers recovery settings when both sources are corrupt', async () => {
+  const vault = new FakeVault(); vault.files.set(V.VAULT_DATA_PATH, '{broken');
+  vault.files.set('.obsidian/plugins/ledger-statistics/sync-replica.json', '{broken-replica');
+  const {p, registrations} = await loadPluginFixture(vault, {vaultDataSync:{version:1}});
+  assert.ok(registrations.some(x => x[0] === 'addSettingTab')); assert.equal(p.vaultDataReadOnly, true);
+  await assert.rejects(p.restoreVaultData(), /没有.*有效/); assert.equal(vault.text(), '{broken');
+});
+
+test('production onload finishes with a missing file and a stale salary cycle instead of skipping host CSS loading', async () => {
+  const vault = new FakeVault(), first = new V.VaultDataStore(vault, '.obsidian/plugins/ledger-statistics', 'A', defaults(), () => {});
+  const input = legacy(); input.salaryCycleStart = '2026-01-01';
+  await first.initialize(input, true, 100); vault.files.delete(V.VAULT_DATA_PATH);
+  const {p, registrations} = await loadPluginFixture(vault, {vaultDataSync:{version:1}});
+  assert.equal(p.vaultDataReadOnly, true);
+  assert.ok(registrations.some(x => x[0] === 'registerView'));
+  assert.ok(registrations.some(x => x[0] === 'addSettingTab'));
+  assert.equal(vault.text(), undefined);
+  assert.ok(!registrations.includes('saved local settings'));
+});
+
+test('production startup rechecks the index after layout readiness even without a create event', async () => {
+  const vault = new FakeVault(), first = new V.VaultDataStore(vault, '.obsidian/plugins/ledger-statistics', 'A', defaults(), () => {});
+  await first.initialize(legacy(), true, 100);
+  const lookup = vault.getAbstractFileByPath.bind(vault);
+  let indexed = false;
+  vault.getAbstractFileByPath = path => path === V.VAULT_DATA_PATH && !indexed ? null : lookup(path);
+  const {p} = await loadPluginFixture(vault, {vaultDataSync:{version:1}});
+  assert.equal(p.vaultDataReadOnly, true);
+  indexed = true; p.layoutReady(); await p.saveQueue;
+  assert.equal(p.vaultDataReadOnly, false);
+  assert.equal(p.settings.salaryCents, 600000);
+});
+
+test('migration keeps its legacy business data until corrupt sync data is explicitly recovered', async () => {
+  const vault = new FakeVault(); vault.files.set(V.VAULT_DATA_PATH, '{broken');
+  const {p, registrations} = await loadPluginFixture(vault, legacy());
+  assert.ok(!registrations.includes('saved local settings')); assert.equal(p.settings.salaryCents, 600000);
+  await p.restoreVaultData(); assert.equal(p.vaultDataReadOnly, false);
+  assert.ok(registrations.includes('saved local settings'));
 });

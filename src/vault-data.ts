@@ -124,16 +124,19 @@ function materialize(units: Map<string, unknown>, defaults: Values): Values {
   return result;
 }
 const emptyDocument = (): VaultDataDocument => ({ format: "ledger-statistics", version: 1, seen: {}, entries: {} });
+class VaultDataParseError extends Error {
+  constructor(message: string, readonly recoverable = true) { super(message); }
+}
 export function parseVaultData(text: string): VaultDataDocument {
-  let doc: unknown; try { doc = JSON.parse(text); } catch { throw new Error("同步数据文件无法解析，已停止写入并保留本机副本"); }
-  if (!record(doc) || doc.format !== "ledger-statistics" || doc.version !== 1 || !record(doc.seen) || !record(doc.entries)
-    || Object.keys(doc).some(k => !["format", "version", "seen", "entries"].includes(k))) throw new Error("同步数据格式或版本不支持，已停止写入");
+  let doc: unknown; try { doc = JSON.parse(text); } catch { throw new VaultDataParseError("同步数据文件无法解析，已停止写入并保留本机副本"); }
+  if (!record(doc) || doc.format !== "ledger-statistics" || doc.version !== 1) throw new VaultDataParseError("同步数据格式或版本不支持，已停止写入", false);
+  if (!record(doc.seen) || !record(doc.entries) || Object.keys(doc).some(k => !["format", "version", "seen", "entries"].includes(k))) throw new VaultDataParseError("同步数据结构损坏，已停止写入");
   const validClock = (n: unknown): n is number => typeof n === "number" && Number.isSafeInteger(n) && n > 0;
-  for (const [device, clock] of Object.entries(doc.seen)) if (!/^[\w-]{1,100}$/.test(device) || ["__proto__", "constructor", "prototype"].includes(device) || !validClock(clock)) throw new Error("同步版本信息损坏");
+  for (const [device, clock] of Object.entries(doc.seen)) if (!/^[\w-]{1,100}$/.test(device) || ["__proto__", "constructor", "prototype"].includes(device) || !validClock(clock)) throw new VaultDataParseError("同步版本信息损坏");
   for (const [key, cell] of Object.entries(doc.entries)) {
     if (!allowedKey(key) || !record(cell) || !validClock(cell.clock) || typeof cell.device !== "string" || !Object.hasOwnProperty.call(doc.seen, cell.device)
       || (doc.seen[cell.device] as number) < cell.clock || (cell.deleted !== undefined && cell.deleted !== true)
-      || (!cell.deleted && (!Object.hasOwnProperty.call(cell, "value") || !validValue(key, cell.value)))) throw new Error("同步数据条目损坏，已停止写入");
+      || (!cell.deleted && (!Object.hasOwnProperty.call(cell, "value") || !validValue(key, cell.value)))) throw new VaultDataParseError("同步数据条目损坏，已停止写入");
   }
   return doc as unknown as VaultDataDocument;
 }
@@ -169,6 +172,9 @@ export class VaultDataStore {
   private replicaText = "";
   private ready = false;
   private missing = false;
+  private awaitingIndex = false;
+  private blocked = false;
+  private hasRecoveryData = false;
   private backupSequence = 0;
   private stopped = false;
   private diskText = "";
@@ -182,7 +188,12 @@ export class VaultDataStore {
     this.backupFolder = `${pluginDir}/sync-backups`;
   }
   get data(): Values { return clone(this.materialized ??= documentData(this.document, this.defaults)); }
+  get writable(): boolean { return this.ready && !this.missing && !this.awaitingIndex && !this.blocked && !this.stopped; }
   stop(): void { this.stopped = true; }
+  private parse(text: string): VaultDataDocument {
+    try { return parseVaultData(text); }
+    catch (error) { this.blocked = true; throw error; }
+  }
   private async folder(path: string): Promise<void> {
     let current = "";
     for (const part of path.split("/")) {
@@ -194,25 +205,54 @@ export class VaultDataStore {
   }
   async backup(label: string, content = stable(this.document)): Promise<string> {
     await this.folder(this.backupFolder);
-    const path = `${this.backupFolder}/${label}-${this.clock()}-${++this.backupSequence}.json`;
+    let path: string;
+    do { path = `${this.backupFolder}/${label}-${this.clock()}-${++this.backupSequence}.json`; }
+    while (await this.vault.adapter.exists(path));
     await this.vault.adapter.write(path, content);
     return path;
   }
   async initialize(legacy: Values, migrate: boolean, legacyTime: number): Promise<Values> {
+    const errors: string[] = [];
+    const load = async (read: () => Promise<string>): Promise<VaultDataDocument | undefined> => {
+      try { return parseVaultData(await read()); }
+      catch (error) { errors.push(error instanceof Error ? error.message : "同步数据读取失败"); return undefined; }
+    };
     if (await this.vault.adapter.exists(this.replicaPath)) {
-      this.replicaText = await this.vault.adapter.read(this.replicaPath);
-      this.document = parseVaultData(this.replicaText);
+      const replica = await load(async () => {
+        const text = await this.vault.adapter.read(this.replicaPath);
+        parseVaultData(text); this.replicaText = text; return text;
+      });
+      if (replica) { this.document = replica; this.hasRecoveryData = true; }
     }
     const file = this.vault.getAbstractFileByPath(VAULT_DATA_PATH);
-    if (file) this.document = await this.join(this.document, parseVaultData(await this.vault.read(file as TFile)));
+    // During vault startup a file can exist on disk before it enters the index.
+    // Read it without creating/replacing it; writes resume when indexing finishes.
+    const exists = !!file || await this.vault.adapter.exists(VAULT_DATA_PATH);
+    this.awaitingIndex = exists && !file;
+    if (exists) {
+      const remote = await load(() => file ? this.vault.read(file as TFile) : this.vault.adapter.read(VAULT_DATA_PATH));
+      if (remote) { this.document = await this.join(this.document, remote); this.hasRecoveryData = true; }
+    }
     if (migrate) {
       // Defaults on a newly installed phone must never replace real synced data.
       const seed = editVaultData(emptyDocument(), this.defaults, legacy, this.device, Math.max(1, legacyTime));
       this.document = await this.join(this.document, seed);
+      if (Object.keys(seed.entries).length) this.hasRecoveryData = true;
     }
     this.ready = true;
-    if (!file && !migrate) { this.missing = true; await this.mirror(); this.notify("同步数据文件缺失，已保留本机副本；请在插件设置中恢复数据文件。"); }
-    else await this.persist(this.document, true);
+    this.blocked = errors.length > 0;
+    this.missing = !exists && !migrate;
+    if (this.blocked || this.missing) {
+      this.notify(this.blocked
+        ? "同步数据读取异常，已进入只读模式；" + (this.hasRecoveryData ? "正在显示有效副本，请在插件设置中恢复缺失或损坏的数据文件。" : "没有可用的有效副本，请从备份还原数据文件后重新加载插件。") + "（" + errors.join("；") + "）"
+        : "同步数据文件缺失，已保留本机副本；请在插件设置中恢复数据文件。");
+    } else if (!this.awaitingIndex) {
+      try { await this.persist(this.document, true); }
+      catch (error) {
+        if (!(error instanceof VaultDataParseError)) throw error;
+        this.notify("同步数据在启动时发生异常，已进入只读模式，请在插件设置中恢复数据文件。");
+      }
+    }
     return this.data;
   }
   private async join(a: VaultDataDocument, b: VaultDataDocument): Promise<VaultDataDocument> {
@@ -236,12 +276,16 @@ export class VaultDataStore {
     await this.folder(VAULT_DATA_FOLDER);
     let file = this.vault.getAbstractFileByPath(VAULT_DATA_PATH);
     if (!file) {
+      if (await this.vault.adapter.exists(VAULT_DATA_PATH)) {
+        this.awaitingIndex = true;
+        throw new Error("同步数据文件正在加载，请稍后重试");
+      }
       if (this.missing || !allowCreate) { this.missing = true; throw new Error("同步数据文件已被删除，已停止写入；请先在设置中恢复"); }
       try { file = await this.vault.create(VAULT_DATA_PATH, stable(candidate)); }
       catch (error) { file = this.vault.getAbstractFileByPath(VAULT_DATA_PATH); if (!file) throw error; }
     }
     const diskText = await this.vault.read(file as TFile);
-    const disk = parseVaultData(diskText);
+    const disk = this.parse(diskText);
     const merged = await this.join(candidate, disk);
     let committed = merged;
     let writtenText = diskText;
@@ -251,7 +295,7 @@ export class VaultDataStore {
       try {
         result = await this.vault.process(file as TFile, text => {
           if (this.stopped) throw new Error("插件已关闭，未写入同步数据");
-          if (!equal(parseVaultData(text), disk)) throw new Error("ledger-vault-retry");
+          if (!equal(this.parse(text), disk)) throw new Error("ledger-vault-retry");
           return stable(committed);
         });
       } catch (error) {
@@ -265,6 +309,7 @@ export class VaultDataStore {
       writtenText = result;
     }
     this.document = committed;
+    this.hasRecoveryData = true;
     this.materialized = undefined;
     this.diskText = writtenText;
     // The canonical write has already succeeded. A local cache failure must not
@@ -273,7 +318,8 @@ export class VaultDataStore {
     catch { this.notify("数据文件已保存，但本机恢复副本写入失败，请检查磁盘空间和权限。"); }
   }
   async save(before: Values, after: Values): Promise<Values> {
-    if (!this.ready || this.missing) throw new Error("同步数据文件不可写，请在设置中检查或恢复");
+    if (this.stopped) throw new Error("插件已关闭，未写入同步数据");
+    if (!this.writable) throw new Error("同步数据文件不可写，请在设置中检查或恢复");
     const candidate = editVaultData(this.document, before, after, this.device, this.clock());
     await this.persist(candidate);
     return this.data;
@@ -281,24 +327,70 @@ export class VaultDataStore {
   async receive(): Promise<boolean> {
     const file = this.vault.getAbstractFileByPath(VAULT_DATA_PATH);
     if (!file) {
+      this.awaitingIndex = await this.vault.adapter.exists(VAULT_DATA_PATH);
+      if (this.awaitingIndex) return false;
       if (!this.missing) this.notify("同步数据文件被移走或删除，已停止写入并保留本机副本。");
       this.missing = true;
       return false;
     }
+    this.awaitingIndex = false;
     const text = await this.vault.read(file as TFile);
-    if (text === this.diskText) { this.missing = false; return false; }
-    const before = this.data, remote = parseVaultData(text);
+    if (text === this.diskText && !this.blocked) { this.missing = false; return false; }
+    const before = this.data, remote = this.parse(text);
     const merged = await this.join(this.document, remote);
     this.missing = false;
+    // Preserve an invalid replica before a valid synced replacement repairs it.
+    if (this.blocked && await this.vault.adapter.exists(this.replicaPath)) {
+      const replica = await this.vault.adapter.read(this.replicaPath);
+      try { parseVaultData(replica); } catch { await this.backup("before-restore-replica", replica); this.replicaText = ""; }
+    }
     await this.persist(merged);
+    this.blocked = false;
     return !equal(before, this.data);
   }
-  async restoreMissing(): Promise<void> {
-    if (this.vault.getAbstractFileByPath(VAULT_DATA_PATH)) throw new Error("数据文件仍存在，未覆盖；请先检查文件内容");
+  async restoreData(): Promise<void> {
+    if (this.stopped) throw new Error("插件已关闭，未恢复同步数据");
+    const file = this.vault.getAbstractFileByPath(VAULT_DATA_PATH);
+    if (!file && await this.vault.adapter.exists(VAULT_DATA_PATH)) throw new Error("同步数据文件正在加载，请稍后重试，无需恢复");
+    let broken: string | undefined;
+    if (file) {
+      const text = await this.vault.read(file as TFile);
+      try { parseVaultData(text); }
+      catch (error) {
+        if (!(error instanceof VaultDataParseError) || !error.recoverable) throw error;
+        broken = text;
+      }
+      if (broken === undefined) {
+        if (!this.blocked) throw new Error("数据文件仍存在且有效，未覆盖");
+        // A healthy canonical document is received instead of overwritten.
+        await this.receive(); return;
+      }
+    }
+    if (!this.hasRecoveryData) throw new Error("没有可用于恢复的有效副本，请从外部备份还原数据文件");
+    // All backups must succeed before changing the canonical file or replica.
+    if (broken !== undefined) await this.backup("corrupt-data", broken);
+    if (await this.vault.adapter.exists(this.replicaPath)) await this.backup("before-restore-replica", await this.vault.adapter.read(this.replicaPath));
+    this.replicaText = "";
     await this.backup("before-restore");
+    if (file && broken !== undefined) {
+      const expected = broken;
+      const result = await this.vault.process(file as TFile, text => {
+        if (this.stopped) throw new Error("插件已关闭，未恢复同步数据");
+        if (text !== expected) throw new Error("同步文件已变化，未覆盖，请重新检查后恢复");
+        return stable(this.document);
+      });
+      this.diskText = result;
+      try { await this.mirror(); }
+      catch { this.notify("数据文件已恢复，但本机恢复副本写入失败，请检查磁盘空间和权限。"); }
+    } else {
+      this.missing = false;
+      try { await this.persist(this.document, true); }
+      catch (error) { this.missing = true; throw error; }
+    }
+    this.blocked = false;
     this.missing = false;
-    await this.persist(this.document, true);
   }
+
 }
 
 /** Rebase the committed result without erasing edits made while a save was awaiting I/O. */

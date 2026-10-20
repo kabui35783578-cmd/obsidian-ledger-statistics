@@ -172,8 +172,8 @@ export class LedgerSettingTab extends PluginSettingTab {
 
     new Setting(ledgerPanel)
       .setName("跨设备数据同步")
-      .setDesc("资产、工资周期、备注和报告保存在「记账统计数据/状态.json」，随库内普通文件同步。AI 服务、密钥和通知配置保留在本机。迁移与冲突备份保存在插件目录的 sync-backups 文件夹。")
-      .addButton(button => button.setButtonText("恢复缺失的数据文件").onClick(async () => {
+      .setDesc((this.plugin.vaultDataReadOnly ? "当前为只读模式，业务数据暂停写入。" : "") + "资产、工资周期、备注和报告保存在「记账统计数据/状态.json」，随库内普通文件同步。AI 服务、密钥和通知配置保留在本机。数据异常时暂停写入；恢复前会备份损坏原文，恢复数据来自本机有效副本，可能不含其他设备尚未同步的修改。迁移与恢复备份保存在插件目录的 sync-backups 文件夹。")
+      .addButton(button => button.setButtonText("恢复缺失或损坏的数据文件").onClick(async () => {
         button.setDisabled(true);
         try { await this.plugin.restoreVaultData(); }
         catch (error) { new Notice(error instanceof Error ? error.message : "恢复失败"); }
