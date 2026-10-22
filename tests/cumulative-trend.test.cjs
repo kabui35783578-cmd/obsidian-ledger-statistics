@@ -89,7 +89,11 @@ class Element {
   }
   setAttribute(name, value) { this.attributes[name] = value; if (name === 'class') value.split(' ').forEach(c => this.classList.add(c)); }
   addEventListener(name, callback) { this.listeners[name] = callback; }
-  append(...children) { children.forEach(child => { child.parentElement = this; this.children.push(child); }); }
+  append(...children) { children.forEach(child => {
+    if (child.parentElement) child.parentElement.children.splice(child.parentElement.children.indexOf(child), 1);
+    child.parentElement = this; this.children.push(child);
+  }); }
+  get lastElementChild() { return this.children.at(-1); }
   insertBefore(child, before) { child.parentElement = this; this.children.splice(this.children.indexOf(before), 0, child); }
   get firstChild() { return this.children[0]; }
   createEl(tag, options) { const child = new Element(tag, options); this.append(child); return child; }
@@ -158,6 +162,7 @@ test('all three charts draw a separate previous-period dashed path in both layou
         assert.ok(svg.all().some(el => el.classList.contains('ledger-trend-average')));
         const hit = svg.all().find(el => el.classList.contains('ledger-trend-hit-target'));
         assert.match(hit.attributes['aria-label'], /上期 2026-09-15：¥500.00/);
+        if (svg.classList.contains('ledger-mobile-trend') && type !== 'bar') hit.listeners.click({ preventDefault() {}, stopPropagation() {} });
         hit.listeners.click({ preventDefault() {}, stopPropagation() {} });
         assert.equal(clicked.at(-1), series.points[0], 'Comparison must not hijack the current period drilldown or note editor');
       }
@@ -220,9 +225,40 @@ test('cumulative charts share the native style, label totals, and preserve deskt
       const event = { preventDefault() {}, stopPropagation() {} };
       const before = clicked.length;
       target.listeners.click(event);
-      assert.equal(clicked.length, before + 1, 'A single click opens the note editor on both desktop and mobile');
+      if (svg.classList.contains('ledger-mobile-trend')) {
+        assert.equal(clicked.length, before, 'The first phone tap only previews the amount and note');
+        assert.ok(groups[1].classList.contains('is-active'));
+        target.listeners.click(event);
+        assert.ok(!groups[1].classList.contains('is-active'), 'Clear the preview before opening the editor');
+      }
+      assert.equal(clicked.length, before + 1);
       assert.equal(clicked.at(-1), points[1]);
       assert.deepEqual([clicked.at(-1).start, clicked.at(-1).end], ['2026-10-01', '2026-10-02']);
+    }
+  } finally { global.document = previous; }
+});
+
+test('phone previews switch dates, clear before activation, and restart after closing; keyboard remains a single activation', () => {
+  const previous = global.document;
+  global.document = { createElementNS: (_, tag) => new Element(tag) };
+  try {
+    for (const type of ['line', 'cumulative']) {
+      const points = cumulativeTrendPoints([record('2026-10-01', 5000), record('2026-10-02', 3000)], { start: '2026-10-01', end: '2026-10-02' }, 'day');
+      const root = new Element('div'), clicked = [];
+      const active = () => svg.querySelectorAll('.ledger-trend-point.is-active');
+      renderTrendChart(root, points, type, point => { assert.equal(active().length, 0); clicked.push(point); });
+      const svg = root.all().find(el => el.tag === 'svg' && el.classList.contains('ledger-mobile-trend'));
+      const targets = svg.querySelectorAll('.ledger-trend-hit-target');
+      const tap = index => targets[index].listeners.click({ preventDefault() {}, stopPropagation() {} });
+      tap(0); tap(1);
+      assert.equal(clicked.length, 0, 'Switching to another date only changes the preview');
+      assert.equal(active().length, 1);
+      tap(1);
+      assert.deepEqual(clicked, [points[1]]);
+      tap(1);
+      assert.equal(clicked.length, 1, 'A new interaction starts with a preview again');
+      targets[1].listeners.keydown({ key: 'Enter', preventDefault() {} });
+      assert.deepEqual(clicked, [points[1], points[1]]);
     }
   } finally { global.document = previous; }
 });
@@ -293,6 +329,7 @@ test('desktop and mobile cumulative charts draw a muted sloping average that ali
         assert.ok(Math.abs(coords[index * 2 + 1] - (base - height * 0.9 * (index + 1) / 3)) < 0.00001);
       }
       assert.equal(coords.at(-1), Number(targets.at(-1).attributes.cy));
+      if (svg.classList.contains('ledger-mobile-trend')) targets[1].listeners.click({ preventDefault() {}, stopPropagation() {} });
       targets[1].listeners.click({ preventDefault() {}, stopPropagation() {} });
       assert.equal(clicked.at(-1), points[1], 'The reference line preserves the original note interaction');
     }

@@ -142,7 +142,6 @@ export class LedgerStatisticsView extends ItemView {
   private financeAdviceLoading = false;
   private financeAdviceError = "";
   private advisorDetailsExpanded = false;
-  private advisorReferencesExpanded = false;
   private filtersExpanded = !Platform.isMobile;
   private drillContext: DrillContext | null = null;
   private pullEligible = false;
@@ -660,8 +659,7 @@ export class LedgerStatisticsView extends ItemView {
       financeCoverageReport(files.filter(file => !file.date || file.date <= financeSnapshot.currentRange.end), insightAsOf(now)), (path) => void this.app.workspace.openLinkText(path, "", false),
       () => new FixedExpenseModal(this.plugin).open(), this.advisorDetailsExpanded,
       (expanded) => { this.advisorDetailsExpanded = expanded; },
-      balanceStatus(this.allRecords(), now, this.plugin.settings.salaryCents, this.plugin.settings.balanceCalibration),
-      this.advisorReferencesExpanded, (expanded) => { this.advisorReferencesExpanded = expanded; });
+      balanceStatus(this.allRecords(), now, this.plugin.settings.salaryCents, this.plugin.settings.balanceCalibration));
     const ownerDocument = parent.ownerDocument;
     const cardRect = parent.getBoundingClientRect();
     const viewRect = this.contentEl.getBoundingClientRect();
@@ -795,7 +793,7 @@ export class LedgerStatisticsView extends ItemView {
         new TrendDateNoteModal(this.plugin, point.end, () => {
           showCategoryRecords(this.app, `${point.end} · 当天支出`,
             records.filter(record => record.date === point.end), record => void this.openRecord(record));
-        }).open();
+        }, Platform.isMobile).open();
       }, { dateNotes: this.plugin.settings.trendDateNotes, comparison: series.comparison });
     } else {
       renderTrendChart(parent, series.points, this.trendChart, showRecords, {

@@ -96,21 +96,16 @@ test('category references keep one visible and preserve the original remaining e
   more.open = false; more.listeners.toggle(); assert.equal(expanded, false);
 });
 
-test('reference disclosure starts closed, retains all data and remembers expansion independently of category disclosure', () => {
-  const root = new Element(); let expanded;
+test('insight references are always visible and today budget precedes the insight in reading order', () => {
+  const root = new Element();
   const state = { status: 'local', advice: null, canRefresh: true, message: '', todayBudget: { date: '2026-10-06', spentCents: 0, budgetCents: 5000, category: '', includeStarred: true } };
-  const render = (parent, open) => renderFinanceAdvisor(parent, snapshot(), state, () => {}, false, undefined, undefined, undefined, false, undefined, undefined, open, value => { expanded = value; });
-  render(root, false);
-  const panel = root.querySelector('.ledger-advisor-references'), toggle = root.querySelector('.ledger-advisor-references-toggle');
-  assert.equal(panel.hasClass('is-open'), false);
-  assert.equal(toggle.attributes['aria-expanded'], 'false');
+  renderFinanceAdvisor(root, snapshot(), state, () => {}, false);
+  const panel = root.querySelector('.ledger-advisor-references');
+  assert.equal(root.querySelector('.ledger-advisor-references-toggle'), undefined);
   assert.equal(panel.all().filter(el => el.hasClass('ledger-advisor-summary-item')).length, 3);
-  assert.equal(panel.querySelector('.ledger-advisor-budget'), undefined, 'today budget remains outside the folded region');
-  assert.ok(root.querySelector('.ledger-advisor-budget'));
-  toggle.listeners.click(); assert.equal(expanded, true); assert.equal(panel.hasClass('is-open'), true); assert.equal(toggle.attributes['aria-expanded'], 'true');
-  const rerender = new Element(); render(rerender, expanded);
-  assert.equal(rerender.querySelector('.ledger-advisor-references').hasClass('is-open'), true);
-  rerender.querySelector('.ledger-advisor-references-toggle').listeners.click(); assert.equal(expanded, false);
+  const card = root.querySelector('.ledger-advisor-card');
+  assert.equal(card.children[0], root.querySelector('.ledger-advisor-budget'));
+  assert.ok(card.children.indexOf(root.querySelector('.ledger-advisor-heading')) > 0);
 });
 
 test('inline budget distinguishes normal, overspent and unset budgets without exceeding the track', () => {

@@ -167,18 +167,23 @@ function interactiveTrendTarget(
   group.addEventListener("pointerenter", raise);
   group.addEventListener("focusin", raise);
   target.addEventListener("click", (event) => {
-    if (previewOnFirstActivation && !group.classList.contains("is-active")) {
+    if (previewOnFirstActivation) {
       event.preventDefault();
       event.stopPropagation();
+      const wasActive = group.classList.contains("is-active");
       svg.querySelectorAll(".ledger-trend-point.is-active").forEach((point) => point.classList.remove("is-active"));
-      group.classList.add("is-active");
-      return;
+      if (!wasActive) {
+        group.classList.add("is-active");
+        raise();
+        return;
+      }
     }
     activate();
   });
   target.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
+      svg.querySelectorAll(".ledger-trend-point.is-active").forEach((point) => point.classList.remove("is-active"));
       activate();
     }
   });
@@ -601,7 +606,7 @@ function renderTrendPlot(parent: HTMLElement, points: TrendPoint[], type: "line"
       : svgEl("rect", { x: x - slot / 2, y: top, width: slot, height: plotHeight + 28, fill: "transparent" });
     interactiveTrendTarget(svg, group, hit,
       `${point.label} ${cumulative ? "累计 " : ""}${formatCents(point.cents)}，${point.count} 笔${weekend ? "，周末" : ""}${priorDescription ? `，${priorDescription}` : ""}${cumulative ? `，${note ? `备注：${note}` : "添加备注"}` : ""}`,
-      () => onClick(point), mobile && isLine && !cumulative);
+      () => onClick(point), mobile && isLine);
     group.append(hit);
     svg.append(group);
     if (dateLabels.has(index)) {
@@ -622,7 +627,7 @@ function renderTrendPlot(parent: HTMLElement, points: TrendPoint[], type: "line"
     svg.insertBefore(outline, svg.firstChild);
   }
   const foot = svgEl("text", { x: width / 2, y: height - 10, "text-anchor": "middle", class: mobile ? "ledger-mobile-foot-label" : "ledger-foot-label" });
-  foot.textContent = cumulative ? (mobile ? "轻点日期圆点 · 查看备注" : "悬停查看备注 · 点击打开卡片")
+  foot.textContent = cumulative ? (mobile ? "轻点圆点查看金额与备注 · 再点编辑备注" : "悬停查看备注 · 点击打开卡片")
     : isLine ? (mobile ? "轻点圆点查看金额 · 再点查看明细" : "空心圆点为周末 · 悬停查看金额")
     : `每档 ${formatCents(unit)} · 虚线末档按比例计入`;
   svg.append(foot);
@@ -941,10 +946,11 @@ export function renderEmpty(parent: HTMLElement, message: string): void {
   parent.createDiv({ cls: "ledger-empty", text: message });
 }
 
-export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvisorSnapshot, state: FinanceAdviceViewState, onRefresh: () => void, animate = true, coverage?: FinanceCoverageReport, onOpenFile?: (path: string) => void, onManageFixed?: () => void, detailsExpanded = false, onDetailsExpandedChange?: (expanded: boolean) => void, balance?: BalanceStatus, referencesExpanded = false, onReferencesExpandedChange?: (expanded: boolean) => void): void {
+export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvisorSnapshot, state: FinanceAdviceViewState, onRefresh: () => void, animate = true, coverage?: FinanceCoverageReport, onOpenFile?: (path: string) => void, onManageFixed?: () => void, detailsExpanded = false, onDetailsExpandedChange?: (expanded: boolean) => void, balance?: BalanceStatus): void {
   const card = parent.createDiv({ cls: `ledger-advisor-card${animate ? " ledger-reveal" : ""}` });
   deferChartAnimation(card);
   card.setAttribute("aria-busy", String(state.status === "loading"));
+  if (state.todayBudget) renderInlineBudget(card, state.todayBudget);
   const heading = card.createDiv({ cls: "ledger-advisor-heading" });
   const copy = heading.createDiv({ cls: "ledger-advisor-heading-copy" });
   copy.createEl("h3", { text: "近期洞察" });
@@ -1061,18 +1067,7 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
     }
   }
 
-  const referencesPanel = card.createDiv({ cls: `ledger-advisor-references${referencesExpanded ? " is-open" : ""}` });
-  const referencesToggle = referencesPanel.createEl("button", {
-    cls: "ledger-advisor-references-toggle", text: referencesExpanded ? "收起参考数据" : "展开参考数据",
-    attr: { type: "button", "aria-expanded": String(referencesExpanded), "aria-label": "展开或收起工资周期与分类参考数据" }
-  });
-  referencesToggle.addEventListener("click", () => {
-    referencesExpanded = !referencesExpanded;
-    referencesPanel.toggleClass("is-open", referencesExpanded);
-    referencesToggle.setAttribute("aria-expanded", String(referencesExpanded));
-    referencesToggle.setText(referencesExpanded ? "收起参考数据" : "展开参考数据");
-    onReferencesExpandedChange?.(referencesExpanded);
-  });
+  const referencesPanel = card.createDiv({ cls: "ledger-advisor-references" });
   const summary = referencesPanel.createDiv({ cls: `ledger-advisor-summary${detailsExpanded ? " is-open" : ""}` });
   const spent = summary.createDiv({ cls: "ledger-advisor-summary-item" });
   spent.createSpan({ text: "本次自工资日支出" });
@@ -1112,7 +1107,6 @@ export function renderFinanceAdvisor(parent: HTMLElement, snapshot: FinanceAdvis
       more.addEventListener("toggle", () => onDetailsExpandedChange?.(more.open));
     }
   }
-  if (state.todayBudget) renderInlineBudget(card, state.todayBudget);
 }
 
 function renderInlineBudget(card: HTMLElement, budget: NonNullable<FinanceAdviceViewState["todayBudget"]>): void {

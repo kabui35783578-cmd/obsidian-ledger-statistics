@@ -739,7 +739,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  margin: -8px 0 18px;
+  margin: 12px 0 18px;
   padding: 10px 12px 10px 15px;
   border: 1px solid var(--mono-grid);
   border-radius: 18px;
@@ -915,10 +915,10 @@ button.ledger-metric:active {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
+    "advisor-budget"
     "advisor-heading"
     "advisor-observation"
-    "advisor-summary"
-    "advisor-budget";
+    "advisor-summary";
   gap: 10px 12px;
 }
 
@@ -1092,28 +1092,6 @@ button.ledger-advisor-refresh:disabled svg {
 }
 
 .ledger-advisor-references { grid-area: advisor-summary; min-width: 0; align-self: start; }
-.ledger-advisor-references-toggle { display: none; }
-
-@container (max-width: 540px) {
-  .ledger-advisor-references > button.ledger-advisor-references-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    min-height: 36px;
-    padding: 8px 12px;
-    border: 1px solid var(--mono-grid);
-    border-radius: 12px;
-    box-shadow: none;
-    background: transparent;
-    color: var(--mono-3);
-    font-size: 11px;
-  }
-  .ledger-advisor-references-toggle::after { content: "+"; font-size: 16px; }
-  .ledger-advisor-references.is-open > .ledger-advisor-references-toggle::after { content: "−"; }
-  .ledger-advisor-card .ledger-advisor-references:not(.is-open) > .ledger-advisor-summary { display: none; }
-  .ledger-advisor-card .ledger-advisor-references.is-open > .ledger-advisor-summary { margin-top: 8px; }
-}
 
 .ledger-advisor-summary-item {
   display: grid;
@@ -1482,10 +1460,10 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
   .ledger-advisor-card:not(.is-empty) {
     grid-template-columns: 1fr;
     grid-template-areas:
+      "advisor-budget"
       "advisor-heading"
       "advisor-observation"
-      "advisor-summary"
-      "advisor-budget";
+      "advisor-summary";
   }
 
   .ledger-advisor-summary,
@@ -1929,6 +1907,16 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
   opacity: 1;
   transform: translateY(0) scale(1);
 }
+
+/* Phone hover/focus can linger after a tap; only the selected point previews. */
+.ledger-mobile-trend .ledger-trend-point:not(.is-active) .ledger-trend-tooltip {
+  opacity: 0;
+  transition: none;
+}
+.ledger-mobile-trend .ledger-trend-point:not(.is-active) .ledger-persistent-peak {
+  opacity: 1;
+}
+.ledger-mobile-trend .ledger-trend-hit-target { touch-action: manipulation; }
 
 .ledger-trend-dot {
   transform-box: fill-box;
@@ -2716,10 +2704,10 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
 @container (max-width: 540px) {
   .ledger-advisor-card:not(.is-empty) {
     grid-template-areas:
+      "advisor-budget"
       "advisor-heading"
       "advisor-observation"
-      "advisor-summary"
-      "advisor-budget";
+      "advisor-summary";
   }
 
   .ledger-advisor-extra {
@@ -2954,7 +2942,7 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
   .ledger-drill-back {
     align-items: stretch;
     gap: 10px;
-    margin: -4px 0 14px;
+    margin: 10px 0 14px;
     padding: 10px;
     border-radius: 16px;
   }
@@ -3902,7 +3890,7 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
 .ledger-statistics-view .ledger-advisor-summary > .ledger-advisor-categories { padding: 12px 18px; border-radius: 0; background: transparent; }
 .ledger-statistics-view .ledger-advisor-category small { font-size: 10px; }
 .ledger-statistics-view .ledger-advisor-category > div > strong { font-size: 14px; }
-.ledger-statistics-view .ledger-advisor-budget { margin-top: 18px; padding-top: 18px; }
+.ledger-statistics-view .ledger-advisor-budget { margin: 0 0 8px; padding: 0 0 18px; border-top: 0; border-bottom: 1px solid var(--mono-grid); }
 .ledger-statistics-view .ledger-advisor-budget-track { height: 6px; background: var(--mono-grid); box-shadow: none; }
 .ledger-statistics-view .ledger-advisor-budget-fill { background: var(--mono-ink); box-shadow: none; }
 .ledger-statistics-view .ledger-advisor-budget-fill:not(.is-zero)::after { width: 6px; height: 6px; border: 0; }
@@ -3923,7 +3911,6 @@ button.ledger-advisor-info-toggle[aria-expanded="true"] {
   .ledger-statistics-view .ledger-advisor-summary-item { min-height: 0; padding: 12px 0; }
   .ledger-statistics-view .ledger-advisor-summary-item > strong { font-size: 18px; }
   .ledger-statistics-view .ledger-advisor-summary > .ledger-advisor-categories { padding: 12px 0; }
-  .ledger-statistics-view .ledger-advisor-references > button.ledger-advisor-references-toggle { min-height: 44px; margin-top: 8px; border-radius: 12px; }
   .ledger-statistics-view .ledger-advisor-budget-labels { gap: 8px; }
   .ledger-statistics-view .ledger-advisor-info-panel { max-height: min(360px, 55dvh); padding-inline: 12px; }
 }

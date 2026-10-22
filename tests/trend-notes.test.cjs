@@ -113,3 +113,16 @@ test('cancel returns to the saved note, empty notes can be edited, and closing d
   assert.deepEqual(listeners, {});
   assert.equal(modal.contentEl.all().find(el => el.tag === 'textarea').focused, false);
 });
+
+test('phone activation opens directly in note editing mode', () => {
+  const modal = noteModal();
+  modal.startEditing = true;
+  modal.onOpen();
+  const input = modal.contentEl.all().find(el => el.tag === 'textarea');
+  assert.equal(input.hidden, false);
+  assert.equal(input.focused, true);
+  assert.equal(input.value, '旧备注');
+  assert.equal(modal.contentEl.all().find(el => el.textContent === '完成').hidden, false);
+  modal.onClose();
+  assert.equal(input.focused, false);
+});

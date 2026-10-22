@@ -50,7 +50,7 @@ export class BalanceCalibrationNoteModal extends Modal {
 export class TrendDateNoteModal extends Modal {
   private cleanupViewport?: () => void;
   private noteInput?: HTMLTextAreaElement;
-  constructor(private plugin: LedgerStatisticsPlugin, private date: string, private showRecords: () => void) { super(plugin.app); }
+  constructor(private plugin: LedgerStatisticsPlugin, private date: string, private showRecords: () => void, private startEditing = false) { super(plugin.app); }
   onOpen(): void {
     styleLedgerModal(this);
     this.containerEl.addClass("ledger-trend-note-container");
@@ -93,7 +93,8 @@ export class TrendDateNoteModal extends Modal {
         save.disabled = cancel.disabled = input.disabled = false;
       }
     });
-    setEditing(false);
+    setEditing(this.startEditing === true);
+    if (this.startEditing) input.focus();
     this.cleanupViewport?.();
     const viewport = root.ownerDocument.defaultView?.visualViewport;
     if (viewport) {

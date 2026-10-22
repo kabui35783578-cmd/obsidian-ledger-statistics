@@ -39280,11 +39280,12 @@ var BalanceCalibrationNoteModal = class extends import_obsidian3.Modal {
   }
 };
 var TrendDateNoteModal = class extends import_obsidian3.Modal {
-  constructor(plugin, date, showRecords) {
+  constructor(plugin, date, showRecords, startEditing = false) {
     super(plugin.app);
     this.plugin = plugin;
     this.date = date;
     this.showRecords = showRecords;
+    this.startEditing = startEditing;
   }
   onOpen() {
     var _a2, _b2;
@@ -39336,7 +39337,8 @@ var TrendDateNoteModal = class extends import_obsidian3.Modal {
         save.disabled = cancel.disabled = input2.disabled = false;
       }
     });
-    setEditing(false);
+    setEditing(this.startEditing === true);
+    if (this.startEditing) input2.focus();
     (_a2 = this.cleanupViewport) == null ? void 0 : _a2.call(this);
     const viewport = (_b2 = root.ownerDocument.defaultView) == null ? void 0 : _b2.visualViewport;
     if (viewport) {
@@ -43881,18 +43883,23 @@ function interactiveTrendTarget(svg, group2, target2, label2, activate, previewO
   group2.addEventListener("pointerenter", raise);
   group2.addEventListener("focusin", raise);
   target2.addEventListener("click", (event) => {
-    if (previewOnFirstActivation && !group2.classList.contains("is-active")) {
+    if (previewOnFirstActivation) {
       event.preventDefault();
       event.stopPropagation();
+      const wasActive = group2.classList.contains("is-active");
       svg.querySelectorAll(".ledger-trend-point.is-active").forEach((point) => point.classList.remove("is-active"));
-      group2.classList.add("is-active");
-      return;
+      if (!wasActive) {
+        group2.classList.add("is-active");
+        raise();
+        return;
+      }
     }
     activate();
   });
   target2.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
+      svg.querySelectorAll(".ledger-trend-point.is-active").forEach((point) => point.classList.remove("is-active"));
       activate();
     }
   });
@@ -44338,7 +44345,7 @@ function renderTrendPlot(parent, points2, type, onClick, options, mobile) {
       hit,
       `${point.label} ${cumulative ? "\u7D2F\u8BA1 " : ""}${formatCents(point.cents)}\uFF0C${point.count} \u7B14${weekend ? "\uFF0C\u5468\u672B" : ""}${priorDescription ? `\uFF0C${priorDescription}` : ""}${cumulative ? `\uFF0C${note ? `\u5907\u6CE8\uFF1A${note}` : "\u6DFB\u52A0\u5907\u6CE8"}` : ""}`,
       () => onClick(point),
-      mobile && isLine && !cumulative
+      mobile && isLine
     );
     group2.append(hit);
     svg.append(group2);
@@ -44360,7 +44367,7 @@ function renderTrendPlot(parent, points2, type, onClick, options, mobile) {
     svg.insertBefore(outline, svg.firstChild);
   }
   const foot = svgEl("text", { x: width / 2, y: height - 10, "text-anchor": "middle", class: mobile ? "ledger-mobile-foot-label" : "ledger-foot-label" });
-  foot.textContent = cumulative ? mobile ? "\u8F7B\u70B9\u65E5\u671F\u5706\u70B9 \xB7 \u67E5\u770B\u5907\u6CE8" : "\u60AC\u505C\u67E5\u770B\u5907\u6CE8 \xB7 \u70B9\u51FB\u6253\u5F00\u5361\u7247" : isLine ? mobile ? "\u8F7B\u70B9\u5706\u70B9\u67E5\u770B\u91D1\u989D \xB7 \u518D\u70B9\u67E5\u770B\u660E\u7EC6" : "\u7A7A\u5FC3\u5706\u70B9\u4E3A\u5468\u672B \xB7 \u60AC\u505C\u67E5\u770B\u91D1\u989D" : `\u6BCF\u6863 ${formatCents(unit)} \xB7 \u865A\u7EBF\u672B\u6863\u6309\u6BD4\u4F8B\u8BA1\u5165`;
+  foot.textContent = cumulative ? mobile ? "\u8F7B\u70B9\u5706\u70B9\u67E5\u770B\u91D1\u989D\u4E0E\u5907\u6CE8 \xB7 \u518D\u70B9\u7F16\u8F91\u5907\u6CE8" : "\u60AC\u505C\u67E5\u770B\u5907\u6CE8 \xB7 \u70B9\u51FB\u6253\u5F00\u5361\u7247" : isLine ? mobile ? "\u8F7B\u70B9\u5706\u70B9\u67E5\u770B\u91D1\u989D \xB7 \u518D\u70B9\u67E5\u770B\u660E\u7EC6" : "\u7A7A\u5FC3\u5706\u70B9\u4E3A\u5468\u672B \xB7 \u60AC\u505C\u67E5\u770B\u91D1\u989D" : `\u6BCF\u6863 ${formatCents(unit)} \xB7 \u865A\u7EBF\u672B\u6863\u6309\u6BD4\u4F8B\u8BA1\u5165`;
   svg.append(foot);
   parent.createDiv({ cls: mobile ? "ledger-mobile-trend-scroll" : "ledger-desktop-chart ledger-trend-desktop-scroll" }).append(svg);
 }
@@ -44690,11 +44697,12 @@ function renderPairedRungs(parent, data, currentLabel, previousLabel, onClick) {
 function renderEmpty(parent, message) {
   parent.createDiv({ cls: "ledger-empty", text: message });
 }
-function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true, coverage2, onOpenFile, onManageFixed, detailsExpanded = false, onDetailsExpandedChange, balance, referencesExpanded = false, onReferencesExpandedChange) {
+function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true, coverage2, onOpenFile, onManageFixed, detailsExpanded = false, onDetailsExpandedChange, balance) {
   var _a2, _b2, _c2, _d2, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r;
   const card2 = parent.createDiv({ cls: `ledger-advisor-card${animate ? " ledger-reveal" : ""}` });
   deferChartAnimation(card2);
   card2.setAttribute("aria-busy", String(state.status === "loading"));
+  if (state.todayBudget) renderInlineBudget(card2, state.todayBudget);
   const heading = card2.createDiv({ cls: "ledger-advisor-heading" });
   const copy2 = heading.createDiv({ cls: "ledger-advisor-heading-copy" });
   copy2.createEl("h3", { text: "\u8FD1\u671F\u6D1E\u5BDF" });
@@ -44806,19 +44814,7 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
       for (const problem of coverage2.undated) problemLink(problem.path, problem.reason);
     }
   }
-  const referencesPanel = card2.createDiv({ cls: `ledger-advisor-references${referencesExpanded ? " is-open" : ""}` });
-  const referencesToggle = referencesPanel.createEl("button", {
-    cls: "ledger-advisor-references-toggle",
-    text: referencesExpanded ? "\u6536\u8D77\u53C2\u8003\u6570\u636E" : "\u5C55\u5F00\u53C2\u8003\u6570\u636E",
-    attr: { type: "button", "aria-expanded": String(referencesExpanded), "aria-label": "\u5C55\u5F00\u6216\u6536\u8D77\u5DE5\u8D44\u5468\u671F\u4E0E\u5206\u7C7B\u53C2\u8003\u6570\u636E" }
-  });
-  referencesToggle.addEventListener("click", () => {
-    referencesExpanded = !referencesExpanded;
-    referencesPanel.toggleClass("is-open", referencesExpanded);
-    referencesToggle.setAttribute("aria-expanded", String(referencesExpanded));
-    referencesToggle.setText(referencesExpanded ? "\u6536\u8D77\u53C2\u8003\u6570\u636E" : "\u5C55\u5F00\u53C2\u8003\u6570\u636E");
-    onReferencesExpandedChange == null ? void 0 : onReferencesExpandedChange(referencesExpanded);
-  });
+  const referencesPanel = card2.createDiv({ cls: "ledger-advisor-references" });
   const summary = referencesPanel.createDiv({ cls: `ledger-advisor-summary${detailsExpanded ? " is-open" : ""}` });
   const spent = summary.createDiv({ cls: "ledger-advisor-summary-item" });
   spent.createSpan({ text: "\u672C\u6B21\u81EA\u5DE5\u8D44\u65E5\u652F\u51FA" });
@@ -44854,7 +44850,6 @@ function renderFinanceAdvisor(parent, snapshot, state, onRefresh, animate = true
       more.addEventListener("toggle", () => onDetailsExpandedChange == null ? void 0 : onDetailsExpandedChange(more.open));
     }
   }
-  if (state.todayBudget) renderInlineBudget(card2, state.todayBudget);
 }
 function renderInlineBudget(card2, budget) {
   const progress = budgetProgress(budget.spentCents, budget.budgetCents);
@@ -47176,7 +47171,6 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian10
     this.financeAdviceLoading = false;
     this.financeAdviceError = "";
     this.advisorDetailsExpanded = false;
-    this.advisorReferencesExpanded = false;
     this.filtersExpanded = !import_obsidian10.Platform.isMobile;
     this.drillContext = null;
     this.pullEligible = false;
@@ -47717,11 +47711,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian10
       (expanded) => {
         this.advisorDetailsExpanded = expanded;
       },
-      balanceStatus(this.allRecords(), now, this.plugin.settings.salaryCents, this.plugin.settings.balanceCalibration),
-      this.advisorReferencesExpanded,
-      (expanded) => {
-        this.advisorReferencesExpanded = expanded;
-      }
+      balanceStatus(this.allRecords(), now, this.plugin.settings.salaryCents, this.plugin.settings.balanceCalibration)
     );
     const ownerDocument = parent.ownerDocument;
     const cardRect = parent.getBoundingClientRect();
@@ -47855,7 +47845,7 @@ var LedgerStatisticsView = class _LedgerStatisticsView extends import_obsidian10
             records.filter((record2) => record2.date === point.end),
             (record2) => void this.openRecord(record2)
           );
-        }).open();
+        }, import_obsidian10.Platform.isMobile).open();
       }, { dateNotes: this.plugin.settings.trendDateNotes, comparison: series.comparison });
     } else {
       renderTrendChart(parent, series.points, this.trendChart, showRecords, {
