@@ -43104,7 +43104,7 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
       text2.inputEl.setAttribute("inputmode", "decimal");
       return text2;
     });
-    const calibrationSetting = new import_obsidian4.Setting(balancePanel).setName("\u6821\u51C6\u5F53\u524D\u4F59\u989D").setDesc("\u586B\u5199\u6B64\u523B\u5B9E\u9645\u4F59\u989D\uFF0C\u8D1F\u6570\u8868\u793A\u8D1F\u503A\uFF08\u4F8B\u5982 -230\uFF09\u3002\u6821\u51C6\u65F6\u540C\u65F6\u66F4\u65B0\u8D44\u4EA7\u91CC\u7684\u9ED8\u8BA4\u6263\u6B3E\u8D26\u6237\uFF1B\u8D44\u4EA7\u4FEE\u6539\u4E0D\u4F1A\u53CD\u5411\u66F4\u65B0\u8FD9\u91CC\u3002\u6821\u51C6\u503C\u4EC5\u5BF9\u5F53\u524D\u5DE5\u8D44\u5468\u671F\u751F\u6548\u3002").addText((text2) => {
+    const calibrationSetting = new import_obsidian4.Setting(balancePanel).setName("\u6821\u51C6\u5F53\u524D\u4F59\u989D").setDesc("\u586B\u5199\u6B64\u523B\u5B9E\u9645\u4F59\u989D\uFF0C\u8D1F\u6570\u8868\u793A\u8D1F\u503A\uFF08\u4F8B\u5982 -230\uFF09\u3002\u4E0E\u8D44\u4EA7\u91CC\u7684\u9ED8\u8BA4\u6263\u6B3E\u8D26\u6237\u53CC\u5411\u540C\u6B65\uFF0C\u5728\u4EFB\u4E00\u5904\u8C03\u6574\u4F59\u989D\u90FD\u4F1A\u540C\u65F6\u66F4\u65B0\u3002\u6821\u51C6\u503C\u4EC5\u5BF9\u5F53\u524D\u5DE5\u8D44\u5468\u671F\u751F\u6548\u3002").addText((text2) => {
       text2.setPlaceholder("\u4F8B\u5982 3500 \u6216 -230");
       text2.inputEl.setAttribute("inputmode", "text");
       text2.inputEl.setAttribute("aria-label", "\u5F53\u524D\u5B9E\u9645\u4F59\u989D");
@@ -43180,7 +43180,7 @@ var LedgerSettingTab = class extends import_obsidian4.PluginSettingTab {
         balanceSummary.createEl("small", { text: "\u5C1A\u672A\u6821\u51C6\u3002\u5F53\u524D\u4F59\u989D\u53EA\u662F\u5DE5\u8D44\u51CF\u5DF2\u8BB0\u8D26\u652F\u51FA\u7684\u63A8\u7B97\u503C\uFF1B\u4E0A\u6B21\u6821\u51C6\u4E0D\u4F1A\u8DE8\u5DE5\u8D44\u5468\u671F\u6CBF\u7528\u3002" });
       }
       const cash = this.plugin.settings.assets.accounts.find((a) => a.id === this.plugin.settings.assets.defaultCashId && a.kind === "cash" && !a.archived);
-      balanceSummary.createEl("p", { text: cash ? `\u70B9\u51FB\u6821\u51C6\u65F6\u540C\u6B65\u8D44\u4EA7\u8D26\u6237\u201C${cash.name}\u201D\uFF1B\u8D1F\u4F59\u989D\u53EA\u8BA1\u4E00\u6B21\u8D1F\u503A\u3002\u8D44\u4EA7\u9875\u7684\u8D26\u6237\u4FEE\u6539\u548C\u5176\u4ED6\u8D1F\u503A\u4E0D\u4F1A\u53CD\u5411\u6539\u52A8\u6821\u51C6\u503C\u3002` : "\u9996\u6B21\u6821\u51C6\u5C06\u521B\u5EFA\u9ED8\u8BA4\u6263\u6B3E\u8D26\u6237\u201C\u4F59\u989D\u6821\u51C6\u8D26\u6237\u201D\uFF0C\u8D1F\u4F59\u989D\u81EA\u52A8\u8BA1\u5165\u8D44\u4EA7\u8D1F\u503A\u3002" });
+      balanceSummary.createEl("p", { text: cash ? `\u4E0E\u8D44\u4EA7\u9ED8\u8BA4\u6263\u6B3E\u8D26\u6237\u201C${cash.name}\u201D\u53CC\u5411\u540C\u6B65\uFF1A\u5728\u4EFB\u4E00\u5904\u8C03\u6574\u4F59\u989D\uFF0C\u53E6\u4E00\u5904\u540C\u65F6\u66F4\u65B0\uFF1B\u8D44\u4EA7\u4EA4\u6613\u6539\u53D8\u8BE5\u8D26\u6237\u4F59\u989D\u65F6\u4E5F\u4F1A\u540C\u6B65\uFF0C\u8D1F\u4F59\u989D\u53EA\u8BA1\u4E00\u6B21\u8D1F\u503A\u3002` : "\u9996\u6B21\u6821\u51C6\u5C06\u521B\u5EFA\u9ED8\u8BA4\u6263\u6B3E\u8D26\u6237\u201C\u4F59\u989D\u6821\u51C6\u8D26\u6237\u201D\uFF0C\u8D1F\u4F59\u989D\u81EA\u52A8\u8BA1\u5165\u8D44\u4EA7\u8D1F\u503A\u3002" });
       balanceSummary.createEl("p", { text: "\u4F59\u989D\u4E0E\u5DEE\u989D\u4E0D\u8FDB\u5165\u6D88\u8D39\u5F02\u5E38\u3001\u5386\u53F2\u5747\u503C\u6216 AI \u5224\u65AD\u3002\u8865\u8BB0\u8F83\u65E9\u4EA4\u6613\u4E0D\u4F1A\u4E8C\u6B21\u6263\u6B3E\uFF1B\u672A\u8BB0\u8D26\u8D44\u91D1\u53D8\u5316\u9700\u518D\u6B21\u6821\u51C6\u3002\u53D6\u6D88\u6821\u51C6\u6216\u8FDB\u5165\u65B0\u5DE5\u8D44\u5468\u671F\u53EA\u6062\u590D\u8FD9\u91CC\u7684\u8D26\u9762\u63A8\u7B97\uFF0C\u4E0D\u6E05\u9664\u8D44\u4EA7\u8D26\u6237\u6B20\u6B3E\u3002" });
     };
     refreshBalanceSummary();
@@ -49437,7 +49437,7 @@ var LedgerStatisticsPlugin = class extends import_obsidian11.Plugin {
   refreshAssetViews() {
     this.refreshViews();
   }
-  /** Calibration writes to cash once; subsequent asset edits never write back to calibration. */
+  /** Both balance editors persist the default cash balance and calibration together. */
   calibrateBalance(cents, now = /* @__PURE__ */ new Date()) {
     const operation = this.assetQueue.then(async () => {
       var _a2;
@@ -49518,21 +49518,34 @@ var LedgerStatisticsPlugin = class extends import_obsidian11.Plugin {
     });
     return operation;
   }
-  updateAssets(change) {
+  updateAssets(change, now = /* @__PURE__ */ new Date()) {
     const operation = this.assetQueue.then(async () => {
+      var _a2, _b2;
       if (this.assetsStopped) throw new Error("\u63D2\u4EF6\u5DF2\u5173\u95ED\uFF0C\u8BF7\u91CD\u65B0\u6253\u5F00\u8D44\u4EA7\u9875");
       const before = this.settings.assets, next = JSON.parse(JSON.stringify(before));
       change(next);
-      storeAssetSnapshot(next, buildAssetSnapshot(next, flattenRecords(this.repository.files.values())));
+      const records = flattenRecords(this.repository.files.values());
+      const snapshot = buildAssetSnapshot(next, records, now);
+      storeAssetSnapshot(next, snapshot);
       if (jsonDataEqual(next, before)) return;
+      const beforeSalary = this.currentSalaryState();
+      const cash = snapshot.accounts.find((a) => a.id === next.defaultCashId && a.kind === "cash");
+      const previousCash = before.accounts.find((a) => a.id === before.defaultCashId && a.kind === "cash" && !a.archived);
+      const nextCash = next.accounts.find((a) => a.id === (cash == null ? void 0 : cash.id));
+      const cashChanged = cash && (cash.id !== (previousCash == null ? void 0 : previousCash.id) || cash.cents !== ((_a2 = buildAssetSnapshot(before, records, now).accounts.find((a) => a.id === cash.id)) == null ? void 0 : _a2.cents) || (nextCash == null ? void 0 : nextCash.balanceCents) !== (previousCash == null ? void 0 : previousCash.balanceCents) || (nextCash == null ? void 0 : nextCash.baselineAt) !== (previousCash == null ? void 0 : previousCash.baselineAt));
+      if (cashChanged) {
+        this.syncSalaryCycles(now);
+        this.settings.balanceCalibration = createBalanceCalibration(records, now, cash.cents);
+      }
       this.settings.assets = next;
       try {
-        await this.saveSettings(false, false);
+        await this.saveSettings(false, false, now);
       } catch (error2) {
-        this.settings.assets = before;
+        Object.assign(this.settings, beforeSalary, { assets: before });
         throw error2;
       }
       if (!this.assetsStopped) this.refreshViews();
+      (_b2 = this.settingTab) == null ? void 0 : _b2.refreshBalanceSummary();
     });
     this.assetQueue = operation.catch(() => {
     });

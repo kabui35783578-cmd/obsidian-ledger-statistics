@@ -156,6 +156,22 @@ test('failed history writes roll back assets, archive, wage and note together an
   assert.equal(p.saved.salaryCycles[1].calibration.balanceCents, 400000);
 });
 
+test('asset balance edits persist the current salary history, preserve prior cycles and roll back both sides', async () => {
+  const p = plugin();
+  await p.calibrateBalance(100000, date(9));
+  const previous = copy(p.saved.salaryCycles[0]);
+  const cashId = p.settings.assets.defaultCashId;
+  await p.updateAssets(s => assets.calibrateAccount(s, cashId, 250000, [], date(10)), date(10));
+  assert.deepEqual(p.saved.salaryCycles[0], previous);
+  assert.equal(p.saved.salaryCycles[1].calibration.balanceCents, 250000);
+  assert.equal(p.saved.balanceCalibration.balanceCents, 250000);
+  assert.equal(p.saved.assets.accounts[0].balanceCents, 250000);
+  const before = copy(p.settings);
+  p.saveData = async () => { throw new Error('磁盘错误'); };
+  await assert.rejects(p.updateAssets(s => assets.calibrateAccount(s, cashId, 300000, [], date(11)), date(11)), /磁盘错误/);
+  assert.deepEqual(p.settings, before);
+});
+
 test('automatic rollover persistence retries after a failure without losing the old cycle', async () => {
   const p = plugin();
   const now = new Date(), current = core.salaryDayRange(now).start;

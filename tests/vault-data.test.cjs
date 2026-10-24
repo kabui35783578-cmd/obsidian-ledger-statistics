@@ -275,6 +275,10 @@ test('real 30-second foreground ticks after a sync round trip do not save snapsh
   await p.updateAssets(state => { state.accounts[0].balanceCents++; });
   assert.equal(vault.writes, baseline + 1, 'A real balance edit must still write and sync');
   assert.equal(data.data.assets.accounts[0].balanceCents, initial.assets.accounts[0].balanceCents + 1);
+  assert.equal(data.data.balanceCalibration.balanceCents, data.data.assets.accounts[0].balanceCents);
+  const receiver = store(vault, 'receiver');
+  const received = await receiver.initialize(defaults(), false, 0);
+  assert.equal(received.balanceCalibration.balanceCents, received.assets.accounts[0].balanceCents, 'Reloading shared data keeps both sides in sync');
 });
 
 test('two devices receiving each others reordered snapshots converge and remain idle across foreground checks', async () => {

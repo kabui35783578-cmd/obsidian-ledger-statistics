@@ -307,7 +307,7 @@ export default class LedgerStatisticsPlugin extends Plugin {
 
   refreshAssetViews(): void { this.refreshViews(); }
 
-  /** Calibration writes to cash once; subsequent asset edits never write back to calibration. */
+  /** Both balance editors persist the default cash balance and calibration together. */
   calibrateBalance(cents: number, now = new Date()): Promise<void> {
     const operation = this.assetQueue.then(async () => {
       if (this.assetsStopped) throw new Error("插件已关闭，请重新打开");
@@ -373,19 +373,37 @@ export default class LedgerStatisticsPlugin extends Plugin {
     return operation;
   }
 
-  updateAssets(change: (state: AssetState) => void): Promise<void> {
+  updateAssets(change: (state: AssetState) => void, now = new Date()): Promise<void> {
     const operation = this.assetQueue.then(async () => {
       if (this.assetsStopped) throw new Error("插件已关闭，请重新打开资产页");
       const before = this.settings.assets, next = JSON.parse(JSON.stringify(before)) as AssetState;
       change(next);
-      storeAssetSnapshot(next, buildAssetSnapshot(next, flattenRecords(this.repository.files.values())));
+      const records = flattenRecords(this.repository.files.values());
+      const snapshot = buildAssetSnapshot(next, records, now);
+      storeAssetSnapshot(next, snapshot);
       // Unrelated vault renames also reach asset-link maintenance. A no-op must
       // not write data.json and feed another sync event or rebuild every view.
       if (jsonDataEqual(next, before)) return;
+      const beforeSalary = this.currentSalaryState();
+      const cash = snapshot.accounts.find(a => a.id === next.defaultCashId && a.kind === "cash");
+      const previousCash = before.accounts.find(a => a.id === before.defaultCashId && a.kind === "cash" && !a.archived);
+      const nextCash = next.accounts.find(a => a.id === cash?.id);
+      // Compare both states at the same instant: passive snapshots, quotes and
+      // display edits must not create a calibration or undo an explicit cancel.
+      // Baseline edits still count when the user confirms the same amount.
+      const cashChanged = cash && (cash.id !== previousCash?.id
+        || cash.cents !== buildAssetSnapshot(before, records, now).accounts.find(a => a.id === cash.id)?.cents
+        || nextCash?.balanceCents !== previousCash?.balanceCents
+        || nextCash?.baselineAt !== previousCash?.baselineAt);
+      if (cashChanged) {
+        this.syncSalaryCycles(now);
+        this.settings.balanceCalibration = createBalanceCalibration(records, now, cash.cents);
+      }
       this.settings.assets = next;
-      try { await this.saveSettings(false, false); }
-      catch (error) { this.settings.assets = before; throw error; }
+      try { await this.saveSettings(false, false, now); }
+      catch (error) { Object.assign(this.settings, beforeSalary, { assets: before }); throw error; }
       if (!this.assetsStopped) this.refreshViews();
+      this.settingTab?.refreshBalanceSummary();
     });
     this.assetQueue = operation.catch(() => {});
     return operation;
