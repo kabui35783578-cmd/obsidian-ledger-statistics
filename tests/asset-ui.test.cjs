@@ -31,6 +31,56 @@ function plugin() {
 }
 function field(modal, name) { return modal.contentEl.all().find(e => e.attributes['aria-label'] === name); }
 async function submit(modal) { modal.contentEl.querySelector('form').listeners.submit({ preventDefault() {} }); await new Promise(resolve => setImmediate(resolve)); }
+
+test('adding and editing debt through account forms deducts only increases from default cash', async () => {
+  const p = plugin(), state = p.settings.assets, panel = new AssetPanel(p);
+  state.accounts.push({ id: 'cash', name: '现金', kind: 'cash', balanceCents: 100000, baselineAt: new Date().toISOString(), includedEventIds: [], includedRecordIds: [] });
+  state.defaultCashId = 'cash';
+  panel.accountForm(undefined, 'liability'); let modal = Modal.last;
+  field(modal, '账户名称').value = '欠款'; field(modal, '当前金额（元）').value = '100';
+  await submit(modal); assert.equal(modal.closed, true);
+  const debt = state.accounts.find(a => a.kind === 'liability');
+  assert.equal(p.assetSnapshot().accounts.find(a => a.id === 'cash').cents, 90000);
+  for (const [amount, cash] of [['150', 85000], ['150', 85000], ['120', 85000]]) {
+    panel.accountForm(debt); modal = Modal.last; field(modal, '当前金额（元）').value = amount;
+    await submit(modal); assert.equal(modal.closed, true);
+    assert.equal(p.assetSnapshot().accounts.find(a => a.id === 'cash').cents, cash);
+    assert.equal(p.assetSnapshot().accounts.find(a => a.id === debt.id).cents, Number(amount) * 100);
+  }
+});
+
+test('adding debt without default cash shows an error and leaves accounts unchanged', async () => {
+  const p = plugin(), before = JSON.stringify(p.settings.assets);
+  new AssetPanel(p).accountForm(undefined, 'liability'); const modal = Modal.last;
+  field(modal, '当前金额（元）').value = '100'; await submit(modal);
+  assert.ok(!modal.closed); assert.match(modal.contentEl.all().map(n => n.textContent).join(' '), /先设置默认扣款账户/);
+  assert.equal(JSON.stringify(p.settings.assets), before);
+});
+
+test('debt adjustment transaction permits ledger linking and charges the selected cash once', async () => {
+  const p = plugin(), s = p.settings.assets, now = new Date(), date = now.toISOString().slice(0, 10);
+  const record = { id: 'expense', date, time: '12:00', cents: 10000, note: '欠款', category: '其他' };
+  p.repository.files.set('ledger', { records: [record] });
+  for (const [id, kind, cents] of [['cash', 'cash', 100000], ['debt', 'liability', 0]]) s.accounts.push({ id, name: id, kind, balanceCents: cents, baselineAt: now.toISOString(), includedEventIds: [], includedRecordIds: [] });
+  s.defaultCashId = 'cash'; new AssetPanel(p).eventForm(); const modal = Modal.last;
+  field(modal, '交易类型').value = 'adjust'; field(modal, '投资／转出／收入／负债账户').value = 'debt';
+  field(modal, '实际支付／到账金额（元，含费用；余额调整可负数）').value = '100';
+  field(modal, '关联已记账流水（避免重复扣款）').value = 'expense'; field(modal, '已确认成交数量与实际金额').checked = true;
+  await submit(modal); assert.equal(modal.closed, true);
+  assert.equal(s.events[0].liabilityCashOutflow, true); assert.equal(s.events[0].link.id, 'expense');
+  const snap = a.buildAssetSnapshot(s, [record]);
+  assert.equal(snap.accounts.find(a => a.id === 'cash').cents, 90000); assert.equal(snap.accounts.find(a => a.id === 'debt').cents, 10000);
+});
+
+test('cancelling queued debt creation prevents cash and liability changes', async () => {
+  const p = plugin(), s = p.settings.assets;
+  s.accounts.push({ id: 'cash', name: '现金', kind: 'cash', balanceCents: 100000, baselineAt: new Date().toISOString(), includedEventIds: [], includedRecordIds: [] }); s.defaultCashId = 'cash';
+  const before = JSON.stringify(s); let flush;
+  p.updateAssets = change => new Promise((resolve, reject) => { flush = () => { try { change(s); resolve(); } catch(e) { reject(e); } }; });
+  new AssetPanel(p).accountForm(undefined, 'liability'); const modal = Modal.last;
+  field(modal, '当前金额（元）').value = '100'; await submit(modal); modal.close(); flush();
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(JSON.stringify(s), before);
+});
 test('asset calendar shows each daily increase, decline, zero and missing predecessor without exposing hidden amounts', () => {
   global.document = { createElementNS: (_, tag) => new Element(tag) };
   try {

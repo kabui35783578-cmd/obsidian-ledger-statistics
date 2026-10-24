@@ -55,6 +55,20 @@ test('asset debt additions, cash corrections and repayments never write back to 
   assert.deepEqual(p.settings.balanceCalibration, calibration);
 });
 
+test('debt increases persist cash and debt together, roll back on failure and preserve salary calibration', async () => {
+  const p = plugin(); await p.calibrateBalance(100000, now(12));
+  const before = copy(p.settings), save = p.saveSettings;
+  p.saveSettings = async () => { throw new Error('磁盘错误'); };
+  await assert.rejects(p.updateAssets(s => a.calibrateAccount(s, 'loan', 60000, [], now(13))), /磁盘错误/);
+  assert.deepEqual(p.settings, before);
+  p.saveSettings = save;
+  await p.updateAssets(s => a.calibrateAccount(s, 'loan', 60000, [], now(13)));
+  const snap = a.buildAssetSnapshot(a.normalizeAssets(p.saved.assets), [], now(14));
+  assert.equal(snap.accounts.find(x => x.id === 'wechat').cents, 90000);
+  assert.equal(snap.accounts.find(x => x.id === 'loan').cents, 60000);
+  assert.deepEqual(p.saved.balanceCalibration, before.balanceCalibration);
+});
+
 test('new ledger spending reaches both balances while old backfills are not deducted twice', async () => {
   const p = plugin();
   await p.calibrateBalance(-10000, now(12));

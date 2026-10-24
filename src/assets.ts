@@ -46,6 +46,8 @@ export interface AssetEvent {
   id: string; kind: AssetEventKind; date: string; createdAt: string; accountId: string;
   cashAccountId?: string; holdingId?: string; amountCents: number; feeCents: number;
   quantity?: string; price?: string; note: string; link?: LedgerLink;
+  /** Persisted only for new debt increases; legacy adjustments never retroactively debit cash. */
+  liabilityCashOutflow?: boolean;
 }
 export interface CashEpoch { accountId: string; from: string; to?: string; includedRecordIds: string[]; }
 export interface ValuedHolding extends AssetHolding { valueCents: number | null; quote?: AssetQuote; }
@@ -169,6 +171,11 @@ export function setDefaultCash(state: AssetState, accountId: string, records: Le
 export function calibrateAccount(state: AssetState, id: string, cents: number, records: LedgerRecord[], now: Date): void {
   const account = state.accounts.find(a => a.id === id);
   if (!account || account.archived || !validCents(cents) || (account.kind === "liability" && cents < 0)) throw new Error("余额无效或账户已删除");
+  if (account.kind === "liability") {
+    const current = buildAssetSnapshot(state, records, now).accounts.find(a => a.id === id)!.cents;
+    if (cents > current) addAssetEvent(state, { id: assetId(), kind: "adjust", accountId: id,
+      amountCents: cents - current, feeCents: 0, date: isoFromDate(now), createdAt: now.toISOString(), note: "负债增加" });
+  }
   account.balanceCents = cents; account.baselineAt = now.toISOString();
   account.includedEventIds = state.events.map(e => e.id); account.includedRecordIds = baselineRecordIds(records, now);
 }
@@ -224,7 +231,8 @@ export function buildAssetSnapshot(state: AssetState, records: LedgerRecord[], n
     const baseline = Date.parse(account.baselineAt);
     for (const event of state.events) {
       if (event.date > today || account.includedEventIds.includes(event.id)) continue;
-      const cashDelta = event.kind === "buy" ? -event.amountCents : event.kind === "sell" || event.kind === "dividend" ? event.amountCents : event.kind === "transfer" ? event.amountCents : event.kind === "repay" ? -(event.amountCents + event.feeCents) : 0;
+      // Only newly confirmed debt increases carry this flag; old adjustments keep their original cash semantics.
+      const cashDelta = event.kind === "buy" ? -event.amountCents : event.kind === "sell" || event.kind === "dividend" ? event.amountCents : event.kind === "transfer" ? event.amountCents : event.kind === "repay" || (event.kind === "adjust" && event.liabilityCashOutflow === true) ? -(event.amountCents + event.feeCents) : 0;
       if (event.cashAccountId === account.id) cents += cashDelta;
       if (event.accountId === account.id) {
         if (event.kind === "income" || event.kind === "adjust") cents += event.amountCents;
@@ -303,7 +311,7 @@ export function dailyAssetChange(state: Pick<AssetState, "snapshots">, current: 
   const before = assetTotals(previous, excludeFixed), after = assetTotals(current, excludeFixed);
   return before.missing || after.missing ? null : after.assetsCents - before.assetsCents;
 }
-/** Cash linking is explicit; opening debt balances never invents cash income. */
+/** Principal reduces debt; principal plus fees reduces cash. */
 export function repayAssetLiability(state: AssetState, liabilityId: string, cents: number, options: { cashAccountId?: string; feeCents?: number; link?: LedgerLink; now?: Date } = {}): void {
   if (!validCents(cents) || cents <= 0) throw new Error("还款本金须大于零");
   const now = options.now ?? new Date();
@@ -317,6 +325,14 @@ export function addAssetEvent(state: AssetState, event: AssetEvent): void {
   if (!validCents(event.amountCents) || !validCents(event.feeCents) || event.feeCents < 0 || (event.kind !== "adjust" && event.amountCents < 0)) throw new Error("交易金额无效");
   const account = state.accounts.find(a => a.id === event.accountId), cash = state.accounts.find(a => a.id === event.cashAccountId);
   if (!account || account.archived) throw new Error("账户不存在或已删除");
+  if (event.kind === "adjust" && account.kind === "liability" && event.amountCents > 0) {
+    const payer = state.accounts.find(a => a.id === (event.cashAccountId ?? state.defaultCashId) && a.kind === "cash" && !a.archived);
+    if (!payer) throw new Error("增加负债前，请先设置默认扣款账户或选择现金账户");
+    if (!validCents(event.amountCents + event.feeCents)) throw new Error("交易金额超出可计算范围");
+    event = { ...event, cashAccountId: payer.id, liabilityCashOutflow: true };
+  } else {
+    event = { ...event, liabilityCashOutflow: undefined };
+  }
   if (event.link && state.events.some(e => e.link && stableIdentity(e.link.id) === stableIdentity(event.link!.id))) throw new Error("这条账本流水已关联其他交易");
   if (["buy", "sell", "dividend", "transfer", "repay"].includes(event.kind) && (!cash || cash.kind !== "cash" || cash.archived)) throw new Error("请选择现金账户");
   if (event.kind === "transfer" && (account.kind !== "cash" || account.id === cash?.id)) throw new Error("转出、转入必须是不同现金账户");

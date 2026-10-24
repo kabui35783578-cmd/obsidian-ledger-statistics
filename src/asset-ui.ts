@@ -180,7 +180,7 @@ export class AssetPanel {
     }
   }
   private accountForm(existing?: AssetAccount, preferredKind: AssetKind = "cash"): void {
-    new AssetFormModal(this.plugin, existing ? "编辑账户" : "添加账户", body => {
+    new AssetFormModal(this.plugin, existing ? "编辑账户" : "添加账户", (body, active) => {
       const name = input(body, "账户名称", existing?.name ?? "");
       const kind = select(body, "类别", Object.entries(ASSET_NAMES), existing?.kind ?? preferredKind); kind.disabled = !!existing;
       const valued = existing && this.plugin.assetSnapshot().accounts.find(a => a.id === existing.id);
@@ -188,18 +188,24 @@ export class AssetPanel {
       const balance = input(body, existing?.kind === "investment" ? "待分配金额（元）" : "当前金额（元）", (initial / 100).toFixed(2));
       const allocation = body.createEl("small", { cls: "ledger-assets-hint", text: "添加持仓时，会自动从这笔金额中分配，避免重复计算。" });
       const useDefault = input(body, "作为默认扣款账户", "", "checkbox");
+      const debtHint = body.createEl("small", { cls: "ledger-assets-hint", text: "新增负债或调高金额时，增加部分会从默认扣款账户扣除。调低金额只修正负债；实际还款请使用“还款”。" });
       useDefault.checked = existing ? existing.id === this.plugin.settings.assets.defaultCashId : !this.plugin.settings.assets.defaultCashId;
-      const updateFields = (): void => { allocation.hidden = kind.value !== "investment"; useDefault.parentElement!.hidden = kind.value !== "cash"; }; kind.addEventListener("change", updateFields); updateFields();
+      const updateFields = (): void => { allocation.hidden = kind.value !== "investment"; debtHint.hidden = kind.value !== "liability"; useDefault.parentElement!.hidden = kind.value !== "cash"; }; kind.addEventListener("change", updateFields); updateFields();
       const advanced = body.createEl("details", { cls: "ledger-assets-advanced" }); advanced.createEl("summary", { text: "余额时点" });
       const at = input(advanced, "余额对应时点", localDateTime(), "datetime-local");
       return async () => {
         const category = kind.value as AssetKind, cents = moneyCents(balance.value, category !== "liability");
         const now = advanced.open ? parseBaseline(at.value) : new Date();
         await this.save(state => {
+          if (!active()) throw new Error("已取消账户编辑");
           let account = existing && state.accounts.find(a => a.id === existing.id && !a.archived);
           if (existing && !account) throw new Error("账户已删除");
           if (account) { account.name = name.value.trim() || account.name; if (cents !== initial || advanced.open) calibrateAccount(state, account.id, cents, this.records(), now); }
-          else { account = { id: assetId(), name: name.value.trim() || ASSET_NAMES[category], kind: category, balanceCents: cents, baselineAt: now.toISOString(), includedRecordIds: baselineRecordIds(this.records(), now), includedEventIds: [] }; state.accounts.push(account); }
+          else {
+            if (category === "liability" && cents > 0 && !state.accounts.some(a => a.id === state.defaultCashId && a.kind === "cash" && !a.archived)) throw new Error("增加负债前，请先设置默认扣款账户");
+            account = { id: assetId(), name: name.value.trim() || ASSET_NAMES[category], kind: category, balanceCents: category === "liability" ? 0 : cents, baselineAt: now.toISOString(), includedRecordIds: baselineRecordIds(this.records(), now), includedEventIds: [] }; state.accounts.push(account);
+            if (category === "liability") calibrateAccount(state, account.id, cents, this.records(), now);
+          }
           if (category === "cash" && useDefault.checked) setDefaultCash(state, account.id, this.records(), new Date());
           else if (category === "cash" && state.defaultCashId === account.id) { state.defaultCashId = ""; for (const epoch of state.epochs) if (!epoch.to && epoch.accountId === account.id) epoch.to = new Date().toISOString(); }
         });
@@ -257,7 +263,7 @@ export class AssetPanel {
   private eventForm(): void {
     const state = this.plugin.settings.assets;
     if (!state.accounts.some(a => !a.archived)) { this.accountForm(); return; }
-    new AssetFormModal(this.plugin, "记录资产交易", body => {
+    new AssetFormModal(this.plugin, "记录资产交易", (body, active) => {
       const type = select(body, "交易类型", Object.entries(EVENT_NAMES));
       const account = select(body, "投资／转出／收入／负债账户", state.accounts.filter(a => !a.archived).map(a => [a.id, `${a.name} · ${ASSET_NAMES[a.kind]}`]));
       const cash = select(body, "扣款／到账／转入现金账户", [["", "请选择"], ...state.accounts.filter(a => a.kind === "cash" && !a.archived).map(a => [a.id, a.name] as [string, string])], state.defaultCashId);
@@ -272,15 +278,16 @@ export class AssetPanel {
       const date = input(body, "确认日期", isoFromDate(new Date()), "date"), note = input(body, "备注");
       const links = this.records().slice().sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time));
       const linked = select(body, "关联已记账流水（避免重复扣款）", [["", "不关联"], ...links.map(r => [r.id, `${r.date} ${r.time} ${formatCents(r.cents)} ${r.note || r.category}`] as [string, string])]);
-      body.createEl("p", { cls: "ledger-assets-hint", text: "买卖按实际确认份额登记。转账金额为到账金额，转出另扣费用；卖出金额为实际到账金额。还款金额为减少的负债本金，费用另扣现金。红利再投资只增加确认份额；份额调整用于拆分或核对，不改现金及持仓成本。关联后该笔消费由资产交易扣款。" });
+      body.createEl("p", { cls: "ledger-assets-hint", text: "买卖按实际确认份额登记。转账金额为到账金额，转出另扣费用；卖出金额为实际到账金额。负债正向增减会增加负债，并从所选现金账户扣除增加金额及费用；未选时使用默认扣款账户。负债负向调整只修正余额。还款金额为减少的负债本金，费用另扣现金。红利再投资只增加确认份额；份额调整用于拆分或核对，不改现金及持仓成本。关联后该笔消费由资产交易扣款。" });
       const confirmed = input(body, "已确认成交数量与实际金额", "", "checkbox");
       return async () => {
         if (!confirmed.checked) throw new Error("请确认这笔资金变动已发生");
         const kind = type.value as AssetEventKind;
         const event: AssetEvent = { id: assetId(), kind, date: date.value, createdAt: new Date().toISOString(), accountId: account.value, cashAccountId: cash.value || undefined, holdingId: holding.value || undefined, amountCents: moneyCents(amount.value, kind === "adjust"), feeCents: moneyCents(fee.value), quantity: quantity.value || undefined, price: price.value || undefined, note: note.value.trim(), link: linked.value ? linkRecord(links.find(r => r.id === linked.value)!) : undefined };
-        if (event.link && !["buy", "transfer", "repay"].includes(kind)) throw new Error("账本是支出流水，只有买入、转账或还款可关联；其他类型请取消关联");
+        const debtIncrease = kind === "adjust" && event.amountCents > 0 && state.accounts.some(a => a.id === event.accountId && a.kind === "liability");
+        if (event.link && !["buy", "transfer", "repay"].includes(kind) && !debtIncrease) throw new Error("账本是支出流水，只有买入、转账、还款或负债增加可关联；其他类型请取消关联");
         if (["quantity", "reinvest"].includes(kind) && (event.amountCents !== 0 || event.feeCents !== 0)) throw new Error("份额调整与红利再投资不移动现金，请将金额和费用填为0");
-        await this.save(s => { addAssetEvent(s, event); }); void this.plugin.refreshAssetQuotes().catch(() => {});
+        await this.save(s => { if (!active()) throw new Error("已取消资产交易"); addAssetEvent(s, event); }); void this.plugin.refreshAssetQuotes().catch(() => {});
       };
     }).open();
   }

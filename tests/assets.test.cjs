@@ -20,6 +20,68 @@ function records(lines, path = '记账/2026-10-08.md', date = '2026-10-08') {
 }
 const balances = (s, rs = [], now = at(18)) => Object.fromEntries(a.buildAssetSnapshot(s, rs, now).accounts.map(a => [a.id, a.cents]));
 
+test('debt balance increases charge only the delta and survive repeated saves and reloads', () => {
+  const s = fixture();
+  a.calibrateAccount(s, 'loan', 60000, [], at(12));
+  assert.equal(balances(s).cash, 90000); assert.equal(balances(s).loan, 60000);
+  a.calibrateAccount(s, 'loan', 60000, [], at(13));
+  assert.equal(s.events.length, 1);
+  a.calibrateAccount(s, 'loan', 55000, [], at(14));
+  assert.equal(balances(s).cash, 90000); assert.equal(balances(s).loan, 55000);
+  a.calibrateAccount(s, 'loan', 57000, [], at(15));
+  const restored = a.normalizeAssets(clone(s));
+  assert.equal(balances(restored).cash, 88000); assert.equal(balances(restored).loan, 57000);
+  assert.deepEqual(balances(restored), balances(s));
+});
+
+test('debt edits compare with current outstanding after repayments rather than the opening balance', () => {
+  const s = fixture(); a.repayAssetLiability(s, 'loan', 10000, { now: at(10) });
+  a.calibrateAccount(s, 'loan', 45000, [], at(12));
+  assert.equal(balances(s).cash, 85000); assert.equal(balances(s).loan, 45000);
+});
+
+test('positive debt adjustments use selected cash or default and linked expenses are deducted once', () => {
+  const s = fixture(), rs = records('- 11:00 | 其他 | Y100.00 (欠款)');
+  a.addAssetEvent(s, { id: 'increase', kind: 'adjust', accountId: 'loan', cashAccountId: 'other', amountCents: 10000, feeCents: 100,
+    date: '2026-10-08', createdAt: at(11).toISOString(), note: '欠款', link: a.linkRecord(rs[0]) });
+  assert.equal(balances(s, rs).cash, 100000); assert.equal(balances(s, rs).other, -10100); assert.equal(balances(s, rs).loan, 60000);
+  a.setDefaultCash(s, 'other', rs, at(12));
+  a.removeAssetAccount(s, 'loan', at(13));
+  assert.equal(balances(a.normalizeAssets(clone(s)), rs).other, -10100, 'archiving debt preserves its cash leg');
+});
+
+test('missing or archived cash rejects debt increases without changing balances', () => {
+  for (const mode of ['missing', 'archived', 'wrong-kind']) {
+    const s = fixture();
+    if (mode === 'missing') s.defaultCashId = '';
+    if (mode === 'archived') s.accounts[0].archived = true;
+    if (mode === 'wrong-kind') s.defaultCashId = 'funds';
+    const before = clone(s);
+    assert.throws(() => a.calibrateAccount(s, 'loan', 60000, [], at(12)), /现金账户|扣款账户/);
+    assert.deepEqual(s, before);
+  }
+});
+
+test('legacy debt adjustments and ordinary adjustments keep their original cash behavior', () => {
+  const s = fixture();
+  s.events.push({ id: 'old', kind: 'adjust', accountId: 'loan', cashAccountId: 'cash', amountCents: 10000, feeCents: 0, date: '2026-10-08', createdAt: at(10).toISOString(), note: '旧调整' });
+  const restored = a.normalizeAssets(clone(s));
+  assert.equal(balances(restored).cash, 100000); assert.equal(balances(restored).loan, 60000);
+  a.calibrateAccount(restored, 'loan', 65000, [], at(12));
+  assert.equal(balances(restored).cash, 95000);
+  a.addAssetEvent(restored, { id: 'less', kind: 'adjust', accountId: 'loan', cashAccountId: 'cash', amountCents: -10000, feeCents: 0, date: '2026-10-08', createdAt: at(13).toISOString(), note: '' });
+  assert.equal(balances(restored).cash, 95000); assert.equal(balances(restored).loan, 55000);
+});
+
+test('cash recalibration absorbs earlier debt deductions and later increases debit the new default only', () => {
+  const s = fixture(); a.calibrateAccount(s, 'loan', 60000, [], at(10));
+  a.calibrateAccount(s, 'cash', 80000, [], at(11));
+  a.setDefaultCash(s, 'other', [], at(12));
+  a.calibrateAccount(s, 'loan', 65000, [], at(13));
+  assert.equal(balances(s).cash, 80000); assert.equal(balances(s).other, -5000);
+  assert.equal(balances(s).loan, 65000);
+});
+
 test('identity lookup keeps the first saved assignment when duplicate totals change', () => {
   const state = fixture(), rs = records('- 10:00 | 餐饮 | Y10.00 (早餐)');
   const parts = JSON.parse(rs[0].id.slice(10)); parts[6] += 1;

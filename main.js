@@ -42666,6 +42666,19 @@ function setDefaultCash(state, accountId, records, now) {
 function calibrateAccount(state, id2, cents, records, now) {
   const account = state.accounts.find((a) => a.id === id2);
   if (!account || account.archived || !validCents(cents) || account.kind === "liability" && cents < 0) throw new Error("\u4F59\u989D\u65E0\u6548\u6216\u8D26\u6237\u5DF2\u5220\u9664");
+  if (account.kind === "liability") {
+    const current = buildAssetSnapshot(state, records, now).accounts.find((a) => a.id === id2).cents;
+    if (cents > current) addAssetEvent(state, {
+      id: assetId(),
+      kind: "adjust",
+      accountId: id2,
+      amountCents: cents - current,
+      feeCents: 0,
+      date: isoFromDate(now),
+      createdAt: now.toISOString(),
+      note: "\u8D1F\u503A\u589E\u52A0"
+    });
+  }
   account.balanceCents = cents;
   account.baselineAt = now.toISOString();
   account.includedEventIds = state.events.map((e2) => e2.id);
@@ -42726,7 +42739,7 @@ function buildAssetSnapshot(state, records, now = /* @__PURE__ */ new Date()) {
     const baseline = Date.parse(account.baselineAt);
     for (const event of state.events) {
       if (event.date > today || account.includedEventIds.includes(event.id)) continue;
-      const cashDelta = event.kind === "buy" ? -event.amountCents : event.kind === "sell" || event.kind === "dividend" ? event.amountCents : event.kind === "transfer" ? event.amountCents : event.kind === "repay" ? -(event.amountCents + event.feeCents) : 0;
+      const cashDelta = event.kind === "buy" ? -event.amountCents : event.kind === "sell" || event.kind === "dividend" ? event.amountCents : event.kind === "transfer" ? event.amountCents : event.kind === "repay" || event.kind === "adjust" && event.liabilityCashOutflow === true ? -(event.amountCents + event.feeCents) : 0;
       if (event.cashAccountId === account.id) cents += cashDelta;
       if (event.accountId === account.id) {
         if (event.kind === "income" || event.kind === "adjust") cents += event.amountCents;
@@ -42825,6 +42838,17 @@ function addAssetEvent(state, event) {
   if (!validCents(event.amountCents) || !validCents(event.feeCents) || event.feeCents < 0 || event.kind !== "adjust" && event.amountCents < 0) throw new Error("\u4EA4\u6613\u91D1\u989D\u65E0\u6548");
   const account = state.accounts.find((a) => a.id === event.accountId), cash = state.accounts.find((a) => a.id === event.cashAccountId);
   if (!account || account.archived) throw new Error("\u8D26\u6237\u4E0D\u5B58\u5728\u6216\u5DF2\u5220\u9664");
+  if (event.kind === "adjust" && account.kind === "liability" && event.amountCents > 0) {
+    const payer = state.accounts.find((a) => {
+      var _a3;
+      return a.id === ((_a3 = event.cashAccountId) != null ? _a3 : state.defaultCashId) && a.kind === "cash" && !a.archived;
+    });
+    if (!payer) throw new Error("\u589E\u52A0\u8D1F\u503A\u524D\uFF0C\u8BF7\u5148\u8BBE\u7F6E\u9ED8\u8BA4\u6263\u6B3E\u8D26\u6237\u6216\u9009\u62E9\u73B0\u91D1\u8D26\u6237");
+    if (!validCents(event.amountCents + event.feeCents)) throw new Error("\u4EA4\u6613\u91D1\u989D\u8D85\u51FA\u53EF\u8BA1\u7B97\u8303\u56F4");
+    event = { ...event, cashAccountId: payer.id, liabilityCashOutflow: true };
+  } else {
+    event = { ...event, liabilityCashOutflow: void 0 };
+  }
   if (event.link && state.events.some((e2) => e2.link && stableIdentity(e2.link.id) === stableIdentity(event.link.id))) throw new Error("\u8FD9\u6761\u8D26\u672C\u6D41\u6C34\u5DF2\u5173\u8054\u5176\u4ED6\u4EA4\u6613");
   if (["buy", "sell", "dividend", "transfer", "repay"].includes(event.kind) && (!cash || cash.kind !== "cash" || cash.archived)) throw new Error("\u8BF7\u9009\u62E9\u73B0\u91D1\u8D26\u6237");
   if (event.kind === "transfer" && (account.kind !== "cash" || account.id === (cash == null ? void 0 : cash.id))) throw new Error("\u8F6C\u51FA\u3001\u8F6C\u5165\u5FC5\u987B\u662F\u4E0D\u540C\u73B0\u91D1\u8D26\u6237");
@@ -46585,7 +46609,7 @@ var AssetPanel = class {
     }
   }
   accountForm(existing, preferredKind = "cash") {
-    new AssetFormModal(this.plugin, existing ? "\u7F16\u8F91\u8D26\u6237" : "\u6DFB\u52A0\u8D26\u6237", (body) => {
+    new AssetFormModal(this.plugin, existing ? "\u7F16\u8F91\u8D26\u6237" : "\u6DFB\u52A0\u8D26\u6237", (body, active) => {
       var _a2, _b2, _c2, _d2;
       const name = input(body, "\u8D26\u6237\u540D\u79F0", (_a2 = existing == null ? void 0 : existing.name) != null ? _a2 : "");
       const kind = select(body, "\u7C7B\u522B", Object.entries(ASSET_NAMES), (_b2 = existing == null ? void 0 : existing.kind) != null ? _b2 : preferredKind);
@@ -46595,9 +46619,11 @@ var AssetPanel = class {
       const balance = input(body, (existing == null ? void 0 : existing.kind) === "investment" ? "\u5F85\u5206\u914D\u91D1\u989D\uFF08\u5143\uFF09" : "\u5F53\u524D\u91D1\u989D\uFF08\u5143\uFF09", (initial / 100).toFixed(2));
       const allocation = body.createEl("small", { cls: "ledger-assets-hint", text: "\u6DFB\u52A0\u6301\u4ED3\u65F6\uFF0C\u4F1A\u81EA\u52A8\u4ECE\u8FD9\u7B14\u91D1\u989D\u4E2D\u5206\u914D\uFF0C\u907F\u514D\u91CD\u590D\u8BA1\u7B97\u3002" });
       const useDefault = input(body, "\u4F5C\u4E3A\u9ED8\u8BA4\u6263\u6B3E\u8D26\u6237", "", "checkbox");
+      const debtHint = body.createEl("small", { cls: "ledger-assets-hint", text: "\u65B0\u589E\u8D1F\u503A\u6216\u8C03\u9AD8\u91D1\u989D\u65F6\uFF0C\u589E\u52A0\u90E8\u5206\u4F1A\u4ECE\u9ED8\u8BA4\u6263\u6B3E\u8D26\u6237\u6263\u9664\u3002\u8C03\u4F4E\u91D1\u989D\u53EA\u4FEE\u6B63\u8D1F\u503A\uFF1B\u5B9E\u9645\u8FD8\u6B3E\u8BF7\u4F7F\u7528\u201C\u8FD8\u6B3E\u201D\u3002" });
       useDefault.checked = existing ? existing.id === this.plugin.settings.assets.defaultCashId : !this.plugin.settings.assets.defaultCashId;
       const updateFields = () => {
         allocation.hidden = kind.value !== "investment";
+        debtHint.hidden = kind.value !== "liability";
         useDefault.parentElement.hidden = kind.value !== "cash";
       };
       kind.addEventListener("change", updateFields);
@@ -46609,14 +46635,17 @@ var AssetPanel = class {
         const category = kind.value, cents = moneyCents(balance.value, category !== "liability");
         const now = advanced.open ? parseBaseline(at.value) : /* @__PURE__ */ new Date();
         await this.save((state) => {
+          if (!active()) throw new Error("\u5DF2\u53D6\u6D88\u8D26\u6237\u7F16\u8F91");
           let account = existing && state.accounts.find((a) => a.id === existing.id && !a.archived);
           if (existing && !account) throw new Error("\u8D26\u6237\u5DF2\u5220\u9664");
           if (account) {
             account.name = name.value.trim() || account.name;
             if (cents !== initial || advanced.open) calibrateAccount(state, account.id, cents, this.records(), now);
           } else {
-            account = { id: assetId(), name: name.value.trim() || ASSET_NAMES[category], kind: category, balanceCents: cents, baselineAt: now.toISOString(), includedRecordIds: baselineRecordIds(this.records(), now), includedEventIds: [] };
+            if (category === "liability" && cents > 0 && !state.accounts.some((a) => a.id === state.defaultCashId && a.kind === "cash" && !a.archived)) throw new Error("\u589E\u52A0\u8D1F\u503A\u524D\uFF0C\u8BF7\u5148\u8BBE\u7F6E\u9ED8\u8BA4\u6263\u6B3E\u8D26\u6237");
+            account = { id: assetId(), name: name.value.trim() || ASSET_NAMES[category], kind: category, balanceCents: category === "liability" ? 0 : cents, baselineAt: now.toISOString(), includedRecordIds: baselineRecordIds(this.records(), now), includedEventIds: [] };
             state.accounts.push(account);
+            if (category === "liability") calibrateAccount(state, account.id, cents, this.records(), now);
           }
           if (category === "cash" && useDefault.checked) setDefaultCash(state, account.id, this.records(), /* @__PURE__ */ new Date());
           else if (category === "cash" && state.defaultCashId === account.id) {
@@ -46694,7 +46723,7 @@ var AssetPanel = class {
       this.accountForm();
       return;
     }
-    new AssetFormModal(this.plugin, "\u8BB0\u5F55\u8D44\u4EA7\u4EA4\u6613", (body) => {
+    new AssetFormModal(this.plugin, "\u8BB0\u5F55\u8D44\u4EA7\u4EA4\u6613", (body, active) => {
       const type = select(body, "\u4EA4\u6613\u7C7B\u578B", Object.entries(EVENT_NAMES));
       const account = select(body, "\u6295\u8D44\uFF0F\u8F6C\u51FA\uFF0F\u6536\u5165\uFF0F\u8D1F\u503A\u8D26\u6237", state.accounts.filter((a) => !a.archived).map((a) => [a.id, `${a.name} \xB7 ${ASSET_NAMES[a.kind]}`]));
       const cash = select(body, "\u6263\u6B3E\uFF0F\u5230\u8D26\uFF0F\u8F6C\u5165\u73B0\u91D1\u8D26\u6237", [["", "\u8BF7\u9009\u62E9"], ...state.accounts.filter((a) => a.kind === "cash" && !a.archived).map((a) => [a.id, a.name])], state.defaultCashId);
@@ -46720,15 +46749,17 @@ var AssetPanel = class {
       const date = input(body, "\u786E\u8BA4\u65E5\u671F", isoFromDate(/* @__PURE__ */ new Date()), "date"), note = input(body, "\u5907\u6CE8");
       const links = this.records().slice().sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time));
       const linked = select(body, "\u5173\u8054\u5DF2\u8BB0\u8D26\u6D41\u6C34\uFF08\u907F\u514D\u91CD\u590D\u6263\u6B3E\uFF09", [["", "\u4E0D\u5173\u8054"], ...links.map((r) => [r.id, `${r.date} ${r.time} ${formatCents(r.cents)} ${r.note || r.category}`])]);
-      body.createEl("p", { cls: "ledger-assets-hint", text: "\u4E70\u5356\u6309\u5B9E\u9645\u786E\u8BA4\u4EFD\u989D\u767B\u8BB0\u3002\u8F6C\u8D26\u91D1\u989D\u4E3A\u5230\u8D26\u91D1\u989D\uFF0C\u8F6C\u51FA\u53E6\u6263\u8D39\u7528\uFF1B\u5356\u51FA\u91D1\u989D\u4E3A\u5B9E\u9645\u5230\u8D26\u91D1\u989D\u3002\u8FD8\u6B3E\u91D1\u989D\u4E3A\u51CF\u5C11\u7684\u8D1F\u503A\u672C\u91D1\uFF0C\u8D39\u7528\u53E6\u6263\u73B0\u91D1\u3002\u7EA2\u5229\u518D\u6295\u8D44\u53EA\u589E\u52A0\u786E\u8BA4\u4EFD\u989D\uFF1B\u4EFD\u989D\u8C03\u6574\u7528\u4E8E\u62C6\u5206\u6216\u6838\u5BF9\uFF0C\u4E0D\u6539\u73B0\u91D1\u53CA\u6301\u4ED3\u6210\u672C\u3002\u5173\u8054\u540E\u8BE5\u7B14\u6D88\u8D39\u7531\u8D44\u4EA7\u4EA4\u6613\u6263\u6B3E\u3002" });
+      body.createEl("p", { cls: "ledger-assets-hint", text: "\u4E70\u5356\u6309\u5B9E\u9645\u786E\u8BA4\u4EFD\u989D\u767B\u8BB0\u3002\u8F6C\u8D26\u91D1\u989D\u4E3A\u5230\u8D26\u91D1\u989D\uFF0C\u8F6C\u51FA\u53E6\u6263\u8D39\u7528\uFF1B\u5356\u51FA\u91D1\u989D\u4E3A\u5B9E\u9645\u5230\u8D26\u91D1\u989D\u3002\u8D1F\u503A\u6B63\u5411\u589E\u51CF\u4F1A\u589E\u52A0\u8D1F\u503A\uFF0C\u5E76\u4ECE\u6240\u9009\u73B0\u91D1\u8D26\u6237\u6263\u9664\u589E\u52A0\u91D1\u989D\u53CA\u8D39\u7528\uFF1B\u672A\u9009\u65F6\u4F7F\u7528\u9ED8\u8BA4\u6263\u6B3E\u8D26\u6237\u3002\u8D1F\u503A\u8D1F\u5411\u8C03\u6574\u53EA\u4FEE\u6B63\u4F59\u989D\u3002\u8FD8\u6B3E\u91D1\u989D\u4E3A\u51CF\u5C11\u7684\u8D1F\u503A\u672C\u91D1\uFF0C\u8D39\u7528\u53E6\u6263\u73B0\u91D1\u3002\u7EA2\u5229\u518D\u6295\u8D44\u53EA\u589E\u52A0\u786E\u8BA4\u4EFD\u989D\uFF1B\u4EFD\u989D\u8C03\u6574\u7528\u4E8E\u62C6\u5206\u6216\u6838\u5BF9\uFF0C\u4E0D\u6539\u73B0\u91D1\u53CA\u6301\u4ED3\u6210\u672C\u3002\u5173\u8054\u540E\u8BE5\u7B14\u6D88\u8D39\u7531\u8D44\u4EA7\u4EA4\u6613\u6263\u6B3E\u3002" });
       const confirmed = input(body, "\u5DF2\u786E\u8BA4\u6210\u4EA4\u6570\u91CF\u4E0E\u5B9E\u9645\u91D1\u989D", "", "checkbox");
       return async () => {
         if (!confirmed.checked) throw new Error("\u8BF7\u786E\u8BA4\u8FD9\u7B14\u8D44\u91D1\u53D8\u52A8\u5DF2\u53D1\u751F");
         const kind = type.value;
         const event = { id: assetId(), kind, date: date.value, createdAt: (/* @__PURE__ */ new Date()).toISOString(), accountId: account.value, cashAccountId: cash.value || void 0, holdingId: holding.value || void 0, amountCents: moneyCents(amount.value, kind === "adjust"), feeCents: moneyCents(fee.value), quantity: quantity.value || void 0, price: price.value || void 0, note: note.value.trim(), link: linked.value ? linkRecord(links.find((r) => r.id === linked.value)) : void 0 };
-        if (event.link && !["buy", "transfer", "repay"].includes(kind)) throw new Error("\u8D26\u672C\u662F\u652F\u51FA\u6D41\u6C34\uFF0C\u53EA\u6709\u4E70\u5165\u3001\u8F6C\u8D26\u6216\u8FD8\u6B3E\u53EF\u5173\u8054\uFF1B\u5176\u4ED6\u7C7B\u578B\u8BF7\u53D6\u6D88\u5173\u8054");
+        const debtIncrease = kind === "adjust" && event.amountCents > 0 && state.accounts.some((a) => a.id === event.accountId && a.kind === "liability");
+        if (event.link && !["buy", "transfer", "repay"].includes(kind) && !debtIncrease) throw new Error("\u8D26\u672C\u662F\u652F\u51FA\u6D41\u6C34\uFF0C\u53EA\u6709\u4E70\u5165\u3001\u8F6C\u8D26\u3001\u8FD8\u6B3E\u6216\u8D1F\u503A\u589E\u52A0\u53EF\u5173\u8054\uFF1B\u5176\u4ED6\u7C7B\u578B\u8BF7\u53D6\u6D88\u5173\u8054");
         if (["quantity", "reinvest"].includes(kind) && (event.amountCents !== 0 || event.feeCents !== 0)) throw new Error("\u4EFD\u989D\u8C03\u6574\u4E0E\u7EA2\u5229\u518D\u6295\u8D44\u4E0D\u79FB\u52A8\u73B0\u91D1\uFF0C\u8BF7\u5C06\u91D1\u989D\u548C\u8D39\u7528\u586B\u4E3A0");
         await this.save((s) => {
+          if (!active()) throw new Error("\u5DF2\u53D6\u6D88\u8D44\u4EA7\u4EA4\u6613");
           addAssetEvent(s, event);
         });
         void this.plugin.refreshAssetQuotes().catch(() => {
