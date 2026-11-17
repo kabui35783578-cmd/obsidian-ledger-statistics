@@ -328,6 +328,11 @@ test('report request carries plain-language guidance while retaining facts, cave
     assert.match(system, /以下是假设，不是用户账目/);
     assert.match(system, /缺失日期不能当零消费/);
     assert.match(system, /原因猜测保留/);
+    for (const skill of ['composition', 'anomaly', 'attribution', 'comparison', 'correlation', 'data-preparation', 'insight-card', 'investigation', 'ltv', 'pareto', 'rfm', 'forecast', 'retention', 'funnel']) {
+      assert.ok(system.includes(`[analysis-${skill}]`), `missing bundled skill ${skill}`);
+    }
+    assert.match(system, /不满足条件时不要输出留存、漏斗、RFM、LTV或预测结论/);
+    assert.match(system, /不是已经执行的工具或计算结果/);
     assert.deepEqual(JSON.parse(messages.find(m => m.role === 'user').content), JSON.parse(AI.reportAiInput(s)));
     assert.deepEqual(report.paragraphs[0].evidenceIds, ['overview']);
     assert.equal(report.paragraphs[0].text, response.paragraphs[0].text);

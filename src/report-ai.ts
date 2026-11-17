@@ -1,4 +1,5 @@
 import { chatContent, FinanceAiConfig } from "./ai";
+import { REPORT_SKILLS_GUIDANCE } from "./report-analysis-skills";
 import { RequestGate, sharedRequestGate } from "./request-gate";
 import { jsonrepair } from "jsonrepair";
 /*!
@@ -158,5 +159,5 @@ export function appendReportCache(caches: ReportCache[], cache: ReportCache): Re
   return [...caches.filter(c => !(c.fingerprint === cache.fingerprint && c.configuration === cache.configuration)), cache].slice(-6);
 }
 export async function requestSpendingReport(config: FinanceAiConfig, snapshot: ReportSnapshot, signal?: AbortSignal, gate: RequestGate = sharedRequestGate("ai")): Promise<SpendingReport> {
-  return parseSpendingReport(await chatContent(config, [{ role: "system", content: REPORT_AI_PROFILE }, { role: "user", content: reportAiInput(snapshot) }], 4000, signal, gate), snapshot);
+  return parseSpendingReport(await chatContent(config, [{ role: "system", content: REPORT_AI_PROFILE + REPORT_SKILLS_GUIDANCE }, { role: "user", content: reportAiInput(snapshot) }], 4000, signal, gate), snapshot);
 }
